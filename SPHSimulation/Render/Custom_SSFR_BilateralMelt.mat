@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Custom_SSFR_BilateralMelt
+  m_Shader: {fileID: 4800000, guid: 4f57620b6f3ca3445b8c5e5f5548faf7, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _DetailNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _FluidDepthTex:
+        m_Texture: {fileID: 8400000, guid: e1e1a55a5ddbf184cbc8d026b8f7b65a, type: 2}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _Absorption: 0.46
+    - _BlurPixels: 3.7
+    - _BlurRadius: 4.85
+    - _DepthMultiplier: 150.28
+    - _DepthThreshold: 543
+    - _FluidMaxDepth: 197.7
+    - _MeltDistance: 0.22
+    - _NormalFlatten: 0.416
+    - _NormalStrength: 2.48
+    - _Refraction: 0.034
+    - _RippleScale: 5.9
+    - _RippleStrength: 0.234
+    - _SpecularIntensity: 1.16
+    - _SpecularPower: 249
+    m_Colors:
+    - _FoamColor: {r: 0, g: 0.098142706, b: 0.42138356, a: 0.92941177}
+    - _RippleSpeed: {r: 0.1, g: 0.1, b: 0, a: 0}
+    - _WaterColor: {r: 0.77672946, g: 0.9808625, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
