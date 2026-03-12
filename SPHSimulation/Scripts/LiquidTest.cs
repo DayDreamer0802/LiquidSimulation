@@ -160,7 +160,7 @@ namespace HighPerform.test.Scripts
             _posRadB = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent);
             _velMassA = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent);
             _velMassB = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent);
-            _fluidPropsB = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent); // 新增 SPH 数据阵列
+            _fluidPropsB = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent); 
 
             _colorA = new NativeArray<float4>(_currentParticleCount, Allocator.Persistent);
             _particleKeys = new NativeArray<ulong>(_currentParticleCount, Allocator.Persistent);
@@ -557,7 +557,6 @@ namespace HighPerform.test.Scripts
                 HashMask = _hashMask
             }.ScheduleBatch(_currentParticleCount, 2048, handle);
 
-            // 4. --- SPH 第二阶段：物理整合 --- 
             handle = new UltimatePhysicsJob
             {
                 PlayerPos = _currentPlrPos,
@@ -577,7 +576,7 @@ namespace HighPerform.test.Scripts
 
                 PosRadIn = _posRadB,
                 VelIn = _velMassB,
-                FluidPropsIn = _fluidPropsB, // 传入计算好的密度压力
+                FluidPropsIn = _fluidPropsB, 
 
                 PosRadOut = _posRadA,
                 VelOut = _velMassA,
@@ -594,7 +593,6 @@ namespace HighPerform.test.Scripts
                 HashMask = _hashMask,
                 DeltaTime = 0.02f,
 
-                // SPH 参数
                 SmoothingRadius = smoothingRadius,
                 Viscosity = viscosity
             }.ScheduleBatch(_currentParticleCount, 2048, handle);
@@ -686,9 +684,6 @@ namespace HighPerform.test.Scripts
         }
     }
 
-    // ==========================================
-    // --- 极速 SoA 版 Job 集合 ---
-    // ==========================================
 
     [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
     public unsafe struct BuildKeysJob : IJobParallelForBatch
@@ -1208,20 +1203,13 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
                         float invR = math.rsqrt(r2);
                         float r = r2 * invR;
                         float hR = h - r;
-
                         float massJ = velInPtr[k].w;
                         float densityJ = fluidPropsPtr[k].x;
                         float pressureJ = fluidPropsPtr[k].y;
-
-                        // 微观优化：提炼除法，化除为乘
                         float massJOverDensityJ = massJ / densityJ;
-
-                        // 压力梯度
                         float pTerm = massJOverDensityJ * (pressureI + pressureJ) * 0.5f;
                         float3 gradW = (diff * invR) * (spikyGradConst * hR * hR);
                         forcePressure -= pTerm * gradW;
-
-                        // 粘滞力
                         float3 velDiff = velInPtr[k].xyz - myVel;
                         forceViscosity += Viscosity * massJOverDensityJ * velDiff * (viscLapConst * hR);
                     }
@@ -1343,9 +1331,7 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float ApplyBoundaryAndGravity(float rI, ref float3 myPos, ref float3 myVel)
     {
-        // 在 SPH 中添加全局重力
         myVel.y -= Gravity * DeltaTime;
-        // 积分位置
         myPos.xyz += myVel.xyz * DeltaTime;
 
         if (myPos.y - rI < -MaxSize)
@@ -1400,4 +1386,5 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
 
         return finalCol;
     }
+
 }
