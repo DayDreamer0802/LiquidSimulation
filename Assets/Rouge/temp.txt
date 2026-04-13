@@ -1,0 +1,41 @@
+        private void ProcessTornado(ref float3 acceleration, ref float tornadoMark, float3 pos, RougeSkillArea skill)
+        {
+            float2 diff = skill.Position - pos.xz;
+            float distSq = math.lengthsq(diff);
+            if (distSq < skill.Radius * skill.Radius && distSq > 0.0001f)
+            {
+                float dist = math.sqrt(distSq);
+                float2 dir = diff / dist;
+                float2 tangent = new float2(-dir.y, dir.x);
+                float funnelRadius = skill.Radius * 0.25f;
+                float normalizedDist = 1.0f - math.saturate(dist / skill.Radius);
+                float distToWall = dist - funnelRadius;
+                
+                float wallPull = (distToWall > 0f) ? (skill.PullForce * normalizedDist) : (-skill.PullForce * 0.8f);
+                acceleration.xz += dir * wallPull;
+                
+                float wallFactor = 1.0f - math.saturate(math.abs(distToWall) / funnelRadius);
+                float spinF = skill.SpinForce * (0.3f + 1.5f * wallFactor);
+                acceleration.xz += tangent * spinF;
+                
+                float heightRatio = math.saturate((pos.y - RenderHeight) / 25f);
+                float lift = skill.VerticalForce * (1.0f + wallFactor * 2.0f) * (1.0f - heightRatio * 0.5f);
+                acceleration.y += lift;
+
+                // 只在空中才打上标记（避免地面接触的敌人被误标记后立刻触发死亡�?
+                if (pos.y > RenderHeight + 1.5f)
+                    tornadoMark = 1f;
+
+                // 高度足够时向外甩出（营造旋风把敌人抛飞的效果）
+                if (heightRatio > 0.6f)
+                {
+                    float ejectionForce = math.pow(heightRatio, 3.0f) * skill.SpinForce * 2.0f;
+                    acceleration.xz -= dir * ejectionForce;
+                }
+                
+                // 用位置生成轻微扰动，让每个敌人的螺旋轨迹有差异感
+                float chaosY = math.sin(pos.y * 1.5f + pos.x * 0.3f);
+                float chaosX = math.cos(pos.x * 0.7f - pos.z * 0.5f);
+                acceleration.y += chaosY * (skill.VerticalForce * 0.2f);
+                acceleration.x += chaosX * (skill.SpinForce * 0.1f);
+            }

@@ -25,16 +25,16 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _BottomRadius: 0.36045343
-    - _FunnelCurve: 1.64
-    - _LiftForce: 5.406801
+    - _BottomRadius: 0.3997841
+    - _FunnelCurve: 1.98
+    - _LiftForce: 5.9967613
     - _RuntimeHeight: 11.300328
-    - _SpinForce: 5.406801
-    - _SpiralThickness: 0.152
-    - _SwayStrength: -10.8
-    - _TopRadius: 9.011335
+    - _SpinForce: 5.9967613
+    - _SpiralThickness: 0.1
+    - _SwayStrength: 5
+    - _TopRadius: 9.994602
     m_Colors:
     - _Color: {r: 0, g: 0.8, b: 0.6, a: 0.3}
-    - _SpiralTiling: {r: 10.61, g: 11.6, b: 0, a: 0}
+    - _SpiralTiling: {r: 10.19, g: 8.84, b: -2.2, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

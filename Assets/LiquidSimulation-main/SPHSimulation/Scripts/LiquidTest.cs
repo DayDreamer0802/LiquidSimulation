@@ -983,6 +983,13 @@ namespace HighPerform.test.Scripts
 
             int endIndex = startIndex + count;
 
+            int lastCx = int.MinValue;
+            int lastCy = int.MinValue;
+            int lastCz = int.MinValue;
+
+            int* neighborStart = stackalloc int[27];
+            int* neighborEnd = stackalloc int[27];
+
             for (int i = startIndex; i < endIndex; i++)
             {
                 float3 myPos = posPtr[i].xyz;
@@ -995,24 +1002,34 @@ namespace HighPerform.test.Scripts
                 int cy = baseCell.y * 19349663;
                 int cz = baseCell.z * 83492791;
 
+                if (cx != lastCx || cy != lastCy || cz != lastCz)
+                {
+                    lastCx = cx;
+                    lastCy = cy;
+                    lastCz = cz;
+                    for (int n = 0; n < 27; n++)
+                    {
+                        int3 offset = offsetPtr[n];
+                        int hash = ((cx + offset.x) ^ (cy + offset.y) ^ (cz + offset.z)) & HashMask;
+                        int cellCount = countsPtr[hash];
+                        neighborStart[n] = offsetsPtr[hash];
+                        neighborEnd[n] = neighborStart[n] + cellCount;
+                    }
+                }
+
                 for (int n = 0; n < 27; n++)
                 {
-                    int3 offset = offsetPtr[n];
+                    int startIdx = neighborStart[n];
+                    int endIdx = neighborEnd[n];
 
-                    int hash = ((cx + offset.x) ^ (cy + offset.y) ^ (cz + offset.z)) & HashMask;
-
-                    int cellCount = countsPtr[hash];
-                    if (cellCount > 0)
+                    for (int k = startIdx; k < endIdx; k++)
                     {
-                        int startIdx = offsetsPtr[hash];
-                        int endIdx = startIdx + cellCount;
+                        float3 diff = myPos - posPtr[k].xyz;
+                        float r2 = math.lengthsq(diff);
 
-                        for (int k = startIdx; k < endIdx; k++)
+                        if (r2 < h2)
                         {
-                            float3 diff = myPos - posPtr[k].xyz;
-                            float r2 = math.lengthsq(diff);
-
-                            float h2R2 = math.max(0.0f, h2 - r2);
+                            float h2R2 = h2 - r2;
                             densityAcc += velPtr[k].w * (h2R2 * h2R2 * h2R2);
                         }
                     }
@@ -1082,6 +1099,13 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
 
         int endIndex = startIndex + count;
 
+        int lastCx = int.MinValue;
+        int lastCy = int.MinValue;
+        int lastCz = int.MinValue;
+
+        int* neighborStart = stackalloc int[27];
+        int* neighborEnd = stackalloc int[27];
+
         for (int i = startIndex; i < endIndex; i++)
         {
             float4 myPosRad = posRadInPtr[i];
@@ -1117,10 +1141,31 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
 
             float distSqToPlayer = math.lengthsq(myPos - closestPlayerPt);
             
-            
+            float3 cellCoord = myPos * InvCellSize;
+            int3 baseCell = (int3)math.floor(cellCoord);
+
+            int cx = baseCell.x * 73856093;
+            int cy = baseCell.y * 19349663;
+            int cz = baseCell.z * 83492791;
+
+            if (cx != lastCx || cy != lastCy || cz != lastCz)
+            {
+                lastCx = cx;
+                lastCy = cy;
+                lastCz = cz;
+                for (int n = 0; n < 27; n++)
+                {
+                    int3 offset = neighborOffsetsPtr[n];
+                    int hash = ((cx + offset.x) ^ (cy + offset.y) ^ (cz + offset.z)) & HashMask;
+                    int cellCount = countsPtr[hash];
+                    neighborStart[n] = offsetsPtr[hash];
+                    neighborEnd[n] = neighborStart[n] + cellCount;
+                }
+            }
+
             float3 sphAcceleration = ApplySphForces(
                 ref myPos, ref myVel, mass, densityI, pressureI,
-                posRadInPtr, velInPtr, fluidPropsPtr, offsetsPtr, countsPtr, neighborOffsetsPtr);
+                posRadInPtr, velInPtr, fluidPropsPtr, neighborStart, neighborEnd);
 
             myVel += sphAcceleration * DeltaTime;
 
@@ -1154,8 +1199,7 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private float3 ApplySphForces(ref float3 myPos, ref float3 myVel, float massI, float densityI, float pressureI,
-        float4* posRadInPtr, float4* velInPtr, float4* fluidPropsPtr, int* offsetsPtr, int* countsPtr,
-        int3* neighborOffsetsPtr)
+        float4* posRadInPtr, float4* velInPtr, float4* fluidPropsPtr, int* neighborStart, int* neighborEnd)
     {
         float h = SmoothingRadius;
         float h2 = h * h;
@@ -1166,28 +1210,13 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
         float3 forcePressure = float3.zero;
         float3 forceViscosity = float3.zero;
 
-        float3 cellCoord = myPos * InvCellSize;
-        int3 baseCell = (int3)math.floor(cellCoord);
-
-        int cx = baseCell.x * 73856093;
-        int cy = baseCell.y * 19349663;
-        int cz = baseCell.z * 83492791;
-
-
         for (int n = 0; n < 27; n++)
         {
-          
-            int3 offset = neighborOffsetsPtr[n];
-            int hash = ((cx + offset.x) ^ (cy + offset.y) ^ (cz + offset.z)) & HashMask;
+            int startIdx = neighborStart[n];
+            int endIdx = neighborEnd[n];
 
-            int cellCount = countsPtr[hash];
-            if (cellCount > 0)
+            for (int k = startIdx; k < endIdx; k++)
             {
-                int startIdx = offsetsPtr[hash];
-                int endIdx = startIdx + cellCount;
-
-                for (int k = startIdx; k < endIdx; k++)
-                {
                    
                     float3 diff = myPos - posRadInPtr[k].xyz;
                     float r2 = math.lengthsq(diff);
@@ -1209,7 +1238,6 @@ public unsafe struct UltimatePhysicsJob : IJobParallelForBatch
                         forceViscosity += Viscosity * massJOverDensityJ * velDiff * (viscLapConst * hR);
                     }
                 }
-            }
         }
 
         return (forcePressure + forceViscosity) / densityI;
