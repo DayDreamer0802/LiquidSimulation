@@ -10,7 +10,7 @@ using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 [DefaultExecutionOrder(-50)]
-public class RougeGameManager : MonoBehaviour
+public partial class RougeGameManager : MonoBehaviour
 {
     private static readonly int PositionScaleBufferId = Shader.PropertyToID("_PositionScaleBuffer");
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -49,26 +49,27 @@ public class RougeGameManager : MonoBehaviour
     [SerializeField] private float obstacleOrbitStrength = 18f;
     [SerializeField] private LayerMask obstacleLayers = -1;
 
-    [Header("Projectile Attack")]
-    [SerializeField, Range(1, 2048)] private int maxBullets = 128;
-    [SerializeField] private float fireInterval = 0.06f;
-    [SerializeField] private float bulletSpeed = 42f;
-    [SerializeField] private float bulletRadius = 0.2f;
-    [SerializeField] private float bulletDamage = 14f;
-    [SerializeField] private float bulletLifetime = 1.5f;
-    [SerializeField] private int bulletsPerShot = 1;
-    [SerializeField] private float spreadAngle = 4f;
+    [Header("Skill Config")]
+    [SerializeField] private PlayerSkillConfigSet skillConfig = new PlayerSkillConfigSet();
 
-    [Header("Tornado")]
-    [SerializeField] private KeyCode tornadoKey = KeyCode.Q;
+    private int maxBullets = 128;
+    private float fireInterval = 0.06f;
+    private float bulletSpeed = 42f;
+    private float bulletRadius = 0.2f;
+    private float bulletDamage = 14f;
+    private float bulletLifetime = 1.5f;
+    private int bulletsPerShot = 1;
+    private float spreadAngle = 4f;
+
     [SerializeField] private Mesh tornadoMesh;
-    [SerializeField] private float tornadoRadius = 10f;
-    [SerializeField] private float tornadoPullForce = 55f;
-    [SerializeField] private float tornadoSpinForce = 85f;
-    [SerializeField] private float tornadoLiftForce = 35f;
-    [SerializeField] private float tornadoDuration = 4f;
-    [SerializeField] private float tornadoCooldown = 6f;
-    [SerializeField] private float tornadoTravelSpeed = 10f;
+    private KeyCode tornadoKey = KeyCode.Q;
+    private float tornadoRadius = 10f;
+    private float tornadoPullForce = 55f;
+    private float tornadoSpinForce = 85f;
+    private float tornadoLiftForce = 35f;
+    private float tornadoDuration = 4f;
+    private float tornadoCooldown = 6f;
+    private float tornadoTravelSpeed = 10f;
 
 
 
@@ -88,6 +89,8 @@ public class RougeGameManager : MonoBehaviour
     private NativeArray<float4> _velocitiesB;
     private NativeArray<float4> _stateA;
     private NativeArray<float4> _stateB;
+    private NativeArray<float4> _poisonStateA;
+    private NativeArray<float4> _poisonStateB;
     private NativeArray<ulong> _enemyKeys;
     private NativeArray<ulong> _tempEnemyKeys;
     private NativeArray<int> _cellOffsets;
@@ -100,6 +103,7 @@ public class RougeGameManager : MonoBehaviour
     private NativeArray<int> _playerDamageCount;
     private NativeArray<int> _enemyKillCount;
     private NativeQueue<float2> _explosionQueue;
+    private NativeQueue<RougePoisonBurstEvent> _poisonBurstQueue;
     private float2 _bulletMin;
     private float2 _bulletMax;
 
@@ -162,6 +166,8 @@ public class RougeGameManager : MonoBehaviour
     private RougeBomb[] _activeBombs = new RougeBomb[MaxBombs];
     private GameObject[] _bombVisuals = new GameObject[MaxBombs];
     private GameObject _laserVisual;
+    private const int MaxLaserSubBeams = 6;
+    private GameObject[] _laserExtraVisuals = new GameObject[MaxLaserSubBeams];
     private Material _laserMat;
     private float _laserTimer;
     private float2 _laserPos;
@@ -170,13 +176,19 @@ public class RougeGameManager : MonoBehaviour
     private float _meleeCooldownTimer;
     private GameObject _meleeVisual;
     private Material _meleeMat;
+    private GameObject _meleeFinisherVisual;
+    private Material _meleeFinisherMat;
     private float _meleeTimer;
     private float2 _meleePos;
     private float2 _meleeDir;
     private int _meleeComboStep = 0;
     private float _meleeComboWindow = 0f;
+    private float _meleeFinisherSlamTimer;
+    private float2 _meleeFinisherPos;
+    private float2 _meleeFinisherDir;
 
     private int _bombBounceCount;
+    private float _spikeStartupTimer;
     private float _spikeTimer;
     private float2 _spikePos;
     private float2 _spikeDir;
@@ -196,6 +208,7 @@ public class RougeGameManager : MonoBehaviour
     private int _jumpState; // 0 = idle, 1 = jumping
     private Vector3 _jumpStart;
     private Vector3 _jumpTarget;
+    private Vector3 _jumpArcPos;
 
     // ---- New Skills: Shockwave, Meteor, Ice Zone, Dash ----
     private float _shockwaveCooldownTimer;
@@ -217,7 +230,44 @@ public class RougeGameManager : MonoBehaviour
     private GameObject _iceZoneVisual;
     private Material _iceZoneMat;
 
+    private float _poisonCooldownTimer;
+    private struct RougeThrownBottle
+    {
+        public bool Active;
+        public Vector3 Position;
+        public Vector3 Velocity;
+    }
+    private struct RougePoisonZoneState
+    {
+        public bool Active;
+        public float2 Position;
+        public float Timer;
+        public float Duration;
+        public float Radius;
+        public uint Seed;
+    }
+    private const int MaxPoisonBottles = 2;
+    private const int MaxPoisonZones = 4;
+    private RougeThrownBottle[] _activePoisonBottles = new RougeThrownBottle[MaxPoisonBottles];
+    private RougePoisonZoneState[] _activePoisonZones = new RougePoisonZoneState[MaxPoisonZones];
+    private GameObject[] _poisonBottleVisuals = new GameObject[MaxPoisonBottles];
+    private GameObject[] _poisonZoneVisuals = new GameObject[MaxPoisonZones];
+    private Material _poisonBottleMat;
+    private Material _poisonZoneMat;
+
     private float _dashCooldownTimer;
+    private float _dashSpinTimer;
+    private float _dashSpinAngle;
+    private float2 _dashDirection;
+    private Vector3 _dashStartPosition;
+    private Vector3 _dashTargetPosition;
+    private GameObject _dashVisual;
+    private Material _dashMat;
+    private int _shockwaveState;
+    private Vector3 _shockwaveJumpStart;
+    private float _cameraLiftOffset;
+    private float _cameraFovOffset;
+    private float _baseCameraFov = -1f;
     private float _meleeHitShake;
 
     // VFX buffers for explosions
@@ -256,6 +306,7 @@ public class RougeGameManager : MonoBehaviour
     private Vector3[] _aoeRingPositions = new Vector3[MaxAOERings];
     private Color[] _aoeRingColors = new Color[MaxAOERings];
     private Material _aoeRingMat;
+    private MaterialPropertyBlock _aoeRingPropertyBlock;
     private Mesh _cylinderMesh;
 
     // Shockwave multi-ring system
@@ -272,6 +323,11 @@ public class RougeGameManager : MonoBehaviour
     private void OnDisable()
     {
         Dispose();
+    }
+
+    private void OnValidate()
+    {
+        ApplySkillConfigValues();
     }
 
     private UnityEngine.UI.Text _uiText;
@@ -321,6 +377,12 @@ public class RougeGameManager : MonoBehaviour
             }
         }
         
+        // During leap smash arc, override position after obstacle resolution
+        if (_jumpState == 1)
+        {
+            pos = _jumpArcPos;
+        }
+
         player.transform.position = pos;
 
         // Melee hit screen shake
@@ -336,6 +398,8 @@ public class RougeGameManager : MonoBehaviour
                     UnityEngine.Random.Range(-shakeIntensity, shakeIntensity));
             }
         }
+
+        ApplyCameraEffects();
     }
 
     private void Update()
@@ -442,6 +506,30 @@ public class RougeGameManager : MonoBehaviour
             }
         }
 
+        PoisonBottleSkillConfig poison = skillConfig.PoisonBottle;
+        while (_poisonBurstQueue.TryDequeue(out RougePoisonBurstEvent burst))
+        {
+            if (_skillAreaCount >= _skillAreasDb.Length)
+            {
+                break;
+            }
+
+            float poisonCap = math.min(poison.MaxPoisonDps, math.max(poison.SpreadStackDps, burst.Potency * 0.7f));
+            _skillAreasDb[_skillAreaCount++] = new RougeSkillArea
+            {
+                Type = 10,
+                Position = burst.Position,
+                Radius = poison.SpreadRadius,
+                Damage = poisonCap,
+                PullForce = poison.PoisonDuration,
+                SpinForce = math.max(poison.SpreadStackDps, poisonCap * 0.55f),
+                VerticalForce = burst.RemainingSpreadBudget,
+                AuxA = 1f
+            };
+
+            SpawnAOERing(new Vector3(burst.Position.x, renderHeight + 0.1f, burst.Position.y), poison.SpreadRadius, poison.SpreadRingDuration, new Color(0.35f, 1f, 0.45f, 1f));
+        }
+
         // Animate VFX spheres without active objects
         for (int vi = 0; vi < MaxExplosions; vi++)
         {
@@ -464,6 +552,7 @@ public class RougeGameManager : MonoBehaviour
         UpdateAOERings(dt);
         UpdateBullets(dt);
         RenderBullets();
+        RenderAOERings();
         RenderEnemies();
         RenderExplosions();
         RenderTornados();
@@ -472,40 +561,14 @@ public class RougeGameManager : MonoBehaviour
 
         if (_uiText != null)
         {
-            int mm = Mathf.FloorToInt(_survivalTime / 60);
-            int ss = Mathf.FloorToInt(_survivalTime % 60);
-            string[] skillNames = { "TRN", "BMB", "LSR", "MLR", "ORB", "BLT" };
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"FPS: {Mathf.RoundToInt(_fps)}  |  SURVIVAL: {mm:D2}:{ss:D2}");
-            sb.AppendLine($"LEVEL: {currentLevel} | KILLS: {totalKills}");
-            sb.AppendLine($"ACTIVE ENEMIES: {_currentMaxEnemies} / {enemyCount}");
-            sb.AppendLine($"PLAYER HP: {Mathf.RoundToInt(playerHealth)} / {playerMaxHealth}");
-            sb.AppendLine();
-            sb.AppendLine("SKILLS (Lv / Kills):");
-            for (int sk = 0; sk < 6; sk++)
-                sb.Append($"{skillNames[sk]}:Lv{_skillLevels[sk]}({_skillTotalKills[sk]})  ");
-            sb.AppendLine();
-            sb.AppendLine();
-            sb.AppendLine("SKILLS:");
-            sb.AppendLine("AUTO SHOOT: Passive");
-            sb.AppendLine($"SPACE: Leap Smash (CD: {Mathf.Max(0, _jumpCooldownTimer):F1}s)");
-            sb.AppendLine($"Q: Light Pillar Strike (CD: {Mathf.Max(0, _tornadoCooldownTimer):F1}s)");
-            sb.AppendLine($"E: Bomb Throw (CD: {Mathf.Max(0, _bombCooldownTimer):F1}s)");
-            sb.AppendLine($"R: Laser Beam (CD: {Mathf.Max(0, _laserCooldownTimer):F1}s)");
-            sb.AppendLine($"MOUSE L-CLICK: Melee Slash (CD: {Mathf.Max(0, _meleeCooldownTimer):F1}s)");
-            sb.AppendLine($"V: Shockwave (CD: {Mathf.Max(0, _shockwaveCooldownTimer):F1}s)");
-            sb.AppendLine($"T: Meteor Rain (CD: {Mathf.Max(0, _meteorCooldownTimer):F1}s)");
-            sb.AppendLine($"C: Ice Zone (CD: {Mathf.Max(0, _iceZoneCooldownTimer):F1}s)");
-            sb.AppendLine($"L-SHIFT: Dash (CD: {Mathf.Max(0, _dashCooldownTimer):F1}s)");
-            int numOrbBalls = math.min(8, 1 + _skillLevels[4] / 4);
-            sb.AppendLine($"Orbit Ball x{numOrbBalls}/8 (Passive)");
-            _uiText.text = sb.ToString();
+            UpdateHud();
         }
     }
 
     private void Initialize()
     {
         Dispose();
+        ApplySkillConfigValues();
 
         if (player == null)
         {
@@ -536,7 +599,7 @@ public class RougeGameManager : MonoBehaviour
             rt.anchorMax = new Vector2(0, 1);
             rt.pivot = new Vector2(0, 1);
             rt.anchoredPosition = new Vector2(30, -30);
-            rt.sizeDelta = new Vector2(600, 550);
+            rt.sizeDelta = new Vector2(860, 960);
         }
 
         enemyCount = Mathf.Max(enemyCount, 1024);
@@ -570,6 +633,8 @@ public class RougeGameManager : MonoBehaviour
         _velocitiesB = new NativeArray<float4>(enemyCount, Allocator.Persistent);
         _stateA = new NativeArray<float4>(enemyCount, Allocator.Persistent);
         _stateB = new NativeArray<float4>(enemyCount, Allocator.Persistent);
+        _poisonStateA = new NativeArray<float4>(enemyCount, Allocator.Persistent);
+        _poisonStateB = new NativeArray<float4>(enemyCount, Allocator.Persistent);
         _enemyKeys = new NativeArray<ulong>(enemyCount, Allocator.Persistent);
         _tempEnemyKeys = new NativeArray<ulong>(enemyCount, Allocator.Persistent);
         _cellOffsets = new NativeArray<int>(_hashSize, Allocator.Persistent);
@@ -581,6 +646,7 @@ public class RougeGameManager : MonoBehaviour
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
         _explosionQueue = new NativeQueue<float2>(Allocator.Persistent);
+        _poisonBurstQueue = new NativeQueue<RougePoisonBurstEvent>(Allocator.Persistent);
         _enemyKillCount[0] = 0;
         totalKills = 0;
         currentLevel = 1;
@@ -628,10 +694,12 @@ public class RougeGameManager : MonoBehaviour
         _bombCooldownTimer = 0f;
         for (int i=0; i<MaxBombs; i++) _activeBombs[i].Active = false;
         _spikeTimer = 0f;
+        _spikeStartupTimer = 0f;
         
         _laserTimer = 0f;
         _laserCooldownTimer = 0f;
         _meleeCooldownTimer = 0f;
+        _meleeFinisherSlamTimer = 0f;
 
         if (tornadoMesh == null)
         {
@@ -671,7 +739,13 @@ public class RougeGameManager : MonoBehaviour
             {
                 _aoeRingMat = new Material(ringShader);
                 _aoeRingMat.SetColor("_Color", new Color(1f, 0.5f, 0.1f, 0.8f));
+                _aoeRingMat.renderQueue = 2450;
             }
+        }
+
+        if (_aoeRingPropertyBlock == null)
+        {
+            _aoeRingPropertyBlock = new MaterialPropertyBlock();
         }
 
         if (_cylinderMesh == null)
@@ -717,29 +791,13 @@ public class RougeGameManager : MonoBehaviour
             _tornadoVisual.SetActive(false);
         }
 
-        // Pre-create AOE ring visuals
         for (int ri = 0; ri < MaxAOERings; ri++)
         {
-            if (_aoeRingVisuals[ri] == null && _cylinderMesh != null && _aoeRingMat != null)
-            {
-                _aoeRingVisuals[ri] = new GameObject("AoeRing_" + ri);
-                _aoeRingVisuals[ri].AddComponent<MeshFilter>().sharedMesh = _cylinderMesh;
-                _aoeRingVisuals[ri].AddComponent<MeshRenderer>().material = _aoeRingMat;
-                _aoeRingVisuals[ri].SetActive(false);
-            }
             _aoeRingTimers[ri] = 0f;
         }
 
-        // Pre-create shockwave ring visuals  
         for (int si = 0; si < ShockwaveRingCount; si++)
         {
-            if (_shockwaveRingVisuals[si] == null && _cylinderMesh != null && _shockwaveRingMat != null)
-            {
-                _shockwaveRingVisuals[si] = new GameObject("ShockwaveRing_" + si);
-                _shockwaveRingVisuals[si].AddComponent<MeshFilter>().sharedMesh = _cylinderMesh;
-                _shockwaveRingVisuals[si].AddComponent<MeshRenderer>().material = _shockwaveRingMat;
-                _shockwaveRingVisuals[si].SetActive(false);
-            }
             _shockwaveRingTimers[si] = 0f;
         }
 
@@ -779,6 +837,18 @@ public class RougeGameManager : MonoBehaviour
             _laserVisual.SetActive(false);
         }
 
+        for (int li = 0; li < MaxLaserSubBeams; li++)
+        {
+            if (_laserExtraVisuals[li] == null)
+            {
+                _laserExtraVisuals[li] = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Destroy(_laserExtraVisuals[li].GetComponent<Collider>());
+                _laserExtraVisuals[li].name = "Laser Extra " + li;
+                _laserExtraVisuals[li].GetComponent<MeshRenderer>().material = _laserMat;
+                _laserExtraVisuals[li].SetActive(false);
+            }
+        }
+
         if (_meleeVisual == null)
         {
             _meleeVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -790,6 +860,19 @@ public class RougeGameManager : MonoBehaviour
             _meleeMat.SetColor("_EmissionColor", new Color(1f, 0.3f, 0.1f, 1f) * 4f);
             _meleeVisual.GetComponent<MeshRenderer>().material = _meleeMat;
             _meleeVisual.SetActive(false);
+        }
+
+        if (_meleeFinisherVisual == null)
+        {
+            _meleeFinisherVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Destroy(_meleeFinisherVisual.GetComponent<Collider>());
+            _meleeFinisherVisual.name = "Melee Finisher Slam";
+            _meleeFinisherMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            _meleeFinisherMat.color = new Color(1f, 0.85f, 0.45f, 0.75f);
+            _meleeFinisherMat.SetFloat("_Surface", 1f);
+            _meleeFinisherMat.SetColor("_EmissionColor", new Color(1f, 0.7f, 0.2f, 1f) * 4f);
+            _meleeFinisherVisual.GetComponent<MeshRenderer>().material = _meleeFinisherMat;
+            _meleeFinisherVisual.SetActive(false);
         }
 
         if (_spikeMat == null)
@@ -836,18 +919,78 @@ public class RougeGameManager : MonoBehaviour
             _iceZoneVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             Destroy(_iceZoneVisual.GetComponent<Collider>());
             _iceZoneVisual.name = "Ice Zone Visual";
-            _iceZoneMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _iceZoneMat.color = new Color(0.3f, 0.7f, 1f, 0.4f);
-            _iceZoneMat.SetFloat("_Surface", 1f);
-            _iceZoneMat.SetColor("_EmissionColor", new Color(0.2f, 0.5f, 1f, 1f) * 2f);
+            _iceZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
+            _iceZoneMat.color = new Color(0.35f, 0.82f, 1f, 0.75f);
+            _iceZoneMat.renderQueue = 2450;
             _iceZoneVisual.GetComponent<MeshRenderer>().material = _iceZoneMat;
+            ConfigureGroundAoEVisual(_iceZoneVisual.GetComponent<MeshRenderer>(), _iceZoneMat);
             _iceZoneVisual.SetActive(false);
+        }
+
+        if (_poisonBottleMat == null)
+        {
+            _poisonBottleMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            _poisonBottleMat.color = new Color(0.25f, 0.95f, 0.25f, 0.85f);
+            _poisonBottleMat.SetFloat("_Surface", 1f);
+            _poisonBottleMat.SetColor("_EmissionColor", new Color(0.2f, 1f, 0.3f, 1f) * 2.5f);
+        }
+
+        if (_poisonZoneMat == null)
+        {
+            _poisonZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
+            _poisonZoneMat.color = new Color(0.26f, 1f, 0.36f, 0.72f);
+            _poisonZoneMat.renderQueue = 2450;
+        }
+
+        for (int i = 0; i < MaxPoisonBottles; i++)
+        {
+            if (_poisonBottleVisuals[i] == null)
+            {
+                _poisonBottleVisuals[i] = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                Destroy(_poisonBottleVisuals[i].GetComponent<Collider>());
+                _poisonBottleVisuals[i].name = "Poison Bottle " + i;
+                _poisonBottleVisuals[i].GetComponent<MeshRenderer>().material = _poisonBottleMat;
+                _poisonBottleVisuals[i].SetActive(false);
+            }
+
+            _activePoisonBottles[i].Active = false;
+        }
+
+        for (int i = 0; i < MaxPoisonZones; i++)
+        {
+            if (_poisonZoneVisuals[i] == null)
+            {
+                _poisonZoneVisuals[i] = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                Destroy(_poisonZoneVisuals[i].GetComponent<Collider>());
+                _poisonZoneVisuals[i].name = "Poison Zone " + i;
+                _poisonZoneVisuals[i].GetComponent<MeshRenderer>().material = _poisonZoneMat;
+                ConfigureGroundAoEVisual(_poisonZoneVisuals[i].GetComponent<MeshRenderer>(), _poisonZoneMat);
+                _poisonZoneVisuals[i].SetActive(false);
+            }
+
+            _activePoisonZones[i].Active = false;
         }
 
         _shockwaveCooldownTimer = 0f;
         _meteorCooldownTimer = 0f;
         _iceZoneCooldownTimer = 0f;
+        _poisonCooldownTimer = 0f;
         _dashCooldownTimer = 0f;
+        _dashSpinTimer = 0f;
+        _dashSpinAngle = 0f;
+
+        if (_dashVisual == null)
+        {
+            _dashVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Destroy(_dashVisual.GetComponent<Collider>());
+            _dashVisual.name = "Whirlwind Visual";
+            _dashMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            _dashMat.color = new Color(1f, 0.88f, 0.35f, 0.55f);
+            _dashMat.SetFloat("_Surface", 1f);
+            _dashMat.SetColor("_EmissionColor", new Color(1f, 0.75f, 0.2f, 1f) * 4f);
+            _dashVisual.GetComponent<MeshRenderer>().material = _dashMat;
+            _dashVisual.SetActive(false);
+        }
 
 
 
@@ -870,6 +1013,64 @@ public class RougeGameManager : MonoBehaviour
         _currentMaxEnemies = 10;
         _spawnTimer = 0f;
         ScheduleSimulation(0.016f);
+    }
+
+    private void ConfigureGroundAoEVisual(Renderer renderer, Material material)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        if (material != null)
+        {
+            material.renderQueue = 2450;
+            if (material.HasProperty("_ZWrite"))
+            {
+                material.SetFloat("_ZWrite", 0f);
+            }
+        }
+
+        renderer.sortingOrder = -50;
+        renderer.receiveShadows = false;
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    private void ApplyCameraEffects()
+    {
+        Camera camera = Camera.main;
+        if (camera == null)
+        {
+            return;
+        }
+
+        RougeCameraFollow cameraFollow = camera.GetComponent<RougeCameraFollow>();
+        if (cameraFollow != null)
+        {
+            RougeCameraFollow.SetRuntimeEffects(_cameraLiftOffset, _cameraFovOffset);
+            _cameraLiftOffset = Mathf.Lerp(_cameraLiftOffset, 0f, 8f * Time.deltaTime);
+            _cameraFovOffset = Mathf.Lerp(_cameraFovOffset, 0f, 7f * Time.deltaTime);
+            return;
+        }
+
+        if (_cameraLiftOffset != 0f)
+        {
+            camera.transform.position += Vector3.up * _cameraLiftOffset;
+        }
+
+        if (!camera.orthographic)
+        {
+            if (_baseCameraFov < 1f)
+            {
+                _baseCameraFov = camera.fieldOfView;
+            }
+
+            float targetFov = _baseCameraFov + _cameraFovOffset;
+            camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFov, 14f * Time.deltaTime);
+        }
+
+        _cameraLiftOffset = Mathf.Lerp(_cameraLiftOffset, 0f, 8f * Time.deltaTime);
+        _cameraFovOffset = Mathf.Lerp(_cameraFovOffset, 0f, 7f * Time.deltaTime);
     }
 
     private void BuildNeighborOffsets()
@@ -947,716 +1148,7 @@ public class RougeGameManager : MonoBehaviour
             _positionsA[i] = new float4(pos.x, renderHeight, pos.y, enemyRadius);
             _velocitiesA[i] = float4.zero;
             _stateA[i] = new float4(enemyMaxHealth, enemyRadius, enemyMaxSpeed * speedScale, 0f);
-        }
-    }
-
-    private void UpdateSkills(float dt)
-    {
-        if (_jumpCooldownTimer > 0f) _jumpCooldownTimer -= dt;
-        if (_tornadoCooldownTimer > 0f) _tornadoCooldownTimer -= dt;
-        if (_bombCooldownTimer > 0f) _bombCooldownTimer -= dt;
-        if (_laserCooldownTimer > 0f) _laserCooldownTimer -= dt;
-        if (_meleeCooldownTimer > 0f) _meleeCooldownTimer -= dt;
-
-        float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
-        Vector3 aim = player != null ? player.AimDirection : Vector3.forward;
-        float2 aimDir = math.normalizesafe(new float2(aim.x, aim.z), new float2(0f, 1f));
-
-        _skillAreaCount = 0;
-
-        // Jump (Leap Smash)
-        if (Input.GetKeyDown(KeyCode.Space) && _jumpCooldownTimer <= 0f && _jumpState == 0)
-        {
-            _jumpCooldownTimer = 8f;
-            _jumpState = 1;
-            _jumpTimer = 0.5f; // half second air time
-            _jumpStart = player != null ? player.transform.position : new Vector3(playerPos.x, renderHeight, playerPos.y);
-            
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            float distToGround = (renderHeight - ray.origin.y) / ray.direction.y;
-            Vector3 hitPoint = ray.origin + ray.direction * distToGround;
-            
-            Vector3 diff = hitPoint - _jumpStart;
-            diff.y = 0;
-            float maxDist = 20f;
-            if (diff.magnitude > maxDist) hitPoint = _jumpStart + diff.normalized * maxDist;
-            
-            _jumpTarget = hitPoint;
-            _jumpTarget.y = renderHeight;
-            if (player != null) player.enabled = false;
-        }
-
-        if (_jumpState == 1)
-        {
-            _jumpTimer -= dt;
-            float progress = 1f - math.max(0, _jumpTimer / 0.5f);
-            if (progress >= 1f)
-            {
-                _jumpState = 0;
-                _invincibilityTimer = 0.5f; // invincible for 0.5s after landing
-                if (player != null) 
-                {
-                    player.transform.position = _jumpTarget;
-                    player.enabled = true;
-                }
-                
-                // Explode AoE upon landing
-                _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                    Type = 2,
-                    Position = new float2(_jumpTarget.x, _jumpTarget.z),
-                    Radius = 18f,
-                    Damage = 1500f,
-                    PullForce = -300f, // huge knockback
-                    VerticalForce = 60f
-                };
-                SpawnExplosionVFX(new Vector3(_jumpTarget.x, renderHeight + 1f, _jumpTarget.z), 8f);
-                SpawnAOERing(new Vector3(_jumpTarget.x, renderHeight, _jumpTarget.z), 18f, 0.5f, new Color(1f, 0.6f, 0.1f, 1f));
-            }
-            else
-            {
-                Vector3 cur = Vector3.Lerp(_jumpStart, _jumpTarget, progress);
-                cur.y += math.sin(progress * math.PI) * 8f; // arch height = 8
-                if (player != null) player.transform.position = cur;
-                playerPos = new float2(cur.x, cur.z); // update virtual pos for this frame
-            }
-        }
-
-        // Light Pillar Array (Q)
-        if (Input.GetKeyDown(tornadoKey) && _tornadoCooldownTimer <= 0f)        
-        {
-            _tornadoCooldownTimer = 10f; // base cd
-            _pillarStrikesTotal = 4 + (currentLevel / 5); // 4 base strikes + 1 per 5 levels
-            _pillarStrikesDone = 0;
-            _pillarNextStrikeTimer = 0f;
-            _pillarBasePos = playerPos;
-            _pillarDirection = aimDir;
-            if (_tornadoVisual) _tornadoVisual.SetActive(false); // Make sure old stand-in is off
-        }
-
-        if (_pillarStrikesDone < _pillarStrikesTotal)
-        {
-            _pillarNextStrikeTimer -= dt;
-            if (_pillarNextStrikeTimer <= 0f)
-            {
-                float dist = 6f + _pillarStrikesDone * 14f; 
-                float2 strikePos = _pillarBasePos + _pillarDirection * dist;
-                float strikeRadius = math.min(10f + currentLevel * 0.1f, 25f); // grow with max cap
-                
-                // Spawn visual pillar (using Tornado instanced rendering arrays)
-                for(int i = 0; i < MaxTornados; i++) {
-                    if (_tornadoLifeTimers[i] <= 0f) {
-                        _tornadoPosData[i] = new float4(strikePos.x, renderHeight + 30f, strikePos.y, strikeRadius); // Pos + max radius
-                        _tornadoStateData[i] = new float4(strikeRadius, 60f, strikeRadius, 1f); // XZ scale, Y scale, Alpha
-                        _tornadoLifeTimers[i] = 0.5f; // duration
-                        _tornadoMaxTimes[i] = 0.5f;
-                        break;
-                    }
-                }
-
-                // Apply Physical Area Damage + physics Knockups
-                if (_skillAreaCount < _skillAreasDb.Length)
-                {
-                    _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                        Type = 2, // Map to ProcessBomb (Circular Explosion & vertical knockup logic)
-                        Position = strikePos,
-                        Radius = strikeRadius,
-                        Damage = 400f + currentLevel * 40f,
-                        PullForce = -120f,
-                        VerticalForce = 45f
-                    };
-                    SpawnExplosionVFX(new Vector3(strikePos.x, renderHeight + 1f, strikePos.y), strikeRadius);
-                    SpawnAOERing(new Vector3(strikePos.x, renderHeight, strikePos.y), strikeRadius, 0.4f, new Color(1f, 0.9f, 0.2f, 1f));
-                }
-
-                _pillarStrikesDone++;
-                _pillarNextStrikeTimer = 0.15f; 
-            }
-        }
-
-        // Bomb (Parabolic to mouse)
-        bool hasActiveBomb = false;
-        for (int i=0; i<MaxBombs; i++) if (_activeBombs[i].Active) { hasActiveBomb = true; break; }
-        
-        if (Input.GetKeyDown(KeyCode.E) && _bombCooldownTimer <= 0f && !hasActiveBomb)    
-        {
-            _bombCooldownTimer = 3f;
-            
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            float distToGround = (renderHeight - ray.origin.y) / ray.direction.y;
-            Vector3 hitPoint = ray.origin + ray.direction * distToGround;
-            
-            Vector3 startPos = player != null ? player.transform.position + Vector3.up * 2f : new Vector3(playerPos.x, renderHeight + 2f, playerPos.y);
-            Vector3 targetPos = hitPoint;
-            
-            // Limit distance
-            float maxDist = 30f;
-            Vector3 diff = targetPos - startPos;
-            diff.y = 0;
-            if (diff.magnitude > maxDist) targetPos = startPos + diff.normalized * maxDist + Vector3.up * (targetPos.y - startPos.y);
-            
-            float flightTime = 0.8f;
-            Vector3 vel = (targetPos - startPos) / flightTime;
-            vel.y = (targetPos.y - startPos.y - 0.5f * Physics.gravity.y * flightTime * flightTime) / flightTime;
-            
-            _activeBombs[0] = new RougeBomb { Active = true, Position = startPos, Velocity = vel, BounceCount = 0, BaseRadius = 15f };
-            if (_bombVisuals[0]) _bombVisuals[0].SetActive(true);
-        }
-
-        for (int i = 0; i < MaxBombs; i++)
-        {
-            if (!_activeBombs[i].Active) continue;
-            
-            _activeBombs[i].Velocity += Physics.gravity * dt;
-            _activeBombs[i].Position += _activeBombs[i].Velocity * dt;
-            
-            if (_bombVisuals[i]) 
-            {
-                _bombVisuals[i].transform.position = _activeBombs[i].Position;
-                _bombVisuals[i].transform.localScale = Vector3.one * math.max(_activeBombs[i].BaseRadius * 0.5f - _activeBombs[i].BounceCount * 1.5f, 3f); 
-            }
-            
-            if (_activeBombs[i].Position.y <= renderHeight)
-            {
-                // Explosion upon ground contact
-                float bounceRadius = math.max(_activeBombs[i].BaseRadius - _activeBombs[i].BounceCount * 2.5f, 4f);
-                float bounceDamage = math.max(350f * (float)math.pow(0.65, _activeBombs[i].BounceCount), 60f);
-
-                if (_skillAreaCount < _skillAreasDb.Length)
-                {
-                    _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                        Type = 2,
-                        Position = new float2(_activeBombs[i].Position.x, _activeBombs[i].Position.z),
-                        Radius = bounceRadius,
-                        Damage = bounceDamage,
-                        PullForce = -150f,
-                        VerticalForce = 50f
-                    };
-                    SpawnExplosionVFX(new Vector3(_activeBombs[i].Position.x, renderHeight + 1f, _activeBombs[i].Position.z), bounceRadius * 0.5f);
-                    SpawnAOERing(new Vector3(_activeBombs[i].Position.x, renderHeight, _activeBombs[i].Position.z), bounceRadius, 0.4f, new Color(1f, 0.5f, 0f, 1f));
-                }
-
-                // If this is the main bomb and level is high, spawn split fragments
-                if (i == 0 && _activeBombs[i].BounceCount == 0 && currentLevel >= 5)
-                {
-                    float angleBase = math.atan2(_activeBombs[i].Velocity.z, _activeBombs[i].Velocity.x);
-                    int splitCount = math.min(10, 2 + currentLevel / 10);
-                    int spawned = 0;
-                    for (int s = 1; s < MaxBombs && spawned < splitCount; s++) 
-                    {
-                        if (!_activeBombs[s].Active)
-                        {
-                            float spreadOffset = (spawned * (360f / splitCount)) * math.PI / 180f;
-                            Vector3 scatterVel = new Vector3(
-                                math.cos(angleBase + spreadOffset) * 12f,
-                                14f, // Pop up into air
-                                math.sin(angleBase + spreadOffset) * 12f
-                            );
-                            _activeBombs[s] = new RougeBomb { Active = true, Position = _activeBombs[i].Position, Velocity = scatterVel, BounceCount = 1, BaseRadius = 10f };
-                            if (_bombVisuals[s]) _bombVisuals[s].SetActive(true);
-                            spawned++;
-                        }
-                    }
-                }
-
-                _activeBombs[i].BounceCount++;
-                float2 hVel = new float2(_activeBombs[i].Velocity.x, _activeBombs[i].Velocity.z);
-                
-                if (_activeBombs[i].BounceCount >= 4 || math.lengthsq(hVel) < 4f)
-                {
-                    _activeBombs[i].Active = false;
-                    if (_bombVisuals[i]) _bombVisuals[i].SetActive(false);
-                }
-                else
-                {
-                    // Bounce
-                    _activeBombs[i].Position = new Vector3(_activeBombs[i].Position.x, renderHeight + 0.1f, _activeBombs[i].Position.z);
-                    float bounceUpVel = math.max(-_activeBombs[i].Velocity.y * 0.85f, 12f - _activeBombs[i].BounceCount * 2f);
-                    _activeBombs[i].Velocity = new Vector3(
-                        _activeBombs[i].Velocity.x * 0.75f,
-                        bounceUpVel,
-                        _activeBombs[i].Velocity.z * 0.75f
-                    );
-                }
-            }
-        }
-
-        // Laser
-        if (Input.GetKeyDown(KeyCode.R) && _laserCooldownTimer <= 0f)    
-        {
-            _laserCooldownTimer = 6f;
-            _laserTimer = 0.5f + (_skillLevels[2] / 30f) * 1.5f; // duration max 2s
-            _laserPos = playerPos;
-            _laserDir = aimDir;
-        }
-        
-        if (_laserTimer > 0f)
-        {
-            float laserDur = 0.5f + (_skillLevels[2] / 30f) * 1.5f;
-            _laserTimer -= dt;
-            float p = 1f - math.max(0f, _laserTimer / laserDur);
-            
-            float sweepP = math.saturate(p * 3f); // reaches full length at 33% of duration
-            float sweepEased = 1f - (1f - sweepP) * (1f - sweepP); // ease-out
-            float lgth = 150f * sweepEased; // increased length from 100 to 150
-
-            // New Laser Visuals: Pulsing inner core + fading wider beam
-            float laserWidth = 14f * math.min(1f, 2f * p) * (1f - p); // Swells up, then thins out towards end
-
-            if (_laserVisual)
-            {
-                _laserVisual.SetActive(true);
-                _laserVisual.transform.position = new Vector3(_laserPos.x + _laserDir.x * (lgth*0.5f), renderHeight + 1f, _laserPos.y + _laserDir.y * (lgth*0.5f));
-                _laserVisual.transform.rotation = Quaternion.LookRotation(new Vector3(_laserDir.x, 0, _laserDir.y)) * Quaternion.Euler(90, 0, 0);
-                _laserVisual.transform.localScale = new Vector3(laserWidth, lgth * 0.5f, laserWidth * 0.4f); // Flatter oval shape
-            }
-            
-            _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                Type = 3,
-                Position = _laserPos,
-                Direction = _laserDir,
-                Length = lgth,
-                Radius = laserWidth,
-                Damage = 400f,
-                PullForce = 50f,
-                VerticalForce = 0f
-            };
-        } 
-        else if (_laserVisual) _laserVisual.SetActive(false);
-
-        if (_meleeComboWindow > 0f) _meleeComboWindow -= dt;
-        else _meleeComboStep = 0;
-
-        // Melee (Left Click)
-        if (Input.GetMouseButtonDown(0) && _meleeCooldownTimer <= 0f)
-        {
-            _meleePos = playerPos;
-            _meleeDir = aimDir;
-            
-            _meleeComboStep++;
-            if (_meleeComboStep > 5) _meleeComboStep = 1;
-
-            if (_meleeComboStep == 5) // Ground Spike Finisher
-            {
-                _spikeTimer = 0.28f;
-                _spikePos = playerPos;
-                _spikeDir = aimDir;
-                _meleeComboStep = 0;
-                _meleeComboWindow = 0f;
-                _meleeCooldownTimer = 1.5f;
-                _meleeTimer = 0f; // no melee animation after spike finisher
-                // Spike finisher: screen shake instead of AOE ring
-                _meleeHitShake = 0.15f;
-            }
-            else
-            {
-                _meleeCooldownTimer = 0.22f; // faster combo speed for better feel
-                _meleeComboWindow = 1.5f;
-                _meleeTimer = 0.22f; // faster swing animation
-                // Stronger forward lunge on each hit
-                float lungeAmount = _meleeComboStep == 3 ? 4f : 3f;
-                if (_meleeComboStep == 4) lungeAmount = 1.5f; // spin stays closer
-                if (player != null)
-                    player.transform.position += new Vector3(aimDir.x, 0f, aimDir.y) * lungeAmount;
-                // Screen shake on hit
-                _meleeHitShake = 0.08f;
-            }
-        }
-        
-        if (_meleeTimer > 0f)
-        {
-            _meleeTimer -= dt;
-            float progress = 1f - math.max(0, _meleeTimer / 0.22f); // faster animation
-            // Ease-out curve for snappy feel: fast start, decelerating end
-            float easedProgress = 1f - (1f - progress) * (1f - progress);
-            
-            float angle = 0f;
-            float radius = 8f;
-            Vector3 scale = new Vector3(radius * 2f, 0.5f, 3f);
-            
-            if (_meleeComboStep == 1) // Left to right
-            {
-                angle = math.lerp(-70f, 70f, easedProgress) * math.PI / 180f;
-            }
-            else if (_meleeComboStep == 2) // Right to left
-            {
-                angle = math.lerp(70f, -70f, easedProgress) * math.PI / 180f;
-            }
-            else if (_meleeComboStep == 3) // Thrust/Stab
-            {
-                angle = 0f;
-                radius = math.lerp(3f, 10f, math.sin(easedProgress * math.PI));
-                scale = new Vector3(3f, 0.5f, 8f);
-                if (player != null)
-                {
-                    player.transform.position += new Vector3(_meleeDir.x, 0f, _meleeDir.y) * (20f * dt);
-                }
-            }
-            else if (_meleeComboStep == 4) // Circular Spin
-            {
-                angle = math.lerp(0f, 360f, easedProgress) * math.PI / 180f;
-                scale = new Vector3(radius * 2f, 0.5f, radius * 2f);
-            }
-            
-            float2 swingDir = Rotate(_meleeDir, angle);
-            Vector3 centerP = new Vector3(playerPos.x, renderHeight + 1f, playerPos.y) + new Vector3(swingDir.x, 0, swingDir.y) * (radius * 0.4f);
-            
-            if (_meleeVisual)
-            {
-                _meleeVisual.SetActive(true);
-                _meleeVisual.transform.position = centerP;
-                _meleeVisual.transform.rotation = Quaternion.LookRotation(new Vector3(swingDir.x, 0, swingDir.y));
-                _meleeVisual.transform.localScale = scale;
-            }
-
-            _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                Type = 4,
-                Position = new float2(centerP.x, centerP.z),
-                Direction = swingDir,
-                Radius = radius,
-                Damage = _meleeComboStep == 4 ? 1200f : 800f, 
-                PullForce = 120f,
-                VerticalForce = _meleeComboStep == 3 ? 25f : 18f
-            };
-        }
-        else if (_meleeVisual) _meleeVisual.SetActive(false);
-
-        // 地刺终结技（连击第5击）
-        float spikeDuration = 0.28f;  // �?_spikeTimer 初始值保持一�?
-        float spikeRiseRatio = 0.25f; // 更快进入攻击阶段
-        if (_spikeTimer > 0f)
-        {
-            _spikeTimer -= dt;
-            float normalizedT = 1f - _spikeTimer / spikeDuration; // 0..1
-            float heightFactor = math.saturate(math.sin(normalizedT * math.PI));
-
-            float[] spikeMaxH  = { 14f, 10f, 10f };  // 更高的刺
-            float[] spikeRad   = { 7f,  5f,  5f  };  // 更宽的范�?
-            float[] spikeDist  = { 14f, 12f, 12f };  // 更远的覆�?
-            float[] spikeAngleRad = { 0f, -28f * math.PI / 180f, 28f * math.PI / 180f };
-
-            bool risingPhase = normalizedT < spikeRiseRatio + 0.12f;
-
-            for (int iSpk = 0; iSpk < 3; iSpk++)
-            {
-                float2 spikeBase = _spikePos + Rotate(_spikeDir, spikeAngleRad[iSpk]) * spikeDist[iSpk];
-                float h = spikeMaxH[iSpk] * heightFactor;
-                float r = spikeRad[iSpk];
-
-                if (_spikeVisuals[iSpk] != null)
-                {
-                    bool vis = h > 0.05f;
-                    _spikeVisuals[iSpk].SetActive(vis);
-                    if (vis)
-                    {
-                        // 圆柱底部贴地：中心y = renderHeight + h/2
-                        _spikeVisuals[iSpk].transform.position = new Vector3(spikeBase.x, renderHeight + h * 0.5f, spikeBase.y);
-                        _spikeVisuals[iSpk].transform.localScale = new Vector3(r * 2f, h * 0.5f, r * 2f);
-                    }
-                }
-
-                // 上升阶段发出技能区域撞飞敌�?
-                if (risingPhase && h > 0.3f && _skillAreaCount < _skillAreasDb.Length)
-                {
-                    _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                        Type = 6,
-                        Position = spikeBase,
-                        Radius = r + 3f,   // 更宽的冲击范�?
-                        VerticalForce = iSpk == 0 ? 65f : 45f,  // 降低就高防止视线遮挡
-                        PullForce = 40f,   // 向外散射冲击
-                        Damage = 0f // 死亡由落地条件处�?
-                    };
-                }
-            }
-
-            if (_spikeTimer <= 0f)
-                for (int iSpk = 0; iSpk < 3; iSpk++)
-                    if (_spikeVisuals[iSpk] != null) _spikeVisuals[iSpk].SetActive(false);
-        }
-
-        // Orbit Balls (Passive) �?�?50级解�?个，最�?2个，2圈�?个分�?
-        int numBalls = math.min(8, 1 + _skillLevels[4] / 4);
-        if (numBalls > 0)
-        {
-            _orbitTimer += dt * 2.5f;
-            float[] ringRadii  = { 6f, 10f };
-            float[] ringSpeeds = { 1.0f, 0.75f };
-
-            while (_orbitVisuals.Count < numBalls)
-            {
-                var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                Destroy(ball.GetComponent<Collider>());
-                ball.name = "Orbit Ball " + _orbitVisuals.Count;
-                ball.GetComponent<MeshRenderer>().material = _orbitMat;
-                _orbitVisuals.Add(ball);
-            }
-
-            for (int objIdx = _orbitVisuals.Count - 1; objIdx >= numBalls; objIdx--)
-            {
-                Destroy(_orbitVisuals[objIdx]);
-                _orbitVisuals.RemoveAt(objIdx);
-            }
-
-            for (int b = 0; b < numBalls; b++)
-            {
-                int ring        = b / 4;
-                int ballInRing  = b % 4;
-                float orbRadius = ringRadii[math.min(ring, ringRadii.Length - 1)];
-                float speedMult = ringSpeeds[math.min(ring, ringSpeeds.Length - 1)];
-                float offset    = (float)ballInRing / 4f * (math.PI * 2f);
-                float oTime     = _orbitTimer * speedMult + offset;
-                float2 orbitPos = playerPos + new float2(math.cos(oTime), math.sin(oTime)) * orbRadius;
-
-                if (_orbitVisuals[b] != null)
-                {
-                    _orbitVisuals[b].transform.position = new Vector3(orbitPos.x, renderHeight + 1.5f, orbitPos.y);
-                    _orbitVisuals[b].transform.localScale = Vector3.one * 3f;
-                }
-
-                if (_skillAreaCount < _skillAreasDb.Length)
-                    _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                        Type = 5,
-                        Position = orbitPos,
-                        Radius = 2f,
-                        Damage = 45f + (currentLevel * 2f),
-                        PullForce = 15f,
-                        VerticalForce = 3f
-                    };
-            }
-        }
-        else
-        {
-            for (int objIdx = _orbitVisuals.Count - 1; objIdx >= 0; objIdx--)
-            {
-                Destroy(_orbitVisuals[objIdx]);
-                _orbitVisuals.RemoveAt(objIdx);
-            }
-        }
-
-        // ---- Shockwave (V) ---- 多圈圆环依次抬起+消失，抬起敌人落地秒杀
-        if (_shockwaveCooldownTimer > 0f) _shockwaveCooldownTimer -= dt;
-        if (Input.GetKeyDown(KeyCode.V) && _shockwaveCooldownTimer <= 0f)
-        {
-            _shockwaveCooldownTimer = 30f;
-            _shockwaveTimer = 1.8f; // longer for multi-ring effect
-            _shockwaveRadius = 0f;
-            _shockwavePos = playerPos;
-            // Stagger ring launches
-            for (int sr = 0; sr < ShockwaveRingCount; sr++)
-                _shockwaveRingTimers[sr] = 0.8f + sr * 0.12f; // rings appear in sequence, outward
-        }
-
-        if (_shockwaveTimer > 0f)
-        {
-            _shockwaveTimer -= dt;
-
-            // Animate each ring independently
-            for (int sr = 0; sr < ShockwaveRingCount; sr++)
-            {
-                if (_shockwaveRingTimers[sr] > 0f)
-                {
-                    _shockwaveRingTimers[sr] -= dt;
-                    float ringProg = 1f - math.max(0, _shockwaveRingTimers[sr] / 0.8f);
-                    float ringRadius = math.lerp(2f + sr * 6f, 10f + sr * 6f, ringProg);
-                    float ringHeight = math.sin(ringProg * math.PI) * (6f - sr * 0.5f); // rises and falls
-                    float ringAlpha = math.sin(ringProg * math.PI); // fade in then out
-
-                    if (_shockwaveRingVisuals[sr] != null)
-                    {
-                        _shockwaveRingVisuals[sr].SetActive(true);
-                        _shockwaveRingVisuals[sr].transform.position = new Vector3(_shockwavePos.x, renderHeight + ringHeight, _shockwavePos.y);
-                        _shockwaveRingVisuals[sr].transform.localScale = new Vector3(ringRadius * 2f, 1.5f * ringAlpha + 0.2f, ringRadius * 2f);
-                        var rend = _shockwaveRingVisuals[sr].GetComponent<MeshRenderer>();
-                        if (rend != null && rend.material != null)
-                        {
-                            rend.material.SetFloat("_InnerRadiusRatio", 0.82f);
-                            rend.material.SetColor("_Color", new Color(1f, 0.8f, 0.1f, ringAlpha));
-                        }
-                    }
-
-                    if (_skillAreaCount < _skillAreasDb.Length && ringProg > 0.05f && ringProg < 0.95f)
-                    {
-                        _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                            Type = 7,
-                            Position = _shockwavePos,
-                            Radius = ringRadius,
-                            Length = 3f,
-                            Damage = 0f,
-                            PullForce = -80f,
-                            VerticalForce = 85f
-                        };
-                    }
-                }
-                else if (_shockwaveRingVisuals[sr] != null)
-                {
-                    _shockwaveRingVisuals[sr].SetActive(false);
-                }
-            }
-        }
-        else 
-        {
-            if (_shockwaveVisual) _shockwaveVisual.SetActive(false);
-            for (int sr = 0; sr < ShockwaveRingCount; sr++)
-                if (_shockwaveRingVisuals[sr] != null) _shockwaveRingVisuals[sr].SetActive(false);
-        }
-
-        // ---- Meteor Rain (T) ----
-        if (_meteorCooldownTimer > 0f) _meteorCooldownTimer -= dt;
-        if (Input.GetKeyDown(KeyCode.T) && _meteorCooldownTimer <= 0f)
-        {
-            _meteorCooldownTimer = 8f;
-            _meteorTimer = 2.0f;
-            _meteorWaveIndex = 0;
-            _meteorWaveTimer = 0f;
-            
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            float distToGround = (renderHeight - ray.origin.y) / ray.direction.y;
-            Vector3 hitPoint = ray.origin + ray.direction * distToGround;
-            _meteorTargetPos = new float2(hitPoint.x, hitPoint.z);
-        }
-
-        if (_meteorTimer > 0f)
-        {
-            _meteorTimer -= dt;
-            _meteorWaveTimer -= dt;
-            if (_meteorWaveTimer <= 0f && _meteorWaveIndex < 8)
-            {
-                _meteorWaveTimer = 0.2f;
-                uint mHash = math.hash(new uint2((uint)_meteorWaveIndex + 1u, (uint)(Time.frameCount)));
-                float mAngle = ((mHash & 0xFFFFu) / 65535f) * math.PI * 2f;
-                float mDist = ((mHash >> 16) & 0xFFFFu) / 65535f * 20f;
-                float2 impactPos = _meteorTargetPos + new float2(math.cos(mAngle), math.sin(mAngle)) * mDist;
-                
-                // Spawn meteor visual: ball falling from sky to impact
-                if (_meteorWaveIndex < MeteorVisualMax)
-                {
-                    _meteorVisualTimers[_meteorWaveIndex] = 0.5f;
-                    _meteorVisualTargets[_meteorWaveIndex] = new Vector3(impactPos.x, renderHeight, impactPos.y);
-                    if (_meteorVisuals[_meteorWaveIndex] != null)
-                        _meteorVisuals[_meteorWaveIndex].SetActive(true);
-                }
-                _meteorWaveIndex++;
-            }
-        }
-
-        // Animate meteor visual spheres
-        for (int mi = 0; mi < MeteorVisualMax; mi++)
-        {
-            if (_meteorVisualTimers[mi] > 0f)
-            {
-                float prevTimer = _meteorVisualTimers[mi];
-                _meteorVisualTimers[mi] -= dt;
-                float mp = 1f - math.max(0f, _meteorVisualTimers[mi] / 0.5f);
-                Vector3 target = _meteorVisualTargets[mi];
-                Vector3 mPos = target + new Vector3(10f - mp * 10f, 60f * (1f - mp), 5f - mp * 5f); // diagonal drop
-                float mScale = math.lerp(6f, 3f, mp);
-                if (_meteorVisuals[mi] != null)
-                {
-                    _meteorVisuals[mi].transform.position = mPos;
-                    _meteorVisuals[mi].transform.localScale = new Vector3(mScale, mScale * 2f, mScale); // stretch to look like falling
-                    _meteorVisuals[mi].transform.rotation = Quaternion.LookRotation((target - mPos).normalized);
-                    if (mp >= 1f) _meteorVisuals[mi].SetActive(false);
-                }
-
-                // impact occurs when it reaches 0
-                if (_meteorVisualTimers[mi] <= 0f && prevTimer > 0f)
-                {
-                    if (_skillAreaCount < _skillAreasDb.Length)
-                        _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                            Type = 2,
-                            Position = new float2(target.x, target.z),
-                            Radius = 15f,
-                            Damage = 900f, // enhanced damage
-                            PullForce = -220f,
-                            VerticalForce = 55f
-                        };
-                    SpawnExplosionVFX(new Vector3(target.x, renderHeight + 1f, target.z), 15f);
-                    SpawnAOERing(new Vector3(target.x, renderHeight, target.z), 15f, 0.45f, new Color(1f, 0.2f, 0f, 1f));
-                }
-            }
-        }
-
-        // ---- Ice Zone (C) ----
-        if (_iceZoneCooldownTimer > 0f) _iceZoneCooldownTimer -= dt;
-        if (Input.GetKeyDown(KeyCode.C) && _iceZoneCooldownTimer <= 0f)
-        {
-            _iceZoneCooldownTimer = 10f;
-            _iceZoneTimer = 4.0f;
-            
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            float distToGround = (renderHeight - ray.origin.y) / ray.direction.y;
-            Vector3 hitPoint = ray.origin + ray.direction * distToGround;
-            _iceZonePos = new float2(hitPoint.x, hitPoint.z);
-        }
-
-        if (_iceZoneTimer > 0f)
-        {
-            float prevIceTimer = _iceZoneTimer;
-            _iceZoneTimer -= dt;
-            float iceRadius = math.lerp(8f, 25f, math.min(1f, currentLevel / 500f));
-
-            if (_iceZoneVisual)
-            {
-                _iceZoneVisual.SetActive(true);
-                _iceZoneVisual.transform.position = new Vector3(_iceZonePos.x, renderHeight + 0.2f, _iceZonePos.y);
-                _iceZoneVisual.transform.localScale = new Vector3(iceRadius * 2f, 0.1f, iceRadius * 2f);
-                float pulse = 0.3f + 0.1f * math.sin(_survivalTime * 6f);
-                if (_iceZoneMat != null)
-                    _iceZoneMat.color = new Color(0.3f, 0.7f, 1f, pulse);
-            }
-
-            if (_skillAreaCount < _skillAreasDb.Length)
-                _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                    Type = 8,
-                    Position = _iceZonePos,
-                    Radius = iceRadius,
-                    Damage = 80f,
-                    PullForce = 30f,
-                    VerticalForce = 0f
-                };
-
-            // End burst: when timer crosses zero
-            if (prevIceTimer > 0f && _iceZoneTimer <= 0f)
-            {
-                if (_skillAreaCount < _skillAreasDb.Length)
-                    _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                        Type = 2,
-                        Position = _iceZonePos,
-                        Radius = iceRadius + 5f,
-                        Damage = 800f,
-                        PullForce = -250f,
-                        VerticalForce = 40f
-                    };
-                SpawnExplosionVFX(new Vector3(_iceZonePos.x, renderHeight + 2f, _iceZonePos.y), iceRadius);
-                SpawnAOERing(new Vector3(_iceZonePos.x, renderHeight, _iceZonePos.y), iceRadius + 5f, 0.6f, new Color(0.3f, 0.7f, 1f, 1f));
-            }
-        }
-        else if (_iceZoneVisual) _iceZoneVisual.SetActive(false);
-
-        // ---- Dash (Left Shift) ----
-        if (_dashCooldownTimer > 0f) _dashCooldownTimer -= dt;
-        if (Input.GetKeyDown(KeyCode.LeftShift) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null)
-        {
-            _dashCooldownTimer = 3f;
-            float dashDist = 18f;
-            Vector3 startP = player.transform.position;
-            Vector3 endP = startP + new Vector3(aimDir.x, 0f, aimDir.y) * dashDist;
-            endP.x = Mathf.Clamp(endP.x, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
-            endP.z = Mathf.Clamp(endP.z, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
-            player.transform.position = endP;
-            _invincibilityTimer = 0.3f;
-
-            float2 dashCenter = (new float2(startP.x, startP.z) + new float2(endP.x, endP.z)) * 0.5f;
-            if (_skillAreaCount < _skillAreasDb.Length)
-                _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
-                    Type = 3,
-                    Position = new float2(startP.x, startP.z),
-                    Direction = aimDir,
-                    Length = dashDist,
-                    Radius = 5f,
-                    Damage = 500f,
-                    PullForce = 80f,
-                    VerticalForce = 10f
-                };
+            _poisonStateA[i] = float4.zero;
         }
     }
 
@@ -1846,9 +1338,11 @@ public class RougeGameManager : MonoBehaviour
             PositionScaleIn = _positionsA,
             VelocityIn = _velocitiesA,
             StateIn = _stateA,
+            PoisonStateIn = _poisonStateA,
             PositionScaleOut = _positionsB,
             VelocityOut = _velocitiesB,
-            StateOut = _stateB
+            StateOut = _stateB,
+            PoisonStateOut = _poisonStateB
         }.ScheduleBatch(enemyCount, sortBatchSize, handle);
 
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
@@ -1858,9 +1352,11 @@ public class RougeGameManager : MonoBehaviour
             PositionScaleIn = _positionsB,
             VelocityIn = _velocitiesB,
             StateIn = _stateB,
+            PoisonStateIn = _poisonStateB,
             PositionScaleOut = _positionsA,
             VelocityOut = _velocitiesA,
             StateOut = _stateA,
+            PoisonStateOut = _poisonStateA,
             CellOffsets = _cellOffsets,
             CellCounts = _cellCounts,
             NeighborOffsets = _neighborOffsets,
@@ -1872,6 +1368,7 @@ public class RougeGameManager : MonoBehaviour
             PlayerDamageCount = _playerDamageCount,
             EnemyKillCount = _enemyKillCount,
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
+            PoisonBurstQueue = _poisonBurstQueue.AsParallelWriter(),
             EnemyMaxHealth = enemyMaxHealth * (1f + currentLevel * 0.15f),
             EnemyRadius = math.min(enemyRadius * (1f + currentLevel * 0.05f), enemyRadius * 2.5f),
             EnemyMaxSpeed = enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
@@ -1985,30 +1482,43 @@ public class RougeGameManager : MonoBehaviour
             if (_aoeRingTimers[i] > 0f)
             {
                 _aoeRingTimers[i] -= dt;
-                float progress = 1f - math.max(0, _aoeRingTimers[i] / _aoeRingMaxTimes[i]);
-                // Ring expands outward quickly, then fades
-                float currentRadius = _aoeRingMaxRadius[i] * math.sqrt(progress); // sqrt for fast initial expansion
-                float ringHeight = math.sin(progress * math.PI) * 3f; // rises then falls
-                float alpha = math.sin(progress * math.PI); // fade in/out
-
-                if (_aoeRingVisuals[i] != null)
+                if (_aoeRingTimers[i] <= 0f)
                 {
-                    _aoeRingVisuals[i].SetActive(true);
-                    _aoeRingVisuals[i].transform.position = _aoeRingPositions[i] + Vector3.up * ringHeight * 0.3f;
-                    _aoeRingVisuals[i].transform.localScale = new Vector3(currentRadius * 2f, ringHeight + 0.3f, currentRadius * 2f);
-                    var rend = _aoeRingVisuals[i].GetComponent<MeshRenderer>();
-                    if (rend != null && rend.material != null)
-                    {
-                        rend.material.SetFloat("_InnerRadiusRatio", math.lerp(0.7f, 0.92f, progress));
-                        Color c = _aoeRingColors[i];
-                        c.a = alpha;
-                        rend.material.SetColor("_Color", c);
-                    }
+                    _aoeRingTimers[i] = 0f;
                 }
-
-                if (_aoeRingTimers[i] <= 0f && _aoeRingVisuals[i] != null)
-                    _aoeRingVisuals[i].SetActive(false);
             }
+        }
+    }
+
+    private void RenderAOERings()
+    {
+        if (_cylinderMesh == null || _aoeRingMat == null || _aoeRingPropertyBlock == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < MaxAOERings; i++)
+        {
+            if (_aoeRingTimers[i] <= 0f)
+            {
+                continue;
+            }
+
+            float progress = 1f - math.max(0f, _aoeRingTimers[i] / math.max(0.01f, _aoeRingMaxTimes[i]));
+            float currentRadius = _aoeRingMaxRadius[i] * math.sqrt(progress);
+            float ringHeight = 0.18f + math.sin(progress * math.PI) * 0.4f;
+            float alpha = math.sin(progress * math.PI);
+            Vector3 center = _aoeRingPositions[i];
+            center.y = math.max(center.y, renderHeight + 0.045f);
+            Matrix4x4 matrix = Matrix4x4.TRS(center, Quaternion.identity, new Vector3(currentRadius * 2f, ringHeight, currentRadius * 2f));
+
+            _aoeRingPropertyBlock.Clear();
+            _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.68f, 0.92f, progress));
+            Color color = _aoeRingColors[i];
+            color.a *= alpha;
+            _aoeRingPropertyBlock.SetColor("_Color", color);
+
+            Graphics.DrawMesh(_cylinderMesh, matrix, _aoeRingMat, gameObject.layer, null, 0, _aoeRingPropertyBlock, UnityEngine.Rendering.ShadowCastingMode.Off, false, null, false);
         }
     }
 
@@ -2086,10 +1596,15 @@ public class RougeGameManager : MonoBehaviour
         if (_bombVisuals != null)
             for (int i=0; i<MaxBombs; i++) if (_bombVisuals[i]) { Destroy(_bombVisuals[i]); _bombVisuals[i] = null; }
         if (_laserVisual) Destroy(_laserVisual);
+        if (_laserExtraVisuals != null)
+            for (int li = 0; li < _laserExtraVisuals.Length; li++)
+                if (_laserExtraVisuals[li] != null) { Destroy(_laserExtraVisuals[li]); _laserExtraVisuals[li] = null; }
         if (_tornadoMat) Destroy(_tornadoMat);
         if (_laserMat) Destroy(_laserMat);
         if (_meleeMat) Destroy(_meleeMat);
         if (_meleeVisual) Destroy(_meleeVisual);
+        if (_meleeFinisherMat) Destroy(_meleeFinisherMat);
+        if (_meleeFinisherVisual) Destroy(_meleeFinisherVisual);
         if (_spikeMat) Destroy(_spikeMat);
         if (_spikeVisuals != null)
             for (int iSpkD = 0; iSpkD < _spikeVisuals.Length; iSpkD++)
@@ -2104,6 +1619,14 @@ public class RougeGameManager : MonoBehaviour
         if (_shockwaveMat) Destroy(_shockwaveMat);
         if (_iceZoneVisual) Destroy(_iceZoneVisual);
         if (_iceZoneMat) Destroy(_iceZoneMat);
+        if (_dashVisual) Destroy(_dashVisual);
+        if (_dashMat) Destroy(_dashMat);
+        if (_poisonBottleMat) Destroy(_poisonBottleMat);
+        if (_poisonZoneMat) Destroy(_poisonZoneMat);
+        for (int i = 0; i < MaxPoisonBottles; i++)
+            if (_poisonBottleVisuals[i] != null) { Destroy(_poisonBottleVisuals[i]); _poisonBottleVisuals[i] = null; }
+        for (int i = 0; i < MaxPoisonZones; i++)
+            if (_poisonZoneVisuals[i] != null) { Destroy(_poisonZoneVisuals[i]); _poisonZoneVisuals[i] = null; }
         if (_aoeRingMat) Destroy(_aoeRingMat);
         if (_shockwaveRingMat) Destroy(_shockwaveRingMat);
         for (int ri = 0; ri < MaxAOERings; ri++)
@@ -2133,6 +1656,8 @@ public class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _velocitiesB);
         ReleaseNative(ref _stateA);
         ReleaseNative(ref _stateB);
+        ReleaseNative(ref _poisonStateA);
+        ReleaseNative(ref _poisonStateB);
         ReleaseNative(ref _enemyKeys);
         ReleaseNative(ref _tempEnemyKeys);
         ReleaseNative(ref _cellOffsets);
@@ -2145,6 +1670,7 @@ public class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _playerDamageCount);
         ReleaseNative(ref _enemyKillCount);
         if (_explosionQueue.IsCreated) _explosionQueue.Dispose();
+        if (_poisonBurstQueue.IsCreated) _poisonBurstQueue.Dispose();
 
         _positionBuffer?.Release();
         _positionBuffer = null;
@@ -2207,6 +1733,94 @@ public class RougeGameManager : MonoBehaviour
         return new float2(value.x * cos - value.y * sin, value.x * sin + value.y * cos);
     }
 
+    private void EnsureSkillConfigInitialized()
+    {
+        if (skillConfig == null)
+        {
+            skillConfig = PlayerSkillConfigSet.CreateDefault();
+        }
+
+        skillConfig.EnsureInitialized();
+    }
+
+    private void ApplySkillConfigValues()
+    {
+        EnsureSkillConfigInitialized();
+        MigrateLegacySkillConfig();
+
+        maxBullets = Mathf.Max(1, skillConfig.AutoShoot.MaxBullets);
+        fireInterval = Mathf.Max(0.01f, skillConfig.AutoShoot.FireInterval);
+        bulletSpeed = Mathf.Max(0.1f, skillConfig.AutoShoot.BulletSpeed);
+        bulletRadius = Mathf.Max(0.01f, skillConfig.AutoShoot.BulletRadius);
+        bulletDamage = Mathf.Max(0.1f, skillConfig.AutoShoot.BulletDamage);
+        bulletLifetime = Mathf.Max(0.05f, skillConfig.AutoShoot.BulletLifetime);
+        bulletsPerShot = Mathf.Max(1, skillConfig.AutoShoot.BulletsPerShot);
+        spreadAngle = Mathf.Max(0f, skillConfig.AutoShoot.SpreadAngle);
+
+        tornadoKey = skillConfig.LightPillar.Presentation.ActivationKey;
+        tornadoRadius = skillConfig.LightPillar.BaseRadius;
+        tornadoPullForce = skillConfig.LightPillar.PullForce;
+        tornadoSpinForce = 85f;
+        tornadoLiftForce = skillConfig.LightPillar.VerticalForce;
+        tornadoDuration = skillConfig.LightPillar.VisualDuration;
+        tornadoCooldown = skillConfig.LightPillar.Cooldown;
+        tornadoTravelSpeed = skillConfig.LightPillar.DistanceStep;
+    }
+
+    private void MigrateLegacySkillConfig()
+    {
+        if (Mathf.Approximately(skillConfig.Shockwave.Duration, 1.8f) && Mathf.Approximately(skillConfig.Shockwave.RingStartRadius, 2f))
+        {
+            skillConfig.Shockwave.Presentation.DisplayName = "Shockwave";
+            skillConfig.Shockwave.Duration = 0.6f;
+            skillConfig.Shockwave.LaunchDuration = 0.18f;
+            skillConfig.Shockwave.SlamDuration = 0.12f;
+            skillConfig.Shockwave.JumpHeight = 12f;
+            skillConfig.Shockwave.RingStartRadius = 8f;
+            skillConfig.Shockwave.RingEndRadius = 48f;
+            skillConfig.Shockwave.ImpactRadius = 38f;
+            skillConfig.Shockwave.ImpactRingCount = 5;
+            skillConfig.Shockwave.RingThickness = 7f;
+            skillConfig.Shockwave.ImpactDamage = 2400f;
+            skillConfig.Shockwave.PullForce = -240f;
+            skillConfig.Shockwave.VerticalForce = 125f;
+            skillConfig.Shockwave.CameraLift = 1.35f;
+            skillConfig.Shockwave.CameraFovKick = 8f;
+            skillConfig.Shockwave.LandingShake = 0.26f;
+        }
+
+        if (Mathf.Approximately(skillConfig.Dash.Distance, 12f) && Mathf.Approximately(skillConfig.Dash.InvincibilityDuration, 0.33f))
+        {
+            skillConfig.Dash.Presentation.DisplayName = "Whirlwind";
+            skillConfig.Dash.Duration = 1.5f;
+            skillConfig.Dash.Distance = 21f;
+            skillConfig.Dash.InvincibilityDuration = 1.5f;
+            skillConfig.Dash.SpinDamage = 9f;
+            skillConfig.Dash.HitRadius = 8f;
+            skillConfig.Dash.BladeWidth = 4f;
+            skillConfig.Dash.BladeLength = 11f;
+            skillConfig.Dash.BladeThickness = 0.75f;
+            skillConfig.Dash.MaxSpinRate = 3000f;
+            skillConfig.Dash.ImpactRadius = 10f;
+            skillConfig.Dash.ImpactDamage = 260f;
+            skillConfig.Dash.PullForce = 320f;
+            skillConfig.Dash.VerticalForce = 90f;
+        }
+
+        if (Mathf.Approximately(skillConfig.MeleeSlash.SlashVerticalForce, 18f))
+        {
+            skillConfig.MeleeSlash.SlashVerticalForce = 80f;
+            skillConfig.MeleeSlash.ThrustVerticalForce = 90f;
+            skillConfig.MeleeSlash.CenterSpikeVerticalForce = 90f;
+            skillConfig.MeleeSlash.SideSpikeVerticalForce = 65f;
+        }
+
+        if (Mathf.Approximately(skillConfig.LightPillar.VerticalForce, 45f))
+        {
+            skillConfig.LightPillar.VerticalForce = 70f;
+        }
+    }
+
     private void SpawnExplosionVFX(Vector3 worldPos, float radius)
     {
         for (int i = 0; i < MaxExplosions; i++)
@@ -2234,6 +1848,17 @@ public struct RougeSkillArea
     public float PullForce;
     public float SpinForce;
     public float VerticalForce;
+    public float AuxA;
+    public float AuxB;
+    public float AuxC;
+    public float AuxD;
+}
+
+public struct RougePoisonBurstEvent
+{
+    public float2 Position;
+    public float RemainingSpreadBudget;
+    public float Potency;
 }
 
 public struct RougeBullet
@@ -2244,792 +1869,6 @@ public struct RougeBullet
     public float Radius;
     public float Damage;
     public float Life;
-}
-
-public struct RougeObstacle
-{
-    public int Type; // 0=AABB, 1=Circle
-    public float2 Min;
-    public float2 Max;
-    public float2 Center;
-    public float CircleRadius;
-    public float Padding;
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct BuildEnemyKeysJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<float4> PositionScaleIn;
-    [NativeDisableParallelForRestriction] public NativeArray<ulong> EnemyKeys;
-    public float InvCellSize;
-    public int HashMask;
-
-    public void Execute(int startIndex, int count)
-    {
-        float4* posPtr = (float4*)PositionScaleIn.GetUnsafeReadOnlyPtr();
-        ulong* keysPtr = (ulong*)EnemyKeys.GetUnsafePtr();
-        int end = startIndex + count;
-        for (int i = startIndex; i < end; i++)
-        {
-            int2 cell = (int2)math.floor(posPtr[i].xz * InvCellSize);
-            int hash = ((cell.x * 73856093) ^ (cell.y * 19349663)) & HashMask;
-            keysPtr[i] = ((ulong)(uint)hash << 32) | (uint)i;
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct LocalHistogramJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> Keys;
-    [NativeDisableParallelForRestriction] public NativeArray<int> Histograms;
-    public int BatchSize;
-    public int Shift;
-    public int ChunkCount;
-
-    public void Execute(int startIndex, int count)
-    {
-        int chunkIndex = startIndex / BatchSize;
-        int* localHist = stackalloc int[256];
-        UnsafeUtility.MemClear(localHist, 256 * sizeof(int));
-
-        ulong* keysPtr = (ulong*)Keys.GetUnsafeReadOnlyPtr();
-        int end = startIndex + count;
-        for (int i = startIndex; i < end; i++)
-        {
-            localHist[(int)((keysPtr[i] >> Shift) & 0xFF)]++;
-        }
-
-        int* globalHistPtr = (int*)Histograms.GetUnsafePtr();
-        for (int i = 0; i < 256; i++)
-        {
-            globalHistPtr[i * ChunkCount + chunkIndex] = localHist[i];
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct BinLocalPrefixSumBatchJob : IJobParallelForBatch
-{
-    [NativeDisableParallelForRestriction] public NativeArray<int> Histograms;
-    [NativeDisableParallelForRestriction] public NativeArray<int> BinTotals;
-    public int ChunkCount;
-
-    public void Execute(int startIndex, int count)
-    {
-        int* histPtr = (int*)Histograms.GetUnsafePtr();
-        int endBin = startIndex + count;
-        for (int bin = startIndex; bin < endBin; bin++)
-        {
-            int start = bin * ChunkCount;
-            int sum = 0;
-            for (int chunk = 0; chunk < ChunkCount; chunk++)
-            {
-                int value = histPtr[start + chunk];
-                histPtr[start + chunk] = sum;
-                sum += value;
-            }
-
-            BinTotals[bin] = sum;
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct GlobalBinSumJob : IJob
-{
-    public NativeArray<int> BinTotals;
-
-    public void Execute()
-    {
-        int* totals = (int*)BinTotals.GetUnsafePtr();
-        int sum = 0;
-        for (int i = 0; i < 256; i++)
-        {
-            int value = totals[i];
-            totals[i] = sum;
-            sum += value;
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct ApplyGlobalOffsetBatchJob : IJobParallelForBatch
-{
-    [NativeDisableParallelForRestriction] public NativeArray<int> Histograms;
-    [ReadOnly] public NativeArray<int> BinTotals;
-    public int ChunkCount;
-
-    public void Execute(int startIndex, int count)
-    {
-        int* histPtr = (int*)Histograms.GetUnsafePtr();
-        int end = startIndex + count;
-        for (int bin = startIndex; bin < end; bin++)
-        {
-            int globalOffset = BinTotals[bin];
-            int histogramIndex = bin * ChunkCount;
-            for (int chunk = 0; chunk < ChunkCount; chunk++)
-            {
-                histPtr[histogramIndex + chunk] += globalOffset;
-            }
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct ScatterJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> SrcKeys;
-    [NativeDisableParallelForRestriction] public NativeArray<ulong> DstKeys;
-    [ReadOnly] public NativeArray<int> Histograms;
-    public int BatchSize;
-    public int Shift;
-    public int ChunkCount;
-
-    public void Execute(int startIndex, int count)
-    {
-        int chunkIndex = startIndex / BatchSize;
-        int* localOffsets = stackalloc int[256];
-        int* histPtr = (int*)Histograms.GetUnsafeReadOnlyPtr();
-        for (int i = 0; i < 256; i++)
-        {
-            localOffsets[i] = histPtr[i * ChunkCount + chunkIndex];
-        }
-
-        ulong* srcPtr = (ulong*)SrcKeys.GetUnsafeReadOnlyPtr();
-        ulong* dstPtr = (ulong*)DstKeys.GetUnsafePtr();
-        int end = startIndex + count;
-        for (int i = startIndex; i < end; i++)
-        {
-            ulong key = srcPtr[i];
-            dstPtr[localOffsets[(int)((key >> Shift) & 0xFF)]++] = key;
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct CopyArrayJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> Src;
-    [NativeDisableParallelForRestriction] public NativeArray<ulong> Dst;
-
-    public void Execute(int startIndex, int count)
-    {
-        UnsafeUtility.MemCpy(
-            (ulong*)Dst.GetUnsafePtr() + startIndex,
-            (ulong*)Src.GetUnsafeReadOnlyPtr() + startIndex,
-            count * sizeof(ulong));
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct ClearGridJob : IJobParallelForBatch
-{
-    [NativeDisableParallelForRestriction] public NativeArray<int> CellCounts;
-    [NativeDisableParallelForRestriction] public NativeArray<int> CellOffsets;
-
-    public void Execute(int startIndex, int count)
-    {
-        int* countPtr = (int*)CellCounts.GetUnsafePtr();
-        int* offsetPtr = (int*)CellOffsets.GetUnsafePtr();
-        UnsafeUtility.MemClear(countPtr + startIndex, count * sizeof(int));
-        UnsafeUtility.MemClear(offsetPtr + startIndex, count * sizeof(int));
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct BuildCellOffsetsJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> SortedKeys;
-    [NativeDisableParallelForRestriction] public NativeArray<int> CellOffsets;
-    [NativeDisableParallelForRestriction] public NativeArray<int> CellCounts;
-
-    public void Execute(int startIndex, int count)
-    {
-        ulong* keysPtr = (ulong*)SortedKeys.GetUnsafeReadOnlyPtr();
-        int* offsetsPtr = (int*)CellOffsets.GetUnsafePtr();
-        int* countsPtr = (int*)CellCounts.GetUnsafePtr();
-        int end = startIndex + count;
-
-        for (int i = startIndex; i < end; i++)
-        {
-            int hash = (int)(keysPtr[i] >> 32);
-            if (i == 0 || hash != (int)(keysPtr[i - 1] >> 32))
-            {
-                offsetsPtr[hash] = i;
-            }
-
-            System.Threading.Interlocked.Increment(ref *(countsPtr + hash));
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> SortedKeys;
-    [ReadOnly] public NativeArray<float4> PositionScaleIn;
-    [ReadOnly] public NativeArray<float4> VelocityIn;
-    [ReadOnly] public NativeArray<float4> StateIn;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> PositionScaleOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> VelocityOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> StateOut;
-
-    public void Execute(int startIndex, int count)
-    {
-        ulong* keyPtr = (ulong*)SortedKeys.GetUnsafeReadOnlyPtr();
-        float4* posInPtr = (float4*)PositionScaleIn.GetUnsafeReadOnlyPtr();
-        float4* velInPtr = (float4*)VelocityIn.GetUnsafeReadOnlyPtr();
-        float4* stateInPtr = (float4*)StateIn.GetUnsafeReadOnlyPtr();
-        float4* posOutPtr = (float4*)PositionScaleOut.GetUnsafePtr();
-        float4* velOutPtr = (float4*)VelocityOut.GetUnsafePtr();
-        float4* stateOutPtr = (float4*)StateOut.GetUnsafePtr();
-        int end = startIndex + count;
-
-        for (int i = startIndex; i < end; i++)
-        {
-            int sourceIndex = (int)keyPtr[i];
-            posOutPtr[i] = posInPtr[sourceIndex];
-            velOutPtr[i] = velInPtr[sourceIndex];
-            stateOutPtr[i] = stateInPtr[sourceIndex];
-        }
-    }
-}
-
-[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
-public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
-{
-    [ReadOnly] public NativeArray<ulong> SortedKeys;
-    [ReadOnly] public NativeArray<float4> PositionScaleIn;
-    [ReadOnly] public NativeArray<float4> VelocityIn;
-    [ReadOnly] public NativeArray<float4> StateIn;
-    [ReadOnly] public NativeArray<int> CellOffsets;
-    [ReadOnly] public NativeArray<int> CellCounts;
-    [ReadOnly] public NativeArray<int2> NeighborOffsets;
-    [ReadOnly] public NativeArray<RougeBullet> Bullets;
-    [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
-    [NativeDisableParallelForRestriction] public NativeArray<int> PlayerDamageCount;
-    [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> PositionScaleOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> VelocityOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> StateOut;
-
-    public int BulletCount;
-    public int ObstacleCount;
-    public float2 PlayerPos;
-    public float EnemyMaxHealth;
-    public float EnemyRadius;
-    public float EnemyMaxSpeed;
-    public float ArenaHalfExtent;
-    public float SpawnRadiusMin;
-    public float SpawnRadiusMax;
-    public float DespawnDistanceSq;
-    public float ChaseAcceleration;
-    public float VelocityDamping;
-    public float SeparationRadius;
-    public float SeparationStrength;
-    public float ObstacleLookAhead;
-    public float ObstacleRepulsion;
-    public float ObstacleOrbitStrength;
-    public float KnockbackResist;
-    [WriteOnly] public NativeQueue<float2>.ParallelWriter ExplosionQueue;
-    public int CurrentMaxEnemies;
-    [ReadOnly] public NativeArray<RougeSkillArea> SkillAreas;
-    public int SkillAreaCount;
-    public float RenderHeight;
-    public float DeltaTime;
-    public float InvCellSize;
-    public int HashMask;
-    public uint FrameSeed;
-    public float2 BulletMin;
-    public float2 BulletMax;
-    // Skill kill tracking & damage multipliers
-    [NativeDisableParallelForRestriction] public NativeArray<int> SkillKillCounts;
-    public float BombDmgMult;
-    public float LaserDmgMult;
-    public float MeleeDmgMult;
-    public float OrbitDmgMult;
-    public float BulletDmgMult;
-
-    public void Execute(int startIndex, int count)
-    {
-        ulong* keyPtr = (ulong*)SortedKeys.GetUnsafeReadOnlyPtr();
-        float4* posInPtr = (float4*)PositionScaleIn.GetUnsafeReadOnlyPtr();
-        float4* velInPtr = (float4*)VelocityIn.GetUnsafeReadOnlyPtr();
-        float4* stateInPtr = (float4*)StateIn.GetUnsafeReadOnlyPtr();
-        float4* posOutPtr = (float4*)PositionScaleOut.GetUnsafePtr();
-        float4* velOutPtr = (float4*)VelocityOut.GetUnsafePtr();
-        float4* stateOutPtr = (float4*)StateOut.GetUnsafePtr();
-        int* offsetsPtr = (int*)CellOffsets.GetUnsafeReadOnlyPtr();
-        int* countsPtr = (int*)CellCounts.GetUnsafeReadOnlyPtr();
-        int2* neighborOffsetsPtr = (int2*)NeighborOffsets.GetUnsafeReadOnlyPtr();
-        RougeBullet* bulletPtr = (RougeBullet*)Bullets.GetUnsafeReadOnlyPtr();
-        RougeObstacle* obstaclePtr = (RougeObstacle*)Obstacles.GetUnsafeReadOnlyPtr();
-
-        int endIndex = startIndex + count;
-        int lastHashX = int.MinValue;
-        int lastHashY = int.MinValue;
-        int* neighborStart = stackalloc int[9];
-        int* neighborEnd = stackalloc int[9];
-            float separationRadiusSq = SeparationRadius * SeparationRadius;
-
-            for (int i = startIndex; i < endIndex; i++)
-            {
-                int sourceIndex = (int)keyPtr[i];
-                if (sourceIndex >= CurrentMaxEnemies)
-                {
-                    posOutPtr[sourceIndex] = new float4(99999f, -9999f, 99999f, 0);
-                    velOutPtr[sourceIndex] = float4.zero;
-                    stateOutPtr[sourceIndex] = new float4(-1f, 0f, 0f, 0f);
-                    continue;
-                }
-
-                float4 pos4 = posInPtr[i];
-                float4 vel4 = velInPtr[i];
-                float4 state4 = stateInPtr[i];
-
-                float3 pos = pos4.xyz;
-                float3 vel = vel4.xyz;
-                float tornadoMark = vel4.w; // 0=普�? 1=被龙卷风卷起(落地强制爆炸/不伤玩家)
-                float health = state4.x;
-                float radius = state4.y;
-                float maxSpeed = state4.z;
-                float flashTimer = state4.w;
-
-                if (health <= 0f || math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
-                {
-                    Respawn(sourceIndex, ref pos4, ref vel4, ref state4);
-                    posOutPtr[sourceIndex] = pos4;
-                    velOutPtr[sourceIndex] = vel4;
-                    stateOutPtr[sourceIndex] = state4;
-                    continue;
-                }
-
-            int2 cell = (int2)math.floor(pos.xz * InvCellSize);
-            int hashX = cell.x * 73856093;
-            int hashY = cell.y * 19349663;
-            if (hashX != lastHashX || hashY != lastHashY)
-            {
-                lastHashX = hashX;
-                lastHashY = hashY;
-                for (int n = 0; n < 9; n++)
-                {
-                    int2 offset = neighborOffsetsPtr[n];
-                    int hash = ((hashX + offset.x) ^ (hashY + offset.y)) & HashMask;
-                    neighborStart[n] = offsetsPtr[hash];
-                    neighborEnd[n] = neighborStart[n] + countsPtr[hash];
-                }
-            }
-
-            float2 desired = math.normalizesafe(PlayerPos - pos.xz);
-            bool isAirborne = pos.y > RenderHeight + 0.5f;
-            
-            float3 acceleration = new float3(0f, -30f, 0f);  // 高重力让敌人快速落�?
-            if (!isAirborne) 
-            {
-                acceleration.xz += desired * ChaseAcceleration;
-            }
-            
-            float2 separation = float2.zero;
-
-            for (int n = 0; n < 9; n++)
-            {
-                for (int k = neighborStart[n]; k < neighborEnd[n]; k++)
-                {
-                    if (k == i) continue;
-                    float2 other = posInPtr[k].xz;
-                    float2 diff = pos.xz - other;
-                    float distSq = math.lengthsq(diff);
-                    if (distSq < separationRadiusSq && distSq > 0.0001f)
-                    {
-                        float dist = math.sqrt(distSq);
-                        float weight = 1f - math.saturate(dist / SeparationRadius);
-                        separation += (diff / dist) * (weight * SeparationStrength);
-                    }
-                }
-            }
-
-            float sepLen = math.length(separation);
-            if (sepLen > SeparationStrength * 3f) separation = (separation / sepLen) * (SeparationStrength * 3f);
-            
-            if (!isAirborne) {
-                acceleration.xz += separation;
-            }
-
-            for (int obstacleIndex = 0; obstacleIndex < ObstacleCount; obstacleIndex++)
-            {
-                RougeObstacle obstacle = obstaclePtr[obstacleIndex];
-                
-                if (obstacle.Type == 1) // Circle
-                {
-                    float2 diff = pos.xz - obstacle.Center;
-                    float distSq = math.lengthsq(diff);
-                    float totalRadius = obstacle.CircleRadius + radius + obstacle.Padding;
-                    
-                    if (distSq < totalRadius * totalRadius && distSq > 0.0001f)
-                    {
-                        float dist = math.sqrt(distSq);
-                        float2 normal = diff / dist;
-                        float overlap = totalRadius - dist;
-                        acceleration.xz += normal * (ObstacleRepulsion + overlap * 50f);
-                    }
-                    else if (!isAirborne)
-                    {
-                        float dist = math.sqrt(math.max(distSq, 0.0001f));
-                        float edgeDist = dist - totalRadius;
-                        if (edgeDist >= 0f && edgeDist < ObstacleLookAhead)
-                        {
-                            float2 normal = diff / dist;
-                            float weight = 1f - math.saturate(edgeDist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight);
-                            float2 tangent = new float2(-normal.y, normal.x);
-                            if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight);
-                        }
-                    }
-                }
-                else // AABB (Type 0)
-                {
-                    float2 minPadded = obstacle.Min - new float2(radius + obstacle.Padding);
-                    float2 maxPadded = obstacle.Max + new float2(radius + obstacle.Padding);
-                    bool isInside = pos.x >= minPadded.x && pos.x <= maxPadded.x && pos.z >= minPadded.y && pos.z <= maxPadded.y;
-
-                    if (isInside)
-                    {
-                        float dx1 = pos.x - minPadded.x, dx2 = maxPadded.x - pos.x;
-                        float dy1 = pos.z - minPadded.y, dy2 = maxPadded.y - pos.z;
-                        float minD = math.min(math.min(dx1, dx2), math.min(dy1, dy2));
-                        
-                        float2 normal = minD == dx1 ? new float2(-1, 0) : 
-                                        minD == dx2 ? new float2(1, 0) : 
-                                        minD == dy1 ? new float2(0, -1) : 
-                                                      new float2(0, 1);
-                        acceleration.xz += normal * (ObstacleRepulsion + minD * 50f);
-                    }
-                    else
-                    {
-                        float2 closest = math.clamp(pos.xz, minPadded, maxPadded);
-                        float2 diff = pos.xz - closest;
-                        float distSq = math.lengthsq(diff);
-                        if (distSq >= ObstacleLookAhead * ObstacleLookAhead) continue;
-
-                        if (!isAirborne) {
-                            float dist = math.sqrt(math.max(distSq, 0.0001f));
-                            float2 normal = diff / dist;
-                            float weight = 1f - math.saturate(dist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight);
-                            float2 tangent = new float2(-normal.y, normal.x);
-                            if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight);
-                        }
-                    }
-                }
-            }
-
-            for (int s = 0; s < SkillAreaCount; s++)
-            {
-                RougeSkillArea skill = SkillAreas[s];
-                switch (skill.Type)
-                {
-                    case 1: ProcessTornado(ref acceleration, ref health, ref flashTimer, ref tornadoMark, pos, skill); break;
-                    case 2: ProcessBomb(ref vel, ref health, ref flashTimer, pos, skill); break;
-                    case 3: ProcessLaser(ref acceleration, ref health, ref flashTimer, pos, skill); break;
-                    case 4: ProcessMelee(ref acceleration, ref health, ref flashTimer, pos, skill); break;
-                    case 5: ProcessOrbit(ref acceleration, ref health, ref flashTimer, pos, skill); break;
-                    case 6: ProcessSpike(ref vel, ref flashTimer, ref tornadoMark, pos, skill); break;
-                    case 7: ProcessShockwave(ref acceleration, ref health, ref flashTimer, ref tornadoMark, pos, vel, skill); break;
-                    case 8: ProcessIceZone(ref acceleration, ref health, ref flashTimer, ref vel, pos, skill); break;
-                }
-            }
-
-            if (BulletCount > 0 && pos.x >= BulletMin.x && pos.x <= BulletMax.x && pos.z >= BulletMin.y && pos.z <= BulletMax.y)
-            {
-                if (!isAirborne) {
-                    for (int bulletIndex = 0; bulletIndex < BulletCount; bulletIndex++)
-                    {
-                        RougeBullet bullet = bulletPtr[bulletIndex];
-                        if (bullet.Life <= 0f) continue;
-                        float r = radius + bullet.Radius;
-
-                        float minX = math.min(bullet.Previous.x, bullet.Current.x) - r;
-                        float maxX = math.max(bullet.Previous.x, bullet.Current.x) + r;
-                        if (pos.x < minX || pos.x > maxX) continue;
-
-                        float minY = math.min(bullet.Previous.y, bullet.Current.y) - r;
-                        float maxY = math.max(bullet.Previous.y, bullet.Current.y) + r;
-                        if (pos.z < minY || pos.z > maxY) continue;
-
-                        float distSq = DistanceSqPointSegment(pos.xz, bullet.Previous, bullet.Current);
-                        if (distSq <= r * r)
-                        {
-                            float prevH = health;
-                            health -= bullet.Damage * BulletDmgMult;
-                            flashTimer = 1f;
-                            if (prevH > 0f && health <= 0f)
-                                System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[5]);
-                        }
-                    }
-                }
-            }
-
-            bool hitPlayer = false;
-            float distToPlayerSq = math.lengthsq(pos.xz - PlayerPos);
-            // 被龙卷风标记的敌�?tornadoMark=1)落地前不伤玩家，只能用爆炸伤其他敌人
-            if (!isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + 0.5f) * (radius + 0.5f))
-            {
-                System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);
-                health = -1f;
-                hitPlayer = true;
-            }
-
-            vel += acceleration * DeltaTime;
-            
-            if (!isAirborne) {
-                float speedSq = math.lengthsq(vel.xz);
-                if (speedSq > maxSpeed * maxSpeed) vel.xz *= maxSpeed * math.rsqrt(speedSq);
-                vel.xz *= VelocityDamping;
-            } else {
-                vel.xz *= 0.99f;
-            }
-            
-            pos += vel * DeltaTime;
-
-            if (pos.y <= RenderHeight) 
-            { 
-                // tornadoMark 1 = 龙卷�?冲击�?落地爆炸)；tornadoMark 2 = 地刺(落地死亡但不爆炸)
-                if (vel.y < -3.5f || tornadoMark > 0.5f)
-                {
-                    bool isSkillKill = tornadoMark > 0.5f;
-                    bool isSpikeKill = tornadoMark > 1.5f;
-                    health = 0f;
-                    tornadoMark = 0f;
-                    if (isSkillKill) {
-                        ExplosionQueue.Enqueue(pos.xz);
-                        if (isSpikeKill) {
-                            System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[3]); // melee/spike
-                        } else {
-                            System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[0]); // tornado
-                        }
-                    } else {
-                        // Fixed full-screen AOE bug: do not enqueue an explosion for every falling enemy!
-                    }
-                }
-                else if (vel.y < -1f)
-                {
-                    health -= math.abs(vel.y) * 15f; // Fall damage
-                    flashTimer = 1f;
-                }
-                pos.y = RenderHeight; 
-                vel.y = 0f; 
-            }
-
-            if (health <= 0f && !hitPlayer)
-            {
-                System.Threading.Interlocked.Increment(ref ((int*)EnemyKillCount.GetUnsafePtr())[0]);
-            }
-
-                pos.x = math.clamp(pos.x, -ArenaHalfExtent, ArenaHalfExtent);
-                pos.z = math.clamp(pos.z, -ArenaHalfExtent, ArenaHalfExtent);
-
-                flashTimer = math.max(0f, flashTimer - DeltaTime * 5f);
-                posOutPtr[sourceIndex] = new float4(pos, radius);
-                velOutPtr[sourceIndex] = new float4(vel, tornadoMark); // w保存tornado标记
-                stateOutPtr[sourceIndex] = new float4(health, radius, maxSpeed, flashTimer);
-            }
-        }
-
-        private void ProcessTornado(ref float3 acceleration, ref float health, ref float flashTimer, ref float tornadoMark, float3 pos, RougeSkillArea skill)
-        {
-            float2 diff = pos.xz - skill.Position;
-            float distSq = math.lengthsq(diff);
-            float outerR = skill.Radius;
-            float innerR = math.max(0f, outerR - 6f);
-            
-            if (distSq < outerR * outerR && distSq > innerR * innerR && distSq > 0.0001f)
-            {
-                float dist = math.sqrt(distSq);
-                float2 dir = diff / dist;
-                float weight = 1f - math.saturate((dist - innerR) / 6f);
-                
-                acceleration.xz += dir * (skill.PullForce * weight * KnockbackResist);
-                acceleration.y += skill.VerticalForce * weight * KnockbackResist;
-                tornadoMark = 1f;
-
-                health -= skill.Damage * 0.05f * DeltaTime;
-                flashTimer = 1f;
-            }
-        }
-
-        private void ProcessBomb(ref float3 vel, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
-        {
-            if (math.abs(pos.y - RenderHeight) > 5f) return;
-            float2 diff = skill.Position - pos.xz;
-            float distSq = math.lengthsq(diff);
-            if (distSq < skill.Radius * skill.Radius && distSq > 0.0001f)
-            {
-                float dist = math.sqrt(distSq);
-                float2 dir = -(diff / dist);
-                float weight = 1f - math.saturate(dist / skill.Radius);
-                vel.xz += dir * (skill.PullForce * weight * KnockbackResist * 0.1f);
-                vel.y += skill.VerticalForce * weight * KnockbackResist * 0.5f;
-                float prevHB = health;
-                health -= skill.Damage * BombDmgMult;
-                flashTimer = 1f;
-                if (prevHB > 0f && health <= 0f)
-                    System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[1]);
-            }
-        }
-
-        private void ProcessLaser(ref float3 acceleration, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
-        {
-            if (math.abs(pos.y - RenderHeight) > 6f) return;
-            float2 pToS = pos.xz - skill.Position;
-            float dot = math.dot(pToS, skill.Direction);
-            if (dot > 0f && dot < skill.Length)
-            {
-                float2 proj = skill.Position + skill.Direction * dot;
-                float distSq = math.lengthsq(pos.xz - proj);
-                if (distSq < skill.Radius * skill.Radius)
-                {
-                    float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
-                    float prevHL = health;
-                    health -= skill.Damage * DeltaTime * LaserDmgMult;
-                    flashTimer = 1f;
-                    if (prevHL > 0f && health <= 0f)
-                        System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[2]);
-                    acceleration.xz += skill.Direction * (skill.PullForce * weight * KnockbackResist);
-                    acceleration.y += skill.VerticalForce * weight * KnockbackResist;
-                }
-            }
-        }
-
-        private void ProcessMelee(ref float3 acceleration, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
-        {
-            if (math.abs(pos.y - RenderHeight) > 6f) return;
-            float2 pToS = pos.xz - skill.Position;
-            float distSq = math.lengthsq(pToS);
-            if (distSq < skill.Radius * skill.Radius)
-            {
-                float2 dir = math.normalizesafe(pToS, new float2(0f, 1f));
-                float dot = math.dot(dir, skill.Direction);
-                if (dot > 0.3f)  // ~72°正面扇区，确保击退生效
-                {
-                    float prevHM = health;
-                    health -= skill.Damage * DeltaTime * 200f * MeleeDmgMult;
-                    flashTimer = 1f;
-                    if (prevHM > 0f && health <= 0f)
-                        System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[3]);
-                    acceleration.xz += dir * skill.PullForce * KnockbackResist;
-                    acceleration.y += skill.VerticalForce * KnockbackResist;
-                }
-            }
-        }
-
-        private void ProcessOrbit(ref float3 acceleration, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
-        {
-            if (math.abs(pos.y - RenderHeight) > 6f) return;
-            float2 diff = skill.Position - pos.xz;
-            float distSq = math.lengthsq(diff);
-            if (distSq < skill.Radius * skill.Radius && distSq > 0.0001f)
-            {
-                float dist = math.sqrt(distSq);
-                float2 dir = -(diff / dist); 
-                float weight = 1f - math.saturate(dist / skill.Radius);
-                acceleration.xz += dir * (skill.PullForce * weight * KnockbackResist);
-                acceleration.y += skill.VerticalForce * weight * KnockbackResist;
-                float prevHO = health;
-                health -= skill.Damage * DeltaTime * OrbitDmgMult;
-                flashTimer = 1f;
-                if (prevHO > 0f && health <= 0f)
-                    System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[4]);
-            }
-        }
-
-        private void ProcessSpike(ref float3 acceleration, ref float flashTimer, ref float tornadoMark, float3 pos, RougeSkillArea skill)
-        {
-            // 只对地面附近的敌人生效（已在空中的不重复标记�?
-            if (pos.y > RenderHeight + 3f) return;
-            float2 diff = pos.xz - skill.Position;
-            float distSq = math.lengthsq(diff);
-            if (distSq < skill.Radius * skill.Radius)
-            {
-                float2 dir = math.normalizesafe(diff, new float2(0f, 1f));
-                float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
-                // 强力上抛 + 向外散射冲击�?
-                acceleration.y    += skill.VerticalForce * (1f + weight * 3f);
-                acceleration.xz   += dir * (skill.PullForce + 25f);  // 向外散射
-                // 标记为被地刺命中（落地时死亡，但不爆炸）
-                tornadoMark = 2f;
-                flashTimer = 1f;
-            }
-        }
-
-        private void ProcessShockwave(ref float3 acceleration, ref float health, ref float flashTimer, ref float tornadoMark, float3 pos, float3 vel, RougeSkillArea skill)
-        {
-            if (pos.y > RenderHeight + 3f) return; // only affect grounded enemies
-            float2 diff = pos.xz - skill.Position;
-            float distSq = math.lengthsq(diff);
-            float outerR = skill.Radius;
-            float innerR = math.max(0f, outerR - skill.Length);
-            if (distSq < outerR * outerR && distSq > innerR * innerR && distSq > 0.0001f)
-            {
-                float dist = math.sqrt(distSq);
-                float2 dir = diff / dist;
-                float weight = 1f - math.saturate((dist - innerR) / math.max(skill.Length, 0.001f));
-                // Strong upward lift — enemies launched high into the air by ring
-                acceleration.xz += dir * (-skill.PullForce * weight * KnockbackResist);
-                acceleration.y += skill.VerticalForce * weight * KnockbackResist * 1.5f; // extra lift
-                // Mark as spike kill: fall = instant death, no explosion chain
-                tornadoMark = 2f;
-                flashTimer = 1f;
-            }
-        }
-
-        private void ProcessIceZone(ref float3 acceleration, ref float health, ref float flashTimer, ref float3 vel, float3 pos, RougeSkillArea skill)
-        {
-            if (math.abs(pos.y - RenderHeight) > 4f) return;
-            float2 diff = pos.xz - skill.Position;
-            float distSq = math.lengthsq(diff);
-            if (distSq < skill.Radius * skill.Radius)
-            {
-                float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
-                // Slow enemies: dampen velocity heavily
-                vel.xz *= math.lerp(1f, 0.1f, weight);
-                // Pull toward center
-                float2 pullDir = -math.normalizesafe(diff, float2.zero);
-                acceleration.xz += pullDir * (skill.PullForce * weight);
-                // Damage over time
-                float prevH = health;
-                health -= skill.Damage * DeltaTime * LaserDmgMult;
-                flashTimer = math.max(flashTimer, 0.3f);
-                if (prevH > 0f && health <= 0f)
-                    System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[2]);
-            }
-        }
-
-    private void Respawn(int index, ref float4 pos4, ref float4 vel4, ref float4 state4)
-    {
-        uint hash = math.hash(new uint2((uint)index + FrameSeed, FrameSeed ^ 0xA511E9B3u));
-        float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
-        float distance = math.lerp(SpawnRadiusMin, SpawnRadiusMax, ((hash >> 16) & 0xFFFFu) / 65535f);
-        float speedScale = math.lerp(0.9f, 1.15f, ((hash >> 8) & 0xFFu) / 255f);
-        float2 spawn = PlayerPos + new float2(math.cos(angle), math.sin(angle)) * distance;
-        spawn.x = math.clamp(spawn.x, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
-        spawn.y = math.clamp(spawn.y, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
-        pos4 = new float4(spawn.x, RenderHeight, spawn.y, EnemyRadius);
-        vel4 = float4.zero;
-        state4 = new float4(EnemyMaxHealth, EnemyRadius, EnemyMaxSpeed * speedScale, 0f);
-    }
-
-    private static float DistanceSqPointSegment(float2 point, float2 a, float2 b)
-    {
-        float2 ab = b - a;
-        float abLenSq = math.lengthsq(ab);
-        if (abLenSq <= 0.0001f) return math.lengthsq(point - a);
-        float t = math.saturate(math.dot(point - a, ab) / abLenSq);
-        float2 closest = a + ab * t;
-        return math.lengthsq(point - closest);
-    }
 }
 
 

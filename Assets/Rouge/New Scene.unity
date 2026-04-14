@@ -988,23 +988,256 @@ MonoBehaviour:
   obstacleLayers:
     serializedVersion: 2
     m_Bits: 4294967295
-  maxBullets: 128
-  fireInterval: 0.06
-  bulletSpeed: 42
-  bulletRadius: 0.2
-  bulletDamage: 14
-  bulletLifetime: 1.5
-  bulletsPerShot: 1
-  spreadAngle: 4
-  tornadoKey: 113
+  skillConfig:
+    AutoShoot:
+      Presentation:
+        DisplayName: Auto Shoot
+        TriggerLabel: AUTO SHOOT
+        IsPassive: 1
+        ActivationKey: 0
+      MaxBullets: 128
+      FireInterval: 0.06
+      BulletSpeed: 42
+      BulletRadius: 0.2
+      BulletDamage: 14
+      BulletLifetime: 1.5
+      BulletsPerShot: 1
+      SpreadAngle: 4
+    LeapSmash:
+      Presentation:
+        DisplayName: Leap Smash
+        TriggerLabel: SPACE
+        IsPassive: 0
+        ActivationKey: 32
+      Cooldown: 8
+      AirTime: 0.5
+      MaxDistance: 20
+      ArcHeight: 8
+      LandingRadius: 18
+      LandingDamage: 1500
+      LandingPullForce: -300
+      LandingVerticalForce: 60
+      LandingInvincibility: 0.5
+    LightPillar:
+      Presentation:
+        DisplayName: Light Pillar Strike
+        TriggerLabel: Q
+        IsPassive: 0
+        ActivationKey: 113
+      Cooldown: 10
+      BaseStrikeCount: 4
+      BonusStrikeLevelStep: 5
+      StartDistance: 6
+      DistanceStep: 14
+      BaseRadius: 10
+      RadiusPerLevel: 0.1
+      MaxRadius: 25
+      BaseDamage: 400
+      DamagePerLevel: 40
+      PullForce: -120
+      VerticalForce: 45
+      StrikeInterval: 0.15
+      VisualDuration: 0.5
+      RingDuration: 0.4
+    BombThrow:
+      Presentation:
+        DisplayName: Bomb Throw
+        TriggerLabel: E
+        IsPassive: 0
+        ActivationKey: 101
+      Cooldown: 3
+      SpawnHeight: 2
+      MaxThrowDistance: 30
+      FlightTime: 0.8
+      BaseRadius: 15
+      FragmentRadius: 10
+      MinRadius: 4
+      RadiusLossPerBounce: 2.5
+      BaseDamage: 350
+      DamageFalloff: 0.65
+      MinDamage: 60
+      PullForce: -150
+      VerticalForce: 50
+      MaxBounceCount: 4
+      StopHorizontalVelocitySq: 4
+      BounceHorizontalRetention: 0.75
+      BounceVerticalRetention: 0.85
+      BounceUpVelocity: 12
+      BounceUpVelocityLossPerBounce: 2
+      FragmentUnlockLevel: 5
+      FragmentBaseCount: 2
+      FragmentCountLevelStep: 10
+      MaxFragmentCount: 10
+      FragmentHorizontalSpeed: 12
+      FragmentVerticalSpeed: 14
+      RingDuration: 0.4
+    LaserBeam:
+      Presentation:
+        DisplayName: Laser Beam
+        TriggerLabel: R
+        IsPassive: 0
+        ActivationKey: 114
+      Cooldown: 6
+      BaseDuration: 0.5
+      DurationPerThirtyLevels: 1.5
+      MaxLength: 150
+      MaxWidth: 15
+      Damage: 600
+      PullForce: 50
+    MeleeSlash:
+      Presentation:
+        DisplayName: Melee Slash
+        TriggerLabel: MOUSE L-CLICK
+        IsPassive: 0
+        ActivationKey: 0
+      SlashCooldown: 0.22
+      FinisherCooldown: 1.5
+      ComboWindow: 1.5
+      SlashDuration: 0.22
+      SlashRadius: 8
+      SlashDepth: 3
+      ThrustRadiusMin: 3
+      ThrustRadiusMax: 10
+      ThrustWidth: 3
+      ThrustLength: 8
+      DefaultLunge: 3
+      ThrustLunge: 4
+      SpinLunge: 1.5
+      ThrustAdvanceSpeed: 20
+      SlashDamage: 800
+      SpinDamage: 1200
+      PullForce: 120
+      SlashVerticalForce: 80
+      ThrustVerticalForce: 90
+      FinisherSlamDuration: 0.12
+      FinisherSlamHeight: 16
+      FinisherSlamWidth: 5
+      FinisherSlamLength: 12
+      FinisherSlamThickness: 0.8
+      FinisherSlamForwardOffset: 7
+      SpikeDuration: 0.28
+      SpikeRiseRatio: 0.25
+      CenterSpikeHeight: 14
+      SideSpikeHeight: 10
+      CenterSpikeRadius: 7
+      SideSpikeRadius: 5
+      CenterSpikeDistance: 14
+      SideSpikeDistance: 12
+      SideSpikeAngle: 28
+      CenterSpikeVerticalForce: 90
+      SideSpikeVerticalForce: 65
+      SpikePullForce: 40
+    Shockwave:
+      Presentation:
+        DisplayName: Shockwave
+        TriggerLabel: V
+        IsPassive: 0
+        ActivationKey: 118
+      Cooldown: 30
+      Duration: 0.6
+      LaunchDuration: 0.18
+      SlamDuration: 0.12
+      JumpHeight: 12
+      RingLifetime: 0.7
+      RingDelay: 0.06
+      RingStartRadius: 8
+      RingEndRadius: 48
+      ImpactRadius: 38
+      ImpactRingCount: 5
+      RingThickness: 7
+      RingRadiusOffset: 0
+      RingLiftHeight: 4
+      RingLiftFalloff: 0.5
+      ImpactDamage: 2400
+      PullForce: -240
+      VerticalForce: 125
+      CameraLift: 1.35
+      CameraFovKick: 8
+      LandingShake: 0.26
+    MeteorRain:
+      Presentation:
+        DisplayName: Meteor Rain
+        TriggerLabel: T
+        IsPassive: 0
+        ActivationKey: 116
+      Cooldown: 8
+      Duration: 2
+      WaveCount: 8
+      WaveInterval: 0.2
+      ScatterRadius: 20
+      VisualDuration: 0.5
+      StartOffsetX: 10
+      StartOffsetZ: 5
+      FallHeight: 60
+      StartScale: 6
+      EndScale: 3
+      ImpactRadius: 15
+      ImpactDamage: 900
+      PullForce: -220
+      VerticalForce: 55
+      RingDuration: 0.45
+    IceZone:
+      Presentation:
+        DisplayName: Ice Zone
+        TriggerLabel: C
+        IsPassive: 0
+        ActivationKey: 99
+      Cooldown: 10
+      Duration: 4
+      BaseRadius: 8
+      MaxRadius: 25
+      MaxRadiusLevel: 500
+      TickDamage: 80
+      TickPullForce: 30
+      BurstRadiusBonus: 5
+      BurstDamage: 800
+      BurstPullForce: -250
+      BurstVerticalForce: 40
+      RingDuration: 0.6
+      PulseBaseAlpha: 0.3
+      PulseAmplitude: 0.1
+      PulseSpeed: 6
+    Dash:
+      Presentation:
+        DisplayName: Whirlwind
+        TriggerLabel: L-SHIFT
+        IsPassive: 0
+        ActivationKey: 304
+      Cooldown: 3
+      Duration: 1.5
+      Distance: 21
+      InvincibilityDuration: 1.5
+      SpinDamage: 9
+      HitRadius: 8
+      BladeWidth: 4
+      BladeLength: 11
+      BladeThickness: 0.75
+      MaxSpinRate: 3000
+      ImpactRadius: 10
+      ImpactDamage: 260
+      PullForce: 320
+      VerticalForce: 90
+      RingDuration: 0.5
+    OrbitBall:
+      Presentation:
+        DisplayName: Orbit Ball
+        TriggerLabel: PASSIVE
+        IsPassive: 1
+        ActivationKey: 0
+      MaxBalls: 8
+      LevelsPerBall: 4
+      OrbitSpeed: 2.5
+      FirstRingRadius: 6
+      SecondRingRadius: 10
+      FirstRingSpeedMultiplier: 1
+      SecondRingSpeedMultiplier: 0.75
+      VisualScale: 3
+      DamageRadius: 2
+      BaseDamage: 45
+      DamagePerLevel: 2
+      PullForce: 15
+      VerticalForce: 3
   tornadoMesh: {fileID: 2534964839176971238, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
-  tornadoRadius: 10
-  tornadoPullForce: 55
-  tornadoSpinForce: 85
-  tornadoLiftForce: 35
-  tornadoDuration: 4
-  tornadoCooldown: 6
-  tornadoTravelSpeed: 10
   sortBatchSize: 2048
   simulationBatchSize: 256
   fixedSimulationDt: 1

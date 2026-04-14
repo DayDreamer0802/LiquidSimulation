@@ -1,0 +1,1249 @@
+using Unity.Mathematics;
+using UnityEngine;
+
+public partial class RougeGameManager
+{
+    private void UpdateSkills(float dt)
+    {
+        EnsureSkillConfigInitialized();
+        TickSkillCooldowns(dt);
+
+        SkillUpdateContext context = CreateSkillContext(dt);
+        _skillAreaCount = 0;
+
+        UpdateLeapSmashSkill(context);
+        UpdateLightPillarSkill(context);
+        UpdateBombSkill(context);
+        UpdateLaserSkill(context);
+        UpdateMeleeSkill(context);
+        UpdateOrbitSkill(context);
+        UpdateShockwaveSkill(context);
+        UpdateMeteorSkill(context);
+        UpdateIceZoneSkill(context);
+        UpdatePoisonBottleSkill(context);
+        UpdateDashSkill(context);
+    }
+
+    private void TickSkillCooldowns(float dt)
+    {
+        PlayerSkillMath.StepCooldown(ref _jumpCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _tornadoCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _bombCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _laserCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _meleeCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _shockwaveCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _meteorCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _iceZoneCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _poisonCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _dashCooldownTimer, dt);
+    }
+
+    private SkillUpdateContext CreateSkillContext(float dt)
+    {
+        float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
+        Vector3 aim = player != null ? player.AimDirection : Vector3.forward;
+        float2 aimDir = math.normalizesafe(new float2(aim.x, aim.z), new float2(0f, 1f));
+        bool hasMouseGroundPoint = PlayerSkillMath.TryGetMouseGroundPoint(Camera.main, Input.mousePosition, renderHeight, out Vector3 mouseGroundPoint);
+
+        return new SkillUpdateContext(dt, playerPos, aimDir, hasMouseGroundPoint, mouseGroundPoint, renderHeight, arenaHalfExtent);
+    }
+
+    private bool TryAddSkillArea(RougeSkillArea area)
+    {
+        if (_skillAreaCount >= _skillAreasDb.Length)
+        {
+            return false;
+        }
+
+        _skillAreasDb[_skillAreaCount++] = area;
+        return true;
+    }
+
+    private bool TryAddCircularSkillArea(float2 position, float radius, float damage, float pullForce, float verticalForce, int type = 2)
+    {
+        return TryAddSkillArea(new RougeSkillArea
+        {
+            Type = type,
+            Position = position,
+            Radius = radius,
+            Damage = damage,
+            PullForce = pullForce,
+            VerticalForce = verticalForce
+        });
+    }
+
+    private bool IsMovementSkillLocked(PlayerSkillType skillType)
+    {
+        if (!PlayerSkillCatalog.HasTag(skillType, PlayerSkillTag.Movement))
+        {
+            return false;
+        }
+
+        return _dashSpinTimer > 0f || _jumpState == 1 || _shockwaveState != 0;
+    }
+
+    private void SpawnImpact(float2 position, float explosionRadius, float ringRadius, float ringDuration, Color ringColor, float heightOffset = 1f)
+    {
+        Vector3 ringCenter = PlayerSkillMath.ToWorld(position, renderHeight);
+        SpawnExplosionVFX(ringCenter + Vector3.up * heightOffset, explosionRadius);
+        SpawnAOERing(ringCenter, ringRadius, ringDuration, ringColor);
+    }
+
+    private void UpdateLeapSmashSkill(SkillUpdateContext context)
+    {
+        LeapSmashSkillConfig leap = skillConfig.LeapSmash;
+
+        if (_jumpState == 0 && !IsMovementSkillLocked(PlayerSkillType.LeapSmash) && Input.GetKeyDown(leap.Presentation.ActivationKey) && _jumpCooldownTimer <= 0f && player != null)
+        {
+            Vector3 startPos = player.transform.position;
+            Vector3 targetPos = context.HasMouseGroundPoint
+                ? context.MouseGroundPoint
+                : PlayerSkillMath.ToWorld(context.PlayerPosition + context.AimDirection * leap.MaxDistance, renderHeight);
+            targetPos = PlayerSkillMath.ClampPlanarDistance(startPos, targetPos, leap.MaxDistance);
+            targetPos.y = renderHeight;
+
+            _jumpStart = startPos;
+            _jumpTarget = targetPos;
+            _jumpTimer = leap.AirTime;
+            _jumpState = 1;
+            _jumpArcPos = startPos;
+            _jumpCooldownTimer = leap.Cooldown;
+            _invincibilityTimer = leap.AirTime + leap.LandingInvincibility;
+        }
+
+        if (_jumpState == 1)
+        {
+            _jumpTimer -= context.DeltaTime;
+            if (_jumpTimer <= 0f)
+            {
+                _jumpState = 0;
+                _jumpArcPos = _jumpTarget;
+                float2 landPos = PlayerSkillMath.ToPlanar(_jumpTarget);
+                if (TryAddCircularSkillArea(landPos, leap.LandingRadius, leap.LandingDamage, leap.LandingPullForce, leap.LandingVerticalForce))
+                {
+                    SpawnImpact(landPos, leap.LandingRadius * 0.5f, leap.LandingRadius, 0.5f, new Color(1f, 0.85f, 0.1f, 1f));
+                    _meleeHitShake = 0.25f;
+                }
+            }
+            else
+            {
+                float t = 1f - (_jumpTimer / leap.AirTime);
+                Vector3 flatPos = Vector3.Lerp(_jumpStart, _jumpTarget, t);
+                float arcY = renderHeight + leap.ArcHeight * Mathf.Sin(t * Mathf.PI);
+                _jumpArcPos = new Vector3(flatPos.x, arcY, flatPos.z);
+            }
+        }
+    }
+
+    private void UpdateLightPillarSkill(SkillUpdateContext context)
+    {
+        LightPillarSkillConfig lightPillar = skillConfig.LightPillar;
+        if (Input.GetKeyDown(lightPillar.Presentation.ActivationKey) && _tornadoCooldownTimer <= 0f)
+        {
+            _tornadoCooldownTimer = lightPillar.Cooldown;
+            _pillarStrikesTotal = lightPillar.BaseStrikeCount + (currentLevel / math.max(1, lightPillar.BonusStrikeLevelStep));
+            _pillarStrikesDone = 0;
+            _pillarNextStrikeTimer = 0f;
+            _pillarBasePos = context.PlayerPosition;
+            _pillarDirection = context.AimDirection;
+            if (_tornadoVisual) _tornadoVisual.SetActive(false);
+        }
+
+        if (_pillarStrikesDone >= _pillarStrikesTotal)
+        {
+            return;
+        }
+
+        _pillarNextStrikeTimer -= context.DeltaTime;
+        if (_pillarNextStrikeTimer > 0f)
+        {
+            return;
+        }
+
+        float dist = lightPillar.StartDistance + _pillarStrikesDone * lightPillar.DistanceStep;
+        float2 strikePos = _pillarBasePos + _pillarDirection * dist;
+        float strikeRadius = math.min(lightPillar.BaseRadius + currentLevel * lightPillar.RadiusPerLevel, lightPillar.MaxRadius);
+
+        for (int i = 0; i < MaxTornados; i++)
+        {
+            if (_tornadoLifeTimers[i] > 0f)
+            {
+                continue;
+            }
+
+            _tornadoPosData[i] = new float4(strikePos.x, renderHeight + 30f, strikePos.y, strikeRadius);
+            _tornadoStateData[i] = new float4(strikeRadius, 60f, strikeRadius, 1f);
+            _tornadoLifeTimers[i] = lightPillar.VisualDuration;
+            _tornadoMaxTimes[i] = lightPillar.VisualDuration;
+            break;
+        }
+
+        if (TryAddCircularSkillArea(strikePos, strikeRadius, lightPillar.BaseDamage + currentLevel * lightPillar.DamagePerLevel, lightPillar.PullForce, lightPillar.VerticalForce))
+        {
+            SpawnImpact(strikePos, strikeRadius, strikeRadius, lightPillar.RingDuration, new Color(1f, 0.9f, 0.2f, 1f));
+        }
+
+        _pillarStrikesDone++;
+        _pillarNextStrikeTimer = lightPillar.StrikeInterval;
+    }
+
+    private void UpdateBombSkill(SkillUpdateContext context)
+    {
+        BombThrowSkillConfig bomb = skillConfig.BombThrow;
+        bool hasActiveBomb = HasActiveBomb();
+        if (Input.GetKeyDown(bomb.Presentation.ActivationKey) && _bombCooldownTimer <= 0f && !hasActiveBomb)
+        {
+            _bombCooldownTimer = bomb.Cooldown;
+
+            Vector3 startPos = player != null
+                ? player.transform.position + Vector3.up * bomb.SpawnHeight
+                : new Vector3(context.PlayerPosition.x, renderHeight + bomb.SpawnHeight, context.PlayerPosition.y);
+            Vector3 targetPos = context.HasMouseGroundPoint
+                ? context.MouseGroundPoint
+                : PlayerSkillMath.ToWorld(context.PlayerPosition + context.AimDirection * bomb.MaxThrowDistance, renderHeight);
+
+            targetPos = PlayerSkillMath.ClampPlanarDistance(startPos, targetPos, bomb.MaxThrowDistance);
+
+            float flightTime = bomb.FlightTime;
+            Vector3 velocity = (targetPos - startPos) / flightTime;
+            velocity.y = (targetPos.y - startPos.y - 0.5f * Physics.gravity.y * flightTime * flightTime) / flightTime;
+
+            _activeBombs[0] = new RougeBomb
+            {
+                Active = true,
+                Position = startPos,
+                Velocity = velocity,
+                BounceCount = 0,
+                BaseRadius = bomb.BaseRadius
+            };
+            if (_bombVisuals[0]) _bombVisuals[0].SetActive(true);
+        }
+
+        for (int i = 0; i < MaxBombs; i++)
+        {
+            if (!_activeBombs[i].Active)
+            {
+                continue;
+            }
+
+            _activeBombs[i].Velocity += Physics.gravity * context.DeltaTime;
+            _activeBombs[i].Position += _activeBombs[i].Velocity * context.DeltaTime;
+
+            if (_bombVisuals[i])
+            {
+                _bombVisuals[i].transform.position = _activeBombs[i].Position;
+                _bombVisuals[i].transform.localScale = Vector3.one * math.max(_activeBombs[i].BaseRadius * 0.5f - _activeBombs[i].BounceCount * 1.5f, 3f);
+            }
+
+            if (_activeBombs[i].Position.y > renderHeight)
+            {
+                continue;
+            }
+
+            float bounceRadius = math.max(_activeBombs[i].BaseRadius - _activeBombs[i].BounceCount * bomb.RadiusLossPerBounce, bomb.MinRadius);
+            float bounceDamage = math.max(bomb.BaseDamage * (float)math.pow(bomb.DamageFalloff, _activeBombs[i].BounceCount), bomb.MinDamage);
+            float2 bombPos = PlayerSkillMath.ToPlanar(_activeBombs[i].Position);
+
+            if (TryAddCircularSkillArea(bombPos, bounceRadius, bounceDamage, bomb.PullForce, bomb.VerticalForce))
+            {
+                SpawnImpact(bombPos, bounceRadius * 0.5f, bounceRadius, bomb.RingDuration, new Color(1f, 0.5f, 0f, 1f));
+            }
+
+            if (i == 0 && _activeBombs[i].BounceCount == 0 && currentLevel >= bomb.FragmentUnlockLevel)
+            {
+                TrySpawnBombFragments(i);
+            }
+
+            _activeBombs[i].BounceCount++;
+            float2 horizontalVelocity = new float2(_activeBombs[i].Velocity.x, _activeBombs[i].Velocity.z);
+
+            if (_activeBombs[i].BounceCount >= bomb.MaxBounceCount || math.lengthsq(horizontalVelocity) < bomb.StopHorizontalVelocitySq)
+            {
+                _activeBombs[i].Active = false;
+                if (_bombVisuals[i]) _bombVisuals[i].SetActive(false);
+                continue;
+            }
+
+            _activeBombs[i].Position = new Vector3(_activeBombs[i].Position.x, renderHeight + 0.1f, _activeBombs[i].Position.z);
+            float bounceUpVelocity = math.max(-_activeBombs[i].Velocity.y * bomb.BounceVerticalRetention, bomb.BounceUpVelocity - _activeBombs[i].BounceCount * bomb.BounceUpVelocityLossPerBounce);
+            _activeBombs[i].Velocity = new Vector3(
+                _activeBombs[i].Velocity.x * bomb.BounceHorizontalRetention,
+                bounceUpVelocity,
+                _activeBombs[i].Velocity.z * bomb.BounceHorizontalRetention);
+        }
+    }
+
+    private bool HasActiveBomb()
+    {
+        for (int i = 0; i < MaxBombs; i++)
+        {
+            if (_activeBombs[i].Active)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void TrySpawnBombFragments(int rootBombIndex)
+    {
+        BombThrowSkillConfig bomb = skillConfig.BombThrow;
+        float angleBase = math.atan2(_activeBombs[rootBombIndex].Velocity.z, _activeBombs[rootBombIndex].Velocity.x);
+        int splitCount = math.min(bomb.MaxFragmentCount, bomb.FragmentBaseCount + currentLevel / math.max(1, bomb.FragmentCountLevelStep));
+        int spawned = 0;
+
+        for (int slot = 1; slot < MaxBombs && spawned < splitCount; slot++)
+        {
+            if (_activeBombs[slot].Active)
+            {
+                continue;
+            }
+
+            float spreadOffset = (spawned * (360f / splitCount)) * math.PI / 180f;
+            Vector3 scatterVelocity = new Vector3(
+                math.cos(angleBase + spreadOffset) * bomb.FragmentHorizontalSpeed,
+                bomb.FragmentVerticalSpeed,
+                math.sin(angleBase + spreadOffset) * bomb.FragmentHorizontalSpeed);
+
+            _activeBombs[slot] = new RougeBomb
+            {
+                Active = true,
+                Position = _activeBombs[rootBombIndex].Position,
+                Velocity = scatterVelocity,
+                BounceCount = 1,
+                BaseRadius = bomb.FragmentRadius
+            };
+
+            if (_bombVisuals[slot]) _bombVisuals[slot].SetActive(true);
+            spawned++;
+        }
+    }
+
+    private void UpdateLaserSkill(SkillUpdateContext context)
+    {
+        LaserBeamSkillConfig laser = skillConfig.LaserBeam;
+        if (Input.GetKeyDown(laser.Presentation.ActivationKey) && _laserCooldownTimer <= 0f)
+        {
+            _laserCooldownTimer = laser.Cooldown;
+            _laserTimer = laser.BaseDuration + (_skillLevels[2] / 30f) * laser.DurationPerThirtyLevels;
+            _laserPos = context.PlayerPosition;
+            _laserDir = context.AimDirection;
+        }
+
+        if (_laserTimer <= 0f)
+        {
+            if (_laserVisual) _laserVisual.SetActive(false);
+            for (int i = 0; i < MaxLaserSubBeams; i++)
+            {
+                if (_laserExtraVisuals[i] != null)
+                {
+                    _laserExtraVisuals[i].SetActive(false);
+                }
+            }
+            return;
+        }
+
+        float laserDuration = laser.BaseDuration + (_skillLevels[2] / 30f) * laser.DurationPerThirtyLevels;
+        _laserTimer -= context.DeltaTime;
+        float progress = 1f - math.max(0f, _laserTimer / laserDuration);
+        float sweepProgress = math.saturate(progress * 3f);
+        float sweepEased = 1f - (1f - sweepProgress) * (1f - sweepProgress);
+        float length = laser.MaxLength * sweepEased;
+        float width = laser.MaxWidth * math.min(1f, 2f * progress) * (1f - progress);
+
+        int beamCount = math.min(laser.MaxBeamCount, 1 + (currentLevel / math.max(1, laser.ExtraBeamLevelStep)) * laser.ExtraBeamsPerStep);
+        beamCount = math.max(1, beamCount);
+
+        if (_laserVisual)
+        {
+            _laserVisual.SetActive(true);
+            _laserVisual.transform.position = new Vector3(_laserPos.x + _laserDir.x * (length * 0.5f), renderHeight + 1f, _laserPos.y + _laserDir.y * (length * 0.5f));
+            _laserVisual.transform.rotation = Quaternion.LookRotation(new Vector3(_laserDir.x, 0f, _laserDir.y)) * Quaternion.Euler(90f, 0f, 0f);
+            _laserVisual.transform.localScale = new Vector3(width, length * 0.5f, width * 0.4f);
+        }
+
+        TryAddSkillArea(new RougeSkillArea
+        {
+            Type = 3,
+            Position = _laserPos,
+            Direction = _laserDir,
+            Length = length,
+            Radius = width,
+            Damage = laser.Damage,
+            PullForce = laser.PullForce,
+            VerticalForce = 0f
+        });
+
+        int extraBeamCount = beamCount - 1;
+        for (int i = 0; i < MaxLaserSubBeams; i++)
+        {
+            if (i >= extraBeamCount)
+            {
+                if (_laserExtraVisuals[i] != null)
+                {
+                    _laserExtraVisuals[i].SetActive(false);
+                }
+
+                continue;
+            }
+
+            int sideIndex = i / 2 + 1;
+            float sign = i % 2 == 0 ? -1f : 1f;
+            float normalizedOffset = sideIndex / math.max(1f, extraBeamCount * 0.5f);
+            float angle = sign * laser.ScatterAngle * normalizedOffset * math.PI / 180f;
+            float2 beamDir = Rotate(_laserDir, angle);
+            float subWidth = width * laser.SubBeamRadiusMultiplier;
+            float subDamage = laser.Damage * laser.SubBeamDamageMultiplier;
+            Vector3 beamPosition = new Vector3(_laserPos.x + beamDir.x * (length * 0.5f), renderHeight + 0.9f, _laserPos.y + beamDir.y * (length * 0.5f));
+
+            if (_laserExtraVisuals[i] != null)
+            {
+                _laserExtraVisuals[i].SetActive(true);
+                _laserExtraVisuals[i].transform.position = beamPosition;
+                _laserExtraVisuals[i].transform.rotation = Quaternion.LookRotation(new Vector3(beamDir.x, 0f, beamDir.y)) * Quaternion.Euler(90f, 0f, 0f);
+                _laserExtraVisuals[i].transform.localScale = new Vector3(subWidth, length * 0.5f, subWidth * 0.4f);
+            }
+
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 3,
+                Position = _laserPos,
+                Direction = beamDir,
+                Length = length,
+                Radius = subWidth,
+                Damage = subDamage,
+                PullForce = laser.PullForce,
+                VerticalForce = 0f
+            });
+        }
+    }
+
+    private void UpdateMeleeSkill(SkillUpdateContext context)
+    {
+        MeleeSlashSkillConfig melee = skillConfig.MeleeSlash;
+        if (_meleeComboWindow > 0f)
+        {
+            _meleeComboWindow -= context.DeltaTime;
+        }
+        else
+        {
+            _meleeComboStep = 0;
+        }
+
+        if (Input.GetMouseButtonDown(0) && _meleeCooldownTimer <= 0f)
+        {
+            _meleePos = context.PlayerPosition;
+            _meleeDir = context.AimDirection;
+
+            _meleeComboStep++;
+            if (_meleeComboStep > 5)
+            {
+                _meleeComboStep = 1;
+            }
+
+            if (_meleeComboStep == 5)
+            {
+                _spikePos = context.PlayerPosition;
+                _spikeDir = context.AimDirection;
+                _meleeFinisherPos = context.PlayerPosition;
+                _meleeFinisherDir = context.AimDirection;
+                _meleeFinisherSlamTimer = melee.FinisherSlamDuration;
+                _spikeStartupTimer = melee.FinisherSlamDuration;
+                _spikeTimer = 0f;
+                _meleeComboStep = 0;
+                _meleeComboWindow = 0f;
+                _meleeCooldownTimer = melee.FinisherCooldown;
+                _meleeTimer = 0f;
+                _meleeHitShake = 0.15f;
+            }
+            else
+            {
+                _meleeCooldownTimer = melee.SlashCooldown;
+                _meleeComboWindow = melee.ComboWindow;
+                _meleeTimer = melee.SlashDuration;
+                float lungeAmount = _meleeComboStep == 3 ? melee.ThrustLunge : melee.DefaultLunge;
+                if (_meleeComboStep == 4)
+                {
+                    lungeAmount = melee.SpinLunge;
+                }
+
+                if (player != null)
+                {
+                    player.transform.position += new Vector3(context.AimDirection.x, 0f, context.AimDirection.y) * lungeAmount;
+                }
+
+                _meleeHitShake = 0.08f;
+            }
+        }
+
+        if (_meleeTimer > 0f)
+        {
+            _meleeTimer -= context.DeltaTime;
+            float progress = 1f - math.max(0f, _meleeTimer / melee.SlashDuration);
+            float easedProgress = 1f - (1f - progress) * (1f - progress);
+
+            float angle = 0f;
+            float radius = melee.SlashRadius;
+            Vector3 scale = new Vector3(radius * 2f, 0.5f, melee.SlashDepth);
+
+            if (_meleeComboStep == 1)
+            {
+                angle = math.lerp(-70f, 70f, easedProgress) * math.PI / 180f;
+            }
+            else if (_meleeComboStep == 2)
+            {
+                angle = math.lerp(70f, -70f, easedProgress) * math.PI / 180f;
+            }
+            else if (_meleeComboStep == 3)
+            {
+                angle = 0f;
+                radius = math.lerp(melee.ThrustRadiusMin, melee.ThrustRadiusMax, math.sin(easedProgress * math.PI));
+                scale = new Vector3(melee.ThrustWidth, 0.5f, melee.ThrustLength);
+                if (player != null)
+                {
+                    player.transform.position += new Vector3(_meleeDir.x, 0f, _meleeDir.y) * (melee.ThrustAdvanceSpeed * context.DeltaTime);
+                }
+            }
+            else if (_meleeComboStep == 4)
+            {
+                angle = math.lerp(0f, 360f, easedProgress) * math.PI / 180f;
+                scale = new Vector3(radius * 2f, 0.5f, radius * 2f);
+            }
+
+            float2 swingDirection = Rotate(_meleeDir, angle);
+            Vector3 center = new Vector3(context.PlayerPosition.x, renderHeight + 1f, context.PlayerPosition.y) + new Vector3(swingDirection.x, 0f, swingDirection.y) * (radius * 0.4f);
+
+            if (_meleeVisual)
+            {
+                _meleeVisual.SetActive(true);
+                _meleeVisual.transform.position = center;
+                _meleeVisual.transform.rotation = Quaternion.LookRotation(new Vector3(swingDirection.x, 0f, swingDirection.y));
+                _meleeVisual.transform.localScale = scale;
+            }
+
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 4,
+                Position = new float2(center.x, center.z),
+                Direction = swingDirection,
+                Radius = radius,
+                Damage = _meleeComboStep == 4 ? melee.SpinDamage : melee.SlashDamage,
+                PullForce = melee.PullForce,
+                VerticalForce = _meleeComboStep == 3 ? melee.ThrustVerticalForce : melee.SlashVerticalForce
+            });
+        }
+        else if (_meleeVisual)
+        {
+            _meleeVisual.SetActive(false);
+        }
+
+        UpdateMeleeFinisherSlam(context);
+        UpdateSpikeFinisher(context);
+    }
+
+    private void UpdateMeleeFinisherSlam(SkillUpdateContext context)
+    {
+        MeleeSlashSkillConfig melee = skillConfig.MeleeSlash;
+        if (_spikeStartupTimer > 0f)
+        {
+            float previousStartupTimer = _spikeStartupTimer;
+            _spikeStartupTimer -= context.DeltaTime;
+            if (_spikeStartupTimer <= 0f && previousStartupTimer > 0f)
+            {
+                _spikeTimer = melee.SpikeDuration;
+                _meleeHitShake = 0.12f;
+            }
+        }
+
+        if (_meleeFinisherSlamTimer <= 0f)
+        {
+            if (_meleeFinisherVisual != null)
+            {
+                _meleeFinisherVisual.SetActive(false);
+            }
+
+            return;
+        }
+
+        _meleeFinisherSlamTimer -= context.DeltaTime;
+        float progress = 1f - math.max(0f, _meleeFinisherSlamTimer / melee.FinisherSlamDuration);
+        float eased = 1f - math.pow(1f - progress, 3f);
+        float angleDegrees = math.lerp(melee.FinisherArcStartAngle, melee.FinisherArcEndAngle, eased);
+        float angleRadians = angleDegrees * math.PI / 180f;
+        Vector3 forward = new Vector3(_meleeFinisherDir.x, 0f, _meleeFinisherDir.y);
+        Vector3 pivot = new Vector3(_meleeFinisherPos.x, renderHeight, _meleeFinisherPos.y);
+        Vector3 bladeDirection = (forward * math.cos(angleRadians) + Vector3.up * math.sin(angleRadians)).normalized;
+        Vector3 swingNormal = Vector3.Cross(forward, Vector3.up).normalized;
+        if (swingNormal.sqrMagnitude < 0.001f)
+        {
+            swingNormal = Vector3.forward;
+        }
+
+        Vector3 bladeUp = Vector3.Cross(swingNormal, bladeDirection).normalized;
+        Vector3 slamPosition = pivot + bladeDirection * (melee.FinisherSlamLength * 0.5f);
+        Quaternion slamRotation = Quaternion.LookRotation(bladeDirection, bladeUp);
+        float arcScaleBoost = 1f + math.sin(eased * math.PI) * 0.1f;
+
+        if (_meleeFinisherVisual != null)
+        {
+            _meleeFinisherVisual.SetActive(true);
+            _meleeFinisherVisual.transform.position = slamPosition;
+            _meleeFinisherVisual.transform.rotation = slamRotation;
+            _meleeFinisherVisual.transform.localScale = new Vector3(melee.FinisherSlamWidth * arcScaleBoost, melee.FinisherSlamThickness, melee.FinisherSlamLength * arcScaleBoost);
+        }
+
+        if (_meleeFinisherSlamTimer > 0f)
+        {
+            return;
+        }
+
+        if (_meleeFinisherVisual != null)
+        {
+            _meleeFinisherVisual.SetActive(false);
+        }
+    }
+
+    private void UpdateSpikeFinisher(SkillUpdateContext context)
+    {
+        MeleeSlashSkillConfig melee = skillConfig.MeleeSlash;
+        if (_spikeStartupTimer > 0f || _spikeTimer <= 0f)
+        {
+            return;
+        }
+
+        _spikeTimer -= context.DeltaTime;
+        float normalizedTime = 1f - _spikeTimer / melee.SpikeDuration;
+        float heightFactor = math.saturate(math.sin(normalizedTime * math.PI));
+        float[] spikeMaxHeights = { melee.CenterSpikeHeight, melee.SideSpikeHeight, melee.SideSpikeHeight };
+        float[] spikeRadii = { melee.CenterSpikeRadius, melee.SideSpikeRadius, melee.SideSpikeRadius };
+        float[] spikeDistances = { melee.CenterSpikeDistance, melee.SideSpikeDistance, melee.SideSpikeDistance };
+        float sideSpikeAngle = melee.SideSpikeAngle * math.PI / 180f;
+        float[] spikeAngles = { 0f, -sideSpikeAngle, sideSpikeAngle };
+        bool risingPhase = normalizedTime < melee.SpikeRiseRatio + 0.12f;
+
+        for (int i = 0; i < 3; i++)
+        {
+            float2 spikeBase = _spikePos + Rotate(_spikeDir, spikeAngles[i]) * spikeDistances[i];
+            float height = spikeMaxHeights[i] * heightFactor;
+            float radius = spikeRadii[i];
+
+            if (_spikeVisuals[i] != null)
+            {
+                bool visible = height > 0.05f;
+                _spikeVisuals[i].SetActive(visible);
+                if (visible)
+                {
+                    _spikeVisuals[i].transform.position = new Vector3(spikeBase.x, renderHeight + height * 0.5f, spikeBase.y);
+                    _spikeVisuals[i].transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
+                }
+            }
+
+            if (risingPhase && height > 0.3f)
+            {
+                TryAddSkillArea(new RougeSkillArea
+                {
+                    Type = 6,
+                    Position = spikeBase,
+                    Radius = radius + 3f,
+                    VerticalForce = i == 0 ? melee.CenterSpikeVerticalForce : melee.SideSpikeVerticalForce,
+                    PullForce = melee.SpikePullForce,
+                    Damage = 0f
+                });
+            }
+        }
+
+        if (_spikeTimer > 0f)
+        {
+            return;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (_spikeVisuals[i] != null)
+            {
+                _spikeVisuals[i].SetActive(false);
+            }
+        }
+    }
+
+    private void UpdateOrbitSkill(SkillUpdateContext context)
+    {
+        OrbitBallSkillConfig orbit = skillConfig.OrbitBall;
+        int numBalls = math.min(orbit.MaxBalls, 1 + _skillLevels[4] / math.max(1, orbit.LevelsPerBall));
+        if (numBalls <= 0)
+        {
+            for (int i = _orbitVisuals.Count - 1; i >= 0; i--)
+            {
+                Destroy(_orbitVisuals[i]);
+                _orbitVisuals.RemoveAt(i);
+            }
+
+            return;
+        }
+
+        _orbitTimer += context.DeltaTime * orbit.OrbitSpeed;
+        float[] ringRadii = { orbit.FirstRingRadius, orbit.SecondRingRadius };
+        float[] ringSpeeds = { orbit.FirstRingSpeedMultiplier, orbit.SecondRingSpeedMultiplier };
+
+        while (_orbitVisuals.Count < numBalls)
+        {
+            GameObject ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Destroy(ball.GetComponent<Collider>());
+            ball.name = "Orbit Ball " + _orbitVisuals.Count;
+            ball.GetComponent<MeshRenderer>().material = _orbitMat;
+            _orbitVisuals.Add(ball);
+        }
+
+        for (int i = _orbitVisuals.Count - 1; i >= numBalls; i--)
+        {
+            Destroy(_orbitVisuals[i]);
+            _orbitVisuals.RemoveAt(i);
+        }
+
+        for (int i = 0; i < numBalls; i++)
+        {
+            int ring = i / 4;
+            int ballInRing = i % 4;
+            float orbitRadius = ringRadii[math.min(ring, ringRadii.Length - 1)];
+            float speedMultiplier = ringSpeeds[math.min(ring, ringSpeeds.Length - 1)];
+            float offset = (float)ballInRing / 4f * (math.PI * 2f);
+            float orbitTime = _orbitTimer * speedMultiplier + offset;
+            float2 orbitPos = context.PlayerPosition + new float2(math.cos(orbitTime), math.sin(orbitTime)) * orbitRadius;
+
+            if (_orbitVisuals[i] != null)
+            {
+                _orbitVisuals[i].transform.position = new Vector3(orbitPos.x, renderHeight + 1.5f, orbitPos.y);
+                _orbitVisuals[i].transform.localScale = Vector3.one * orbit.VisualScale;
+            }
+
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 5,
+                Position = orbitPos,
+                Radius = orbit.DamageRadius,
+                Damage = orbit.BaseDamage + currentLevel * orbit.DamagePerLevel,
+                PullForce = orbit.PullForce,
+                VerticalForce = orbit.VerticalForce
+            });
+        }
+    }
+
+    private void UpdateShockwaveSkill(SkillUpdateContext context)
+    {
+        ShockwaveSkillConfig shockwave = skillConfig.Shockwave;
+        if (_shockwaveState == 0 && !IsMovementSkillLocked(PlayerSkillType.Shockwave) && Input.GetKeyDown(shockwave.Presentation.ActivationKey) && _shockwaveCooldownTimer <= 0f && player != null && _jumpState == 0)
+        {
+            _shockwaveCooldownTimer = shockwave.Cooldown;
+            _shockwavePos = context.PlayerPosition;
+            _shockwaveJumpStart = player.transform.position;
+            _shockwaveTimer = shockwave.LaunchDuration;
+            _shockwaveState = 1;
+            _invincibilityTimer = math.max(_invincibilityTimer, shockwave.LaunchDuration + shockwave.SlamDuration + 0.2f);
+            SpawnAOERing(PlayerSkillMath.ToWorld(_shockwavePos, renderHeight + 0.04f), shockwave.RingStartRadius * 0.75f, 0.22f, new Color(1f, 0.86f, 0.2f, 1f));
+        }
+
+        if (_shockwaveState == 0)
+        {
+            if (_shockwaveVisual) _shockwaveVisual.SetActive(false);
+            return;
+        }
+
+        Vector3 landingPosition = PlayerSkillMath.ToWorld(_shockwavePos, renderHeight);
+        if (_shockwaveState == 1)
+        {
+            _shockwaveTimer = math.max(0f, _shockwaveTimer - context.DeltaTime);
+            float riseProgress = 1f - math.max(0f, _shockwaveTimer / math.max(0.01f, shockwave.LaunchDuration));
+            float riseEase = math.sin(riseProgress * math.PI * 0.5f);
+            player.transform.position = new Vector3(landingPosition.x, renderHeight + shockwave.JumpHeight * riseEase, landingPosition.z);
+            _cameraLiftOffset = math.max(_cameraLiftOffset, shockwave.CameraLift * riseEase);
+            _cameraFovOffset = math.min(_cameraFovOffset, -shockwave.CameraFovKick * riseEase);
+            _meleeHitShake = math.max(_meleeHitShake, 0.05f + riseEase * 0.04f);
+
+            if (_shockwaveTimer <= 0f)
+            {
+                _shockwaveState = 2;
+                _shockwaveTimer = shockwave.SlamDuration;
+            }
+
+            return;
+        }
+
+        _shockwaveTimer = math.max(0f, _shockwaveTimer - context.DeltaTime);
+        float slamProgress = 1f - math.max(0f, _shockwaveTimer / math.max(0.01f, shockwave.SlamDuration));
+        float remainingHeight = shockwave.JumpHeight * math.pow(1f - slamProgress, 1.4f);
+        player.transform.position = new Vector3(landingPosition.x, renderHeight + remainingHeight, landingPosition.z);
+        _cameraLiftOffset = math.max(_cameraLiftOffset, shockwave.CameraLift * (1f - slamProgress));
+        _cameraFovOffset = math.lerp(-shockwave.CameraFovKick * 0.55f, 0f, slamProgress);
+        _meleeHitShake = math.max(_meleeHitShake, 0.08f + slamProgress * 0.08f);
+
+        if (_shockwaveTimer > 0f)
+        {
+            return;
+        }
+
+        player.transform.position = landingPosition;
+        _shockwaveState = 0;
+        _cameraLiftOffset = 0f;
+        _cameraFovOffset = 0f;
+        _meleeHitShake = math.max(_meleeHitShake, shockwave.LandingShake);
+
+        TryAddCircularSkillArea(_shockwavePos, shockwave.ImpactRadius, shockwave.ImpactDamage, shockwave.PullForce, shockwave.VerticalForce);
+
+        int ringCount = math.max(1, shockwave.ImpactRingCount);
+        for (int i = 0; i < ringCount; i++)
+        {
+            float t = ringCount == 1 ? 1f : i / (float)(ringCount - 1);
+            float radius = math.lerp(shockwave.RingStartRadius, shockwave.RingEndRadius, t);
+            float ringDuration = shockwave.RingLifetime + i * shockwave.RingDelay;
+            SpawnAOERing(new Vector3(_shockwavePos.x, renderHeight + 0.04f, _shockwavePos.y), radius, ringDuration, new Color(1f, 0.82f, 0.16f, 1f));
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 7,
+                Position = _shockwavePos,
+                Radius = radius,
+                Length = shockwave.RingThickness,
+                Damage = 0f,
+                PullForce = shockwave.PullForce,
+                VerticalForce = shockwave.VerticalForce
+            });
+        }
+    }
+
+    private void UpdateMeteorSkill(SkillUpdateContext context)
+    {
+        MeteorRainSkillConfig meteor = skillConfig.MeteorRain;
+        if (Input.GetKeyDown(meteor.Presentation.ActivationKey) && _meteorCooldownTimer <= 0f)
+        {
+            _meteorCooldownTimer = meteor.Cooldown;
+            _meteorTimer = meteor.Duration;
+            _meteorWaveIndex = 0;
+            _meteorWaveTimer = 0f;
+            float2 fallbackTarget = context.PlayerPosition + context.AimDirection * meteor.ScatterRadius;
+            _meteorTargetPos = context.HasMouseGroundPoint ? PlayerSkillMath.ToPlanar(context.MouseGroundPoint) : fallbackTarget;
+        }
+
+        if (_meteorTimer > 0f)
+        {
+            _meteorTimer -= context.DeltaTime;
+            _meteorWaveTimer -= context.DeltaTime;
+            if (_meteorWaveTimer <= 0f && _meteorWaveIndex < meteor.WaveCount)
+            {
+                _meteorWaveTimer = meteor.WaveInterval;
+                uint hash = math.hash(new uint2((uint)_meteorWaveIndex + 1u, (uint)Time.frameCount));
+                float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
+                float distance = ((hash >> 16) & 0xFFFFu) / 65535f * meteor.ScatterRadius;
+                float2 impactPos = _meteorTargetPos + new float2(math.cos(angle), math.sin(angle)) * distance;
+
+                if (_meteorWaveIndex < MeteorVisualMax)
+                {
+                    _meteorVisualTimers[_meteorWaveIndex] = meteor.VisualDuration;
+                    _meteorVisualTargets[_meteorWaveIndex] = new Vector3(impactPos.x, renderHeight, impactPos.y);
+                    if (_meteorVisuals[_meteorWaveIndex] != null)
+                    {
+                        _meteorVisuals[_meteorWaveIndex].SetActive(true);
+                    }
+                }
+
+                _meteorWaveIndex++;
+            }
+        }
+
+        for (int i = 0; i < MeteorVisualMax; i++)
+        {
+            if (_meteorVisualTimers[i] <= 0f)
+            {
+                continue;
+            }
+
+            float previousTimer = _meteorVisualTimers[i];
+            _meteorVisualTimers[i] -= context.DeltaTime;
+            float progress = 1f - math.max(0f, _meteorVisualTimers[i] / meteor.VisualDuration);
+            Vector3 target = _meteorVisualTargets[i];
+            Vector3 meteorPosition = target + new Vector3(meteor.StartOffsetX - progress * meteor.StartOffsetX, meteor.FallHeight * (1f - progress), meteor.StartOffsetZ - progress * meteor.StartOffsetZ);
+            float scale = math.lerp(meteor.StartScale, meteor.EndScale, progress);
+
+            if (_meteorVisuals[i] != null)
+            {
+                _meteorVisuals[i].transform.position = meteorPosition;
+                _meteorVisuals[i].transform.localScale = new Vector3(scale, scale * 2f, scale);
+                Vector3 fallDirection = target - meteorPosition;
+                if (fallDirection.sqrMagnitude > 0.0001f)
+                {
+                    _meteorVisuals[i].transform.rotation = Quaternion.LookRotation(fallDirection.normalized);
+                }
+                if (progress >= 1f)
+                {
+                    _meteorVisuals[i].SetActive(false);
+                }
+            }
+
+            if (_meteorVisualTimers[i] <= 0f && previousTimer > 0f)
+            {
+                float2 impactPos = new float2(target.x, target.z);
+                if (TryAddCircularSkillArea(impactPos, meteor.ImpactRadius, meteor.ImpactDamage, meteor.PullForce, meteor.VerticalForce))
+                {
+                    SpawnImpact(impactPos, meteor.ImpactRadius, meteor.ImpactRadius, meteor.RingDuration, new Color(1f, 0.2f, 0f, 1f));
+                }
+            }
+        }
+    }
+
+    private void UpdateIceZoneSkill(SkillUpdateContext context)
+    {
+        IceZoneSkillConfig iceZone = skillConfig.IceZone;
+        if (Input.GetKeyDown(iceZone.Presentation.ActivationKey) && _iceZoneCooldownTimer <= 0f)
+        {
+            _iceZoneCooldownTimer = iceZone.Cooldown;
+            _iceZoneTimer = iceZone.Duration;
+            float2 fallbackTarget = context.PlayerPosition + context.AimDirection * iceZone.BaseRadius;
+            _iceZonePos = context.HasMouseGroundPoint ? PlayerSkillMath.ToPlanar(context.MouseGroundPoint) : fallbackTarget;
+        }
+
+        if (_iceZoneTimer <= 0f)
+        {
+            if (_iceZoneVisual) _iceZoneVisual.SetActive(false);
+            return;
+        }
+
+        float previousTimer = _iceZoneTimer;
+        _iceZoneTimer -= context.DeltaTime;
+    float iceRadius = math.lerp(iceZone.BaseRadius, iceZone.MaxRadius, math.min(1f, currentLevel / iceZone.MaxRadiusLevel));
+
+        if (_iceZoneVisual)
+        {
+            _iceZoneVisual.SetActive(true);
+            _iceZoneVisual.transform.position = new Vector3(_iceZonePos.x, renderHeight + 0.03f, _iceZonePos.y);
+            _iceZoneVisual.transform.localScale = new Vector3(iceRadius * 2f, 0.06f, iceRadius * 2f);
+            float pulse = iceZone.PulseBaseAlpha + iceZone.PulseAmplitude * math.sin(_survivalTime * iceZone.PulseSpeed);
+            if (_iceZoneMat != null)
+            {
+                _iceZoneMat.color = new Color(0.3f, 0.7f, 1f, pulse);
+            }
+        }
+
+        TryAddSkillArea(new RougeSkillArea
+        {
+            Type = 8,
+            Position = _iceZonePos,
+            Radius = iceRadius,
+            Damage = iceZone.TickDamage,
+            PullForce = iceZone.TickPullForce,
+            VerticalForce = 0f
+        });
+
+        if (previousTimer > 0f && _iceZoneTimer <= 0f)
+        {
+            if (TryAddCircularSkillArea(_iceZonePos, iceRadius + iceZone.BurstRadiusBonus, iceZone.BurstDamage, iceZone.BurstPullForce, iceZone.BurstVerticalForce))
+            {
+                SpawnImpact(_iceZonePos, iceRadius, iceRadius + iceZone.BurstRadiusBonus, iceZone.RingDuration, new Color(0.3f, 0.7f, 1f, 1f), 2f);
+            }
+        }
+    }
+
+    private void UpdatePoisonBottleSkill(SkillUpdateContext context)
+    {
+        PoisonBottleSkillConfig poison = skillConfig.PoisonBottle;
+        if (Input.GetKeyDown(poison.Presentation.ActivationKey) && _poisonCooldownTimer <= 0f)
+        {
+            for (int i = 0; i < MaxPoisonBottles; i++)
+            {
+                if (_activePoisonBottles[i].Active)
+                {
+                    continue;
+                }
+
+                _poisonCooldownTimer = poison.Cooldown;
+                Vector3 startPos = player != null
+                    ? player.transform.position + Vector3.up * poison.SpawnHeight
+                    : new Vector3(context.PlayerPosition.x, renderHeight + poison.SpawnHeight, context.PlayerPosition.y);
+                Vector3 targetPos = context.HasMouseGroundPoint
+                    ? context.MouseGroundPoint
+                    : PlayerSkillMath.ToWorld(context.PlayerPosition + context.AimDirection * poison.MaxThrowDistance, renderHeight);
+
+                targetPos = PlayerSkillMath.ClampPlanarDistance(startPos, targetPos, poison.MaxThrowDistance);
+                float flightTime = math.max(0.1f, poison.FlightTime);
+                Vector3 velocity = (targetPos - startPos) / flightTime;
+                velocity.y = (targetPos.y - startPos.y - 0.5f * Physics.gravity.y * flightTime * flightTime) / flightTime;
+
+                _activePoisonBottles[i] = new RougeThrownBottle
+                {
+                    Active = true,
+                    Position = startPos,
+                    Velocity = velocity
+                };
+
+                if (_poisonBottleVisuals[i] != null)
+                {
+                    _poisonBottleVisuals[i].SetActive(true);
+                    _poisonBottleVisuals[i].transform.position = startPos;
+                    _poisonBottleVisuals[i].transform.localScale = Vector3.one * poison.BottleVisualScale;
+                }
+
+                break;
+            }
+        }
+
+        for (int i = 0; i < MaxPoisonBottles; i++)
+        {
+            if (!_activePoisonBottles[i].Active)
+            {
+                if (_poisonBottleVisuals[i] != null)
+                {
+                    _poisonBottleVisuals[i].SetActive(false);
+                }
+
+                continue;
+            }
+
+            _activePoisonBottles[i].Velocity += Physics.gravity * context.DeltaTime;
+            _activePoisonBottles[i].Position += _activePoisonBottles[i].Velocity * context.DeltaTime;
+
+            if (_poisonBottleVisuals[i] != null)
+            {
+                _poisonBottleVisuals[i].SetActive(true);
+                _poisonBottleVisuals[i].transform.position = _activePoisonBottles[i].Position;
+                _poisonBottleVisuals[i].transform.localScale = Vector3.one * poison.BottleVisualScale;
+            }
+
+            if (_activePoisonBottles[i].Position.y > renderHeight)
+            {
+                continue;
+            }
+
+            float2 impactPos = PlayerSkillMath.ToPlanar(_activePoisonBottles[i].Position);
+            ActivatePoisonZone(impactPos, poison.ZoneRadius, poison.ZoneDuration, (uint)(Time.frameCount * 131 + i + 1));
+            SpawnAOERing(new Vector3(impactPos.x, renderHeight + 0.1f, impactPos.y), poison.ZoneRadius * 0.7f, 0.35f, new Color(0.35f, 1f, 0.45f, 1f));
+
+            _activePoisonBottles[i].Active = false;
+            if (_poisonBottleVisuals[i] != null)
+            {
+                _poisonBottleVisuals[i].SetActive(false);
+            }
+        }
+
+        for (int i = 0; i < MaxPoisonZones; i++)
+        {
+            if (!_activePoisonZones[i].Active)
+            {
+                if (_poisonZoneVisuals[i] != null)
+                {
+                    _poisonZoneVisuals[i].SetActive(false);
+                }
+
+                continue;
+            }
+
+            _activePoisonZones[i].Timer -= context.DeltaTime;
+            if (_activePoisonZones[i].Timer <= 0f)
+            {
+                _activePoisonZones[i].Active = false;
+                if (_poisonZoneVisuals[i] != null)
+                {
+                    _poisonZoneVisuals[i].SetActive(false);
+                }
+
+                continue;
+            }
+
+            float normalizedLifetime = 1f - (_activePoisonZones[i].Timer / math.max(0.01f, _activePoisonZones[i].Duration));
+            float pulseA = math.sin((_survivalTime + i * 0.73f) * poison.ZonePulseSpeed);
+            float pulseB = math.cos((_survivalTime + i * 1.17f) * (poison.ZonePulseSpeed * 0.85f));
+            float xScale = 1f + poison.ZonePulseAmplitude * pulseA;
+            float zScale = 1f + poison.ZonePulseAmplitude * pulseB;
+
+            if (_poisonZoneVisuals[i] != null)
+            {
+                _poisonZoneVisuals[i].SetActive(true);
+                _poisonZoneVisuals[i].transform.position = new Vector3(_activePoisonZones[i].Position.x, renderHeight + 0.025f, _activePoisonZones[i].Position.y);
+                _poisonZoneVisuals[i].transform.rotation = Quaternion.Euler(0f, normalizedLifetime * 90f + i * 17f, 0f);
+                _poisonZoneVisuals[i].transform.localScale = new Vector3(_activePoisonZones[i].Radius * 2f * xScale, 0.05f, _activePoisonZones[i].Radius * 2f * zScale);
+            }
+
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 9,
+                Position = _activePoisonZones[i].Position,
+                Radius = _activePoisonZones[i].Radius,
+                Length = _activePoisonZones[i].Radius * math.clamp(poison.ZoneCoreRatio, 0.2f, 0.95f),
+                Damage = poison.MaxPoisonDps,
+                PullForce = poison.PoisonDuration,
+                SpinForce = poison.StackDpsPerSecond,
+                VerticalForce = math.max(0f, poison.InitialSpreadCount),
+                AuxA = poison.ZoneIrregularity,
+                AuxB = 0f,
+                AuxC = poison.ZoneNoiseScale,
+                AuxD = _activePoisonZones[i].Seed
+            });
+        }
+    }
+
+    private void ActivatePoisonZone(float2 position, float radius, float duration, uint seed)
+    {
+        for (int i = 0; i < MaxPoisonZones; i++)
+        {
+            if (_activePoisonZones[i].Active)
+            {
+                continue;
+            }
+
+            _activePoisonZones[i] = new RougePoisonZoneState
+            {
+                Active = true,
+                Position = position,
+                Timer = duration,
+                Duration = duration,
+                Radius = radius,
+                Seed = seed
+            };
+            return;
+        }
+
+        int replaceIndex = 0;
+        float shortestTimer = _activePoisonZones[0].Timer;
+        for (int i = 1; i < MaxPoisonZones; i++)
+        {
+            if (_activePoisonZones[i].Timer < shortestTimer)
+            {
+                shortestTimer = _activePoisonZones[i].Timer;
+                replaceIndex = i;
+            }
+        }
+
+        _activePoisonZones[replaceIndex] = new RougePoisonZoneState
+        {
+            Active = true,
+            Position = position,
+            Timer = duration,
+            Duration = duration,
+            Radius = radius,
+            Seed = seed
+        };
+    }
+
+    private void UpdateDashSkill(SkillUpdateContext context)
+    {
+        DashSkillConfig dash = skillConfig.Dash;
+        if (_dashSpinTimer <= 0f && !IsMovementSkillLocked(PlayerSkillType.Dash) && Input.GetKeyDown(dash.Presentation.ActivationKey) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null)
+        {
+            _dashCooldownTimer = dash.Cooldown;
+            _dashSpinTimer = dash.Duration;
+            _dashSpinAngle = 0f;
+            _dashStartPosition = player.transform.position;
+
+            float2 startPlanar = new float2(_dashStartPosition.x, _dashStartPosition.z);
+            _dashDirection = math.normalizesafe(context.AimDirection, new float2(0f, 1f));
+            float2 endPlanar = startPlanar + _dashDirection * dash.Distance;
+            endPlanar.x = math.clamp(endPlanar.x, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            endPlanar.y = math.clamp(endPlanar.y, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            _dashTargetPosition = new Vector3(endPlanar.x, _dashStartPosition.y, endPlanar.y);
+            _invincibilityTimer = math.max(_invincibilityTimer, dash.InvincibilityDuration);
+        }
+
+        if (_dashSpinTimer <= 0f)
+        {
+            if (_dashVisual != null)
+            {
+                _dashVisual.SetActive(false);
+            }
+
+            return;
+        }
+
+        float previousTimer = _dashSpinTimer;
+        _dashSpinTimer = math.max(0f, _dashSpinTimer - context.DeltaTime);
+        float previousProgress = 1f - previousTimer / math.max(0.01f, dash.Duration);
+        float currentProgress = 1f - _dashSpinTimer / math.max(0.01f, dash.Duration);
+        float previousTravel = EvaluateWhirlwindTravel(previousProgress);
+        float currentTravel = EvaluateWhirlwindTravel(currentProgress);
+        Vector3 newPosition = Vector3.Lerp(_dashStartPosition, _dashTargetPosition, currentTravel);
+        player.transform.position = newPosition;
+        _invincibilityTimer = math.max(_invincibilityTimer, context.DeltaTime + 0.02f);
+
+        float spinFactor = EvaluateWhirlwindSpinFactor(currentProgress);
+        _dashSpinAngle += dash.MaxSpinRate * spinFactor * context.DeltaTime;
+        _meleeHitShake = math.max(_meleeHitShake, 0.014f + spinFactor * 0.018f);
+        _cameraFovOffset = math.max(_cameraFovOffset, 0.65f + spinFactor * 1.2f);
+
+        Quaternion spinRotation = Quaternion.AngleAxis(_dashSpinAngle, Vector3.up);
+        Vector3 bladeForward = spinRotation * new Vector3(_dashDirection.x, 0f, _dashDirection.y);
+        if (bladeForward.sqrMagnitude < 0.0001f)
+        {
+            bladeForward = Vector3.forward;
+        }
+
+        Vector3 bladeCenter = newPosition + bladeForward * (dash.BladeLength * 0.45f);
+        float bladeScaleBoost = 1f + spinFactor * 0.45f;
+
+        if (_dashVisual != null)
+        {
+            _dashVisual.SetActive(true);
+            _dashVisual.transform.position = new Vector3(bladeCenter.x, renderHeight + 1f, bladeCenter.z);
+            _dashVisual.transform.rotation = Quaternion.LookRotation(bladeForward);
+            _dashVisual.transform.localScale = new Vector3(dash.BladeWidth * bladeScaleBoost, dash.BladeThickness, dash.BladeLength * bladeScaleBoost);
+        }
+
+        TryAddSkillArea(new RougeSkillArea
+        {
+            Type = 4,
+            Position = new float2(bladeCenter.x, bladeCenter.z),
+            Direction = math.normalizesafe(new float2(bladeForward.x, bladeForward.z), new float2(0f, 1f)),
+            Radius = dash.HitRadius,
+            Damage = dash.SpinDamage * (0.85f + spinFactor * 0.35f),
+            PullForce = math.abs(dash.PullForce) * (0.85f + spinFactor * 0.25f),
+            VerticalForce = dash.VerticalForce
+        });
+
+        if (_dashSpinTimer > 0f)
+        {
+            return;
+        }
+
+        float2 endPos = new float2(player.transform.position.x, player.transform.position.z);
+        SpawnImpact(endPos, dash.ImpactRadius, dash.ImpactRadius, dash.RingDuration, new Color(1f, 0.75f, 0.15f, 1f));
+        TryAddCircularSkillArea(endPos, dash.ImpactRadius, dash.ImpactDamage, math.abs(dash.PullForce), dash.VerticalForce);
+
+        if (_dashVisual != null)
+        {
+            _dashVisual.SetActive(false);
+        }
+    }
+
+    private static float EvaluateWhirlwindTravel(float normalizedTime)
+    {
+        float t = math.saturate(normalizedTime);
+        if (t < 0.14f)
+        {
+            float p = t / 0.14f;
+            return 0.09f * (1f - math.pow(1f - p, 3f));
+        }
+
+        if (t < 0.8f)
+        {
+            float p = (t - 0.14f) / 0.66f;
+            return math.lerp(0.09f, 0.9f, p);
+        }
+
+        float q = (t - 0.8f) / 0.2f;
+        return math.lerp(0.9f, 1f, q * q * (3f - 2f * q));
+    }
+
+    private static float EvaluateWhirlwindSpinFactor(float normalizedTime)
+    {
+        float t = math.saturate(normalizedTime);
+        if (t < 0.12f)
+        {
+            float p = t / 0.12f;
+            return math.lerp(0.4f, 1.25f, 1f - math.pow(1f - p, 3f));
+        }
+
+        if (t < 0.82f)
+        {
+            float p = (t - 0.12f) / 0.7f;
+            return 1.15f + math.sin(p * math.PI) * 0.35f;
+        }
+
+        float q = (t - 0.82f) / 0.18f;
+        return math.lerp(0.95f, 0.28f, q * q * (3f - 2f * q));
+    }
+}
