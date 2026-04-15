@@ -262,12 +262,15 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 {
-    private const float CurseVisualOffset = 10f;
+    private const float VisualStateFlagStep = 10f;
+    private const int CurseVisualFlag = 1;
+    private const int DeadVisualFlag = 2;
     private const float PoisonDurationSeconds = 2f;
     private const float PoisonTickInterval = 0.5f;
     private const float PoisonTickMaxHealthRatio = 0.1f;
     private const float BurnTickInterval = 0.5f;
     private const float BurnGroundRadius = 6f;
+    private const float DeadFlashDecayRate = 2f;
 
     [ReadOnly] public NativeArray<ulong> SortedKeys;
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
@@ -371,13 +374,49 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float radius = state4.y;
             float maxSpeed = state4.z;
             float flashTimer = math.frac(math.max(state4.w, 0f));
+            int visualFlags = DecodeVisualFlags(state4.w);
+            bool isDeadVisual = (visualFlags & DeadVisualFlag) != 0;
 
-            if (health <= 0f || math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
+            if (math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
             {
                 Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref effects);
                 posOutPtr[sourceIndex] = pos4;
                 velOutPtr[sourceIndex] = vel4;
                 stateOutPtr[sourceIndex] = state4;
+                effectOutPtr[sourceIndex] = effects;
+                continue;
+            }
+
+            if (health <= 0f)
+            {
+                if (!isDeadVisual)
+                {
+                    flashTimer = math.max(flashTimer, 0.99f);
+                }
+                else
+                {
+                    flashTimer = math.max(0f, flashTimer - DeltaTime * DeadFlashDecayRate);
+                }
+
+                if (isDeadVisual && flashTimer <= 0f)
+                {
+                    Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref effects);
+                    posOutPtr[sourceIndex] = pos4;
+                    velOutPtr[sourceIndex] = vel4;
+                    stateOutPtr[sourceIndex] = state4;
+                    effectOutPtr[sourceIndex] = effects;
+                    continue;
+                }
+
+                pos.y = math.max(pos.y, RenderHeight);
+                vel = float3.zero;
+                posOutPtr[sourceIndex] = new float4(pos, radius);
+                velOutPtr[sourceIndex] = new float4(vel, 0f);
+                stateOutPtr[sourceIndex] = new float4(
+                    health,
+                    radius,
+                    maxSpeed,
+                    EncodeVisualState(flashTimer, false, true));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
             }
@@ -628,11 +667,18 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
             bool hitPlayer = false;
             float distToPlayerSq = math.lengthsq(pos.xz - PlayerPos);
-            if (!isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + 0.5f) * (radius + 0.5f))
+            if (health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + 0.5f) * (radius + 0.5f))
             {
                 System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);
                 health = -1f;
                 hitPlayer = true;
+            }
+
+            if (health <= 0f && !isAirborne)
+            {
+                acceleration = float3.zero;
+                vel = float3.zero;
+                tornadoMark = 0f;
             }
 
             vel += acceleration * DeltaTime;
@@ -715,7 +761,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 vel.y = 0f;
             }
 
-            if (health <= 0f && !hitPlayer)
+            bool justDied = health <= 0f && !hitPlayer && !isDeadVisual;
+            if (justDied)
             {
                 if (diedFromPoison && effects.PoisonSpreadRadius > 0f)
                 {
@@ -750,7 +797,15 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     });
                 }
 
+                SkillEventQueue.Enqueue(new RougeSkillEvent
+                {
+                    Type = (int)RougeSkillEventType.EnemyDeathBurst,
+                    Position = pos.xz,
+                    Radius = radius
+                });
+
                 System.Threading.Interlocked.Increment(ref ((int*)EnemyKillCount.GetUnsafePtr())[0]);
+                flashTimer = math.max(flashTimer, 0.99f);
                 effects = default;
             }
 
@@ -764,9 +819,33 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 health,
                 radius,
                 maxSpeed,
-                math.min(flashTimer, 0.99f) + (effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f ? CurseVisualOffset : 0f));
+                EncodeVisualState(
+                    flashTimer,
+                    effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
+                    health <= 0f));
             effectOutPtr[sourceIndex] = effects;
         }
+    }
+
+    private static int DecodeVisualFlags(float encodedValue)
+    {
+        return (int)math.floor(math.max(encodedValue, 0f) / VisualStateFlagStep + 0.0001f);
+    }
+
+    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual)
+    {
+        int flags = 0;
+        if (hasCurseVisual)
+        {
+            flags |= CurseVisualFlag;
+        }
+
+        if (isDeadVisual)
+        {
+            flags |= DeadVisualFlag;
+        }
+
+        return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
     }
 
     private void ProcessTornado(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)

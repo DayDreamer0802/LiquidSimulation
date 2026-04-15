@@ -84,6 +84,7 @@ public partial class RougeGameManager : MonoBehaviour
     private float _fps;
     private const float BurnGroundDuration = 4f;
     private const float BurnGroundRadius = 6f;
+    private const float DeathBurstDuration = 0.45f;
 
     private NativeArray<float4> _positionsA;
     private NativeArray<float4> _positionsB;
@@ -280,6 +281,9 @@ public partial class RougeGameManager : MonoBehaviour
     private Vector3 _dashTargetPosition;
     private GameObject _dashVisual;
     private Material _dashMat;
+    private bool _hasActiveSustainedSkill;
+    private PlayerSkillType _activeSustainedSkillType;
+    private int _activeSustainedSkillPriority;
     private int _shockwaveState;
     private Vector3 _shockwaveJumpStart;
     private float _cameraLiftOffset;
@@ -289,6 +293,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     // VFX buffers for explosions
     private const int MaxExplosions = 128;
+    private const int MaxDeathBursts = 256;
     private int _explosionCount;
     private NativeArray<float4> _expPosData;
     private NativeArray<float4> _expStateData;
@@ -299,6 +304,16 @@ public partial class RougeGameManager : MonoBehaviour
     private GraphicsBuffer _expArgsBuffer;
     private uint[] _expDrawArgs = new uint[5];
     private Material _vfxExplosionMat;
+    private NativeArray<float4> _deathPosData;
+    private NativeArray<float4> _deathStateData;
+    private readonly float[] _deathTimers = new float[MaxDeathBursts];
+    private readonly float[] _deathDurations = new float[MaxDeathBursts];
+    private readonly float[] _deathRiseSpeeds = new float[MaxDeathBursts];
+    private GraphicsBuffer _deathPosBuffer;
+    private GraphicsBuffer _deathStateBuffer;
+    private GraphicsBuffer _deathArgsBuffer;
+    private readonly uint[] _deathDrawArgs = new uint[5];
+    private Material _vfxDeathMat;
     private Mesh _vfxSphereMesh;
 
     // Meteor visual spheres (falling from sky)
@@ -569,6 +584,9 @@ public partial class RougeGameManager : MonoBehaviour
                     ActivateBurnPatch(skillEvent.Position, skillEvent.Radius, BurnGroundDuration, skillEvent.Damage, skillEvent.Duration);
                     SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.05f, skillEvent.Position.y), skillEvent.Radius, 0.28f, new Color(1f, 0.4f, 0.08f, 1f));
                     break;
+                case RougeSkillEventType.EnemyDeathBurst:
+                    SpawnDeathBurstVFX(new Vector3(skillEvent.Position.x, renderHeight + 0.35f, skillEvent.Position.y), math.max(0.8f, skillEvent.Radius * 2.4f));
+                    break;
             }
         }
 
@@ -593,12 +611,36 @@ public partial class RougeGameManager : MonoBehaviour
                 _expPosData[vi] = pos;
             }
         }
+
+        for (int vi = 0; vi < MaxDeathBursts; vi++)
+        {
+            if (_deathTimers[vi] > 0f)
+            {
+                _deathTimers[vi] = math.max(0f, _deathTimers[vi] - dt);
+                float duration = math.max(0.01f, _deathDurations[vi]);
+                float progress = 1f - (_deathTimers[vi] / duration);
+                float scale = math.lerp(0.3f, 1f, math.saturate(math.pow(progress, 0.7f)));
+
+                float4 pos = _deathPosData[vi];
+                pos.y += _deathRiseSpeeds[vi] * dt;
+                _deathPosData[vi] = pos;
+
+                float baseRadius = pos.w;
+                _deathStateData[vi] = new float4(baseRadius * scale, baseRadius * 0.55f * scale, baseRadius * scale, math.saturate(progress));
+            }
+            else if (_deathStateData.IsCreated)
+            {
+                _deathStateData[vi] = float4.zero;
+            }
+        }
+
         UpdateAOERings(dt);
         UpdateBullets(dt);
         RenderBullets();
         RenderAOERings();
         RenderEnemies();
         RenderExplosions();
+        RenderDeathBursts();
         RenderTornados();
         // Light Pillar Array replaces Tornado instancing
         ScheduleSimulation(math.max(dt, 0.0001f));
@@ -722,6 +764,11 @@ public partial class RougeGameManager : MonoBehaviour
         _expPosBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxExplosions, UnsafeUtility.SizeOf<float4>());
         _expStateBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxExplosions, UnsafeUtility.SizeOf<float4>());
         _expArgsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, sizeof(uint) * 5);
+        _deathPosData = new NativeArray<float4>(MaxDeathBursts, Allocator.Persistent);
+        _deathStateData = new NativeArray<float4>(MaxDeathBursts, Allocator.Persistent);
+        _deathPosBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxDeathBursts, UnsafeUtility.SizeOf<float4>());
+        _deathStateBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, MaxDeathBursts, UnsafeUtility.SizeOf<float4>());
+        _deathArgsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, sizeof(uint) * 5);
         
         _tornadoPosData = new NativeArray<float4>(MaxTornados, Allocator.Persistent);
         _tornadoStateData = new NativeArray<float4>(MaxTornados, Allocator.Persistent);
@@ -765,6 +812,14 @@ public partial class RougeGameManager : MonoBehaviour
             _vfxExplosionMat = new Material(sh);
             _vfxExplosionMat.SetColor("_BaseColor", new Color(1f, 0.4f, 0.1f, 0.7f));
             _vfxExplosionMat.enableInstancing = true;
+        }
+
+        if (_vfxDeathMat == null)
+        {
+            Shader sh = Shader.Find("Rouge/VFXInstanced");
+            _vfxDeathMat = new Material(sh);
+            _vfxDeathMat.SetColor("_BaseColor", new Color(1f, 0.92f, 0.84f, 0.42f));
+            _vfxDeathMat.enableInstancing = true;
         }
         
         if (_tornadoMat == null)
@@ -1044,6 +1099,9 @@ public partial class RougeGameManager : MonoBehaviour
         _dashCooldownTimer = 0f;
         _dashSpinTimer = 0f;
         _dashSpinAngle = 0f;
+        _hasActiveSustainedSkill = false;
+        _activeSustainedSkillType = default;
+        _activeSustainedSkillPriority = 0;
 
         if (_dashVisual == null)
         {
@@ -1334,6 +1392,38 @@ public partial class RougeGameManager : MonoBehaviour
             _vfxExplosionMat,
             bounds,
             _expArgsBuffer,
+            0,
+            null,
+            ShadowCastingMode.Off,
+            false,
+            gameObject.layer);
+    }
+
+    private void RenderDeathBursts()
+    {
+        if (_deathPosBuffer == null || _deathStateBuffer == null || _deathArgsBuffer == null || _vfxSphereMesh == null || _vfxDeathMat == null) return;
+
+        _deathPosBuffer.SetData(_deathPosData);
+        _deathStateBuffer.SetData(_deathStateData);
+
+        _vfxDeathMat.SetBuffer(PositionScaleBufferId, _deathPosBuffer);
+        _vfxDeathMat.SetBuffer("_StateBuffer", _deathStateBuffer);
+        _vfxDeathMat.SetFloat(ScaleMultiplierId, 1f);
+
+        _deathDrawArgs[0] = _vfxSphereMesh.GetIndexCount(0);
+        _deathDrawArgs[1] = (uint)MaxDeathBursts;
+        _deathDrawArgs[2] = _vfxSphereMesh.GetIndexStart(0);
+        _deathDrawArgs[3] = _vfxSphereMesh.GetBaseVertex(0);
+        _deathDrawArgs[4] = 0;
+        _deathArgsBuffer.SetData(_deathDrawArgs);
+
+        Bounds bounds = new Bounds(transform.position, new Vector3(1000f, 100f, 1000f));
+        Graphics.DrawMeshInstancedIndirect(
+            _vfxSphereMesh,
+            0,
+            _vfxDeathMat,
+            bounds,
+            _deathArgsBuffer,
             0,
             null,
             ShadowCastingMode.Off,
@@ -1748,6 +1838,9 @@ public partial class RougeGameManager : MonoBehaviour
         _simulationHandle = default;
         _initialized = false;
         _activeBulletCount = 0;
+        _hasActiveSustainedSkill = false;
+        _activeSustainedSkillType = default;
+        _activeSustainedSkillPriority = 0;
 
         if (_tornadoVisual) Destroy(_tornadoVisual);
         if (_bombVisuals != null)
@@ -1801,6 +1894,11 @@ public partial class RougeGameManager : MonoBehaviour
         _expPosBuffer?.Release(); _expPosBuffer = null;
         _expStateBuffer?.Release(); _expStateBuffer = null;
         _expArgsBuffer?.Release(); _expArgsBuffer = null;
+        ReleaseNative(ref _deathPosData);
+        ReleaseNative(ref _deathStateData);
+        _deathPosBuffer?.Release(); _deathPosBuffer = null;
+        _deathStateBuffer?.Release(); _deathStateBuffer = null;
+        _deathArgsBuffer?.Release(); _deathArgsBuffer = null;
         ReleaseNative(ref _tornadoPosData);
         ReleaseNative(ref _tornadoStateData);
         _tornadoPosBuffer?.Release(); _tornadoPosBuffer = null;
@@ -1995,6 +2093,24 @@ public partial class RougeGameManager : MonoBehaviour
             }
         }
     }
+
+    private void SpawnDeathBurstVFX(Vector3 worldPos, float radius)
+    {
+        for (int i = 0; i < MaxDeathBursts; i++)
+        {
+            if (_deathTimers[i] > 0f)
+            {
+                continue;
+            }
+
+            _deathPosData[i] = new float4(worldPos.x, worldPos.y, worldPos.z, radius);
+            _deathStateData[i] = new float4(radius * 0.3f, radius * 0.16f, radius * 0.3f, 0f);
+            _deathTimers[i] = DeathBurstDuration;
+            _deathDurations[i] = DeathBurstDuration;
+            _deathRiseSpeeds[i] = 1.8f + radius * 0.25f;
+            return;
+        }
+    }
 }
 
 public struct RougeSkillArea
@@ -2047,7 +2163,8 @@ public enum RougeSkillEventType
     LaunchLandingExplosion = 1,
     PoisonSpread = 2,
     CurseExplosion = 3,
-    BurnGround = 4
+    BurnGround = 4,
+    EnemyDeathBurst = 5
 }
 
 public struct RougeSkillEvent

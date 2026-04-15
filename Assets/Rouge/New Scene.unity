@@ -995,6 +995,8 @@ MonoBehaviour:
         TriggerLabel: AUTO SHOOT
         IsPassive: 1
         ActivationKey: 0
+        ExecutionType: 2
+        SustainPriority: 0
       Effects:
         Tags: 1
         KnockbackForce: 10
@@ -1021,6 +1023,8 @@ MonoBehaviour:
         TriggerLabel: SPACE
         IsPassive: 0
         ActivationKey: 32
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 3
         KnockbackForce: 5
@@ -1048,6 +1052,8 @@ MonoBehaviour:
         TriggerLabel: Q
         IsPassive: 0
         ActivationKey: 113
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 0
         KnockbackForce: 0
@@ -1081,6 +1087,8 @@ MonoBehaviour:
         TriggerLabel: E
         IsPassive: 0
         ActivationKey: 101
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 1
         KnockbackForce: 10
@@ -1125,6 +1133,8 @@ MonoBehaviour:
         TriggerLabel: R
         IsPassive: 0
         ActivationKey: 114
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 0
         KnockbackForce: 0
@@ -1156,6 +1166,8 @@ MonoBehaviour:
         TriggerLabel: MOUSE L-CLICK
         IsPassive: 0
         ActivationKey: 0
+        ExecutionType: 1
+        SustainPriority: 1000
       Effects:
         Tags: 0
         KnockbackForce: 0
@@ -1215,6 +1227,8 @@ MonoBehaviour:
         TriggerLabel: V
         IsPassive: 0
         ActivationKey: 118
+        ExecutionType: 1
+        SustainPriority: 99999
       Effects:
         Tags: 0
         KnockbackForce: 0
@@ -1254,6 +1268,8 @@ MonoBehaviour:
         TriggerLabel: T
         IsPassive: 0
         ActivationKey: 116
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 33
         KnockbackForce: 10
@@ -1288,6 +1304,8 @@ MonoBehaviour:
         TriggerLabel: C
         IsPassive: 0
         ActivationKey: 99
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 8
         KnockbackForce: 0
@@ -1321,6 +1339,8 @@ MonoBehaviour:
         TriggerLabel: X
         IsPassive: 0
         ActivationKey: 120
+        ExecutionType: 0
+        SustainPriority: 0
       Effects:
         Tags: 4
         KnockbackForce: 0
@@ -1358,6 +1378,8 @@ MonoBehaviour:
         TriggerLabel: L-SHIFT
         IsPassive: 0
         ActivationKey: 304
+        ExecutionType: 1
+        SustainPriority: 2000
       Effects:
         Tags: 3
         KnockbackForce: 20
@@ -1391,6 +1413,8 @@ MonoBehaviour:
         TriggerLabel: PASSIVE
         IsPassive: 1
         ActivationKey: 0
+        ExecutionType: 2
+        SustainPriority: 0
       Effects:
         Tags: 1
         KnockbackForce: 3

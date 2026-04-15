@@ -7,6 +7,7 @@ public partial class RougeGameManager
     {
         EnsureSkillConfigInitialized();
         TickSkillCooldowns(dt);
+        RefreshActiveSustainedSkill();
 
         SkillUpdateContext context = CreateSkillContext(dt);
         _skillAreaCount = 0;
@@ -22,6 +23,7 @@ public partial class RougeGameManager
         UpdateIceZoneSkill(context);
         UpdatePoisonBottleSkill(context);
         UpdateDashSkill(context);
+        RefreshActiveSustainedSkill();
     }
 
     private void TickSkillCooldowns(float dt)
@@ -96,6 +98,231 @@ public partial class RougeGameManager
         area.EffectBurnDuration = effects.BurnDuration;
     }
 
+    private void RefreshActiveSustainedSkill()
+    {
+        if (!_hasActiveSustainedSkill)
+        {
+            return;
+        }
+
+        if (GetSkillExecutionType(_activeSustainedSkillType) != SkillExecutionType.Sustained || !IsSkillCurrentlyActive(_activeSustainedSkillType))
+        {
+            _hasActiveSustainedSkill = false;
+            _activeSustainedSkillType = default;
+            _activeSustainedSkillPriority = 0;
+        }
+    }
+
+    private SkillExecutionType GetSkillExecutionType(PlayerSkillType type)
+    {
+        SkillPresentationConfig presentation = GetPresentationConfig(type);
+        return presentation != null ? presentation.GetExecutionType() : SkillExecutionType.Instant;
+    }
+
+    private bool TryStartSkillActivation(PlayerSkillType type)
+    {
+        SkillPresentationConfig presentation = GetPresentationConfig(type);
+        if (presentation == null)
+        {
+            return true;
+        }
+
+        SkillExecutionType executionType = presentation.GetExecutionType();
+        if (executionType != SkillExecutionType.Sustained)
+        {
+            return true;
+        }
+
+        RefreshActiveSustainedSkill();
+        int sustainPriority = Mathf.Max(0, presentation.SustainPriority);
+        if (!_hasActiveSustainedSkill)
+        {
+            SetActiveSustainedSkill(type, sustainPriority);
+            return true;
+        }
+
+        if (_activeSustainedSkillType == type)
+        {
+            return false;
+        }
+
+        if (sustainPriority > _activeSustainedSkillPriority)
+        {
+            InterruptSkill(_activeSustainedSkillType);
+            SetActiveSustainedSkill(type, sustainPriority);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void SetActiveSustainedSkill(PlayerSkillType type, int sustainPriority)
+    {
+        _hasActiveSustainedSkill = true;
+        _activeSustainedSkillType = type;
+        _activeSustainedSkillPriority = sustainPriority;
+    }
+
+    private bool IsSkillCurrentlyActive(PlayerSkillType type)
+    {
+        switch (type)
+        {
+            case PlayerSkillType.LeapSmash:
+                return _jumpState != 0;
+            case PlayerSkillType.LightPillarStrike:
+                return _pillarStrikesDone < _pillarStrikesTotal;
+            case PlayerSkillType.BombThrow:
+                return HasActiveBomb();
+            case PlayerSkillType.LaserBeam:
+                return _laserTimer > 0f;
+            case PlayerSkillType.MeleeSlash:
+                return _meleeTimer > 0f || _meleeFinisherSlamTimer > 0f || _spikeStartupTimer > 0f || _spikeTimer > 0f;
+            case PlayerSkillType.Shockwave:
+                return _shockwaveState != 0;
+            case PlayerSkillType.MeteorRain:
+                return _meteorTimer > 0f;
+            case PlayerSkillType.IceZone:
+                return _iceZoneTimer > 0f;
+            case PlayerSkillType.PoisonBottle:
+                return HasActivePoisonState();
+            case PlayerSkillType.Dash:
+                return _dashSpinTimer > 0f;
+            default:
+                return false;
+        }
+    }
+
+    private void InterruptSkill(PlayerSkillType type)
+    {
+        switch (type)
+        {
+            case PlayerSkillType.LeapSmash:
+                _jumpState = 0;
+                _jumpTimer = 0f;
+                if (player != null)
+                {
+                    Vector3 position = player.transform.position;
+                    position.y = renderHeight;
+                    player.transform.position = position;
+                }
+                break;
+            case PlayerSkillType.LightPillarStrike:
+                _pillarStrikesDone = _pillarStrikesTotal;
+                _pillarNextStrikeTimer = 0f;
+                if (_tornadoVisual != null)
+                {
+                    _tornadoVisual.SetActive(false);
+                }
+                break;
+            case PlayerSkillType.BombThrow:
+                for (int i = 0; i < MaxBombs; i++)
+                {
+                    _activeBombs[i].Active = false;
+                    if (_bombVisuals[i] != null)
+                    {
+                        _bombVisuals[i].SetActive(false);
+                    }
+                }
+                break;
+            case PlayerSkillType.LaserBeam:
+                _laserTimer = 0f;
+                if (_laserVisual != null)
+                {
+                    _laserVisual.SetActive(false);
+                }
+                for (int i = 0; i < MaxLaserSubBeams; i++)
+                {
+                    if (_laserExtraVisuals[i] != null)
+                    {
+                        _laserExtraVisuals[i].SetActive(false);
+                    }
+                }
+                break;
+            case PlayerSkillType.MeleeSlash:
+                _meleeTimer = 0f;
+                _meleeFinisherSlamTimer = 0f;
+                _spikeStartupTimer = 0f;
+                _spikeTimer = 0f;
+                if (_meleeVisual != null)
+                {
+                    _meleeVisual.SetActive(false);
+                }
+                if (_meleeFinisherVisual != null)
+                {
+                    _meleeFinisherVisual.SetActive(false);
+                }
+                for (int i = 0; i < _spikeVisuals.Length; i++)
+                {
+                    if (_spikeVisuals[i] != null)
+                    {
+                        _spikeVisuals[i].SetActive(false);
+                    }
+                }
+                break;
+            case PlayerSkillType.Shockwave:
+                _shockwaveState = 0;
+                _shockwaveTimer = 0f;
+                _cameraLiftOffset = 0f;
+                _cameraFovOffset = 0f;
+                if (_shockwaveVisual != null)
+                {
+                    _shockwaveVisual.SetActive(false);
+                }
+                if (player != null)
+                {
+                    Vector3 position = player.transform.position;
+                    position.y = renderHeight;
+                    player.transform.position = position;
+                }
+                break;
+            case PlayerSkillType.MeteorRain:
+                _meteorTimer = 0f;
+                _meteorWaveTimer = 0f;
+                _meteorWaveIndex = 0;
+                for (int i = 0; i < MeteorVisualMax; i++)
+                {
+                    _meteorVisualTimers[i] = 0f;
+                    if (_meteorVisuals[i] != null)
+                    {
+                        _meteorVisuals[i].SetActive(false);
+                    }
+                }
+                break;
+            case PlayerSkillType.IceZone:
+                _iceZoneTimer = 0f;
+                if (_iceZoneVisual != null)
+                {
+                    _iceZoneVisual.SetActive(false);
+                }
+                break;
+            case PlayerSkillType.PoisonBottle:
+                for (int i = 0; i < MaxPoisonBottles; i++)
+                {
+                    _activePoisonBottles[i].Active = false;
+                    if (_poisonBottleVisuals[i] != null)
+                    {
+                        _poisonBottleVisuals[i].SetActive(false);
+                    }
+                }
+                for (int i = 0; i < MaxPoisonZones; i++)
+                {
+                    _activePoisonZones[i].Active = false;
+                    if (_poisonZoneVisuals[i] != null)
+                    {
+                        _poisonZoneVisuals[i].SetActive(false);
+                    }
+                }
+                break;
+            case PlayerSkillType.Dash:
+                _dashSpinTimer = 0f;
+                if (_dashVisual != null)
+                {
+                    _dashVisual.SetActive(false);
+                }
+                break;
+        }
+    }
+
     private bool IsMovementSkillLocked(PlayerSkillType skillType)
     {
         if (!PlayerSkillCatalog.HasTag(skillType, PlayerSkillTag.Movement))
@@ -104,6 +331,38 @@ public partial class RougeGameManager
         }
 
         return _dashSpinTimer > 0f || _jumpState == 1 || _shockwaveState != 0;
+    }
+
+    private bool CanStartMovementSkill(PlayerSkillType skillType)
+    {
+        if (!PlayerSkillCatalog.HasTag(skillType, PlayerSkillTag.Movement))
+        {
+            return true;
+        }
+
+        if (!IsMovementSkillLocked(skillType))
+        {
+            return true;
+        }
+
+        RefreshActiveSustainedSkill();
+        if (!_hasActiveSustainedSkill || _activeSustainedSkillType == skillType)
+        {
+            return false;
+        }
+
+        if (GetSkillExecutionType(skillType) != SkillExecutionType.Sustained || GetSkillExecutionType(_activeSustainedSkillType) != SkillExecutionType.Sustained)
+        {
+            return false;
+        }
+
+        SkillPresentationConfig presentation = GetPresentationConfig(skillType);
+        if (presentation == null)
+        {
+            return false;
+        }
+
+        return Mathf.Max(0, presentation.SustainPriority) > _activeSustainedSkillPriority;
     }
 
     private void SpawnImpact(float2 position, float explosionRadius, float ringRadius, float ringDuration, Color ringColor, float heightOffset = 1f)
@@ -117,7 +376,7 @@ public partial class RougeGameManager
     {
         LeapSmashSkillConfig leap = skillConfig.LeapSmash;
 
-        if (_jumpState == 0 && !IsMovementSkillLocked(PlayerSkillType.LeapSmash) && Input.GetKeyDown(leap.Presentation.ActivationKey) && _jumpCooldownTimer <= 0f && player != null)
+        if (_jumpState == 0 && CanStartMovementSkill(PlayerSkillType.LeapSmash) && Input.GetKeyDown(leap.Presentation.ActivationKey) && _jumpCooldownTimer <= 0f && player != null && TryStartSkillActivation(PlayerSkillType.LeapSmash))
         {
             Vector3 startPos = player.transform.position;
             Vector3 targetPos = context.HasMouseGroundPoint
@@ -162,7 +421,7 @@ public partial class RougeGameManager
     private void UpdateLightPillarSkill(SkillUpdateContext context)
     {
         LightPillarSkillConfig lightPillar = skillConfig.LightPillar;
-        if (Input.GetKeyDown(lightPillar.Presentation.ActivationKey) && _tornadoCooldownTimer <= 0f)
+        if (Input.GetKeyDown(lightPillar.Presentation.ActivationKey) && _tornadoCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LightPillarStrike))
         {
             _tornadoCooldownTimer = lightPillar.Cooldown;
             _pillarStrikesTotal = lightPillar.BaseStrikeCount + (currentLevel / math.max(1, lightPillar.BonusStrikeLevelStep));
@@ -215,7 +474,7 @@ public partial class RougeGameManager
     {
         BombThrowSkillConfig bomb = skillConfig.BombThrow;
         bool hasActiveBomb = HasActiveBomb();
-        if (Input.GetKeyDown(bomb.Presentation.ActivationKey) && _bombCooldownTimer <= 0f && !hasActiveBomb)
+        if (Input.GetKeyDown(bomb.Presentation.ActivationKey) && _bombCooldownTimer <= 0f && !hasActiveBomb && TryStartSkillActivation(PlayerSkillType.BombThrow))
         {
             _bombCooldownTimer = bomb.Cooldown;
 
@@ -347,7 +606,7 @@ public partial class RougeGameManager
     private void UpdateLaserSkill(SkillUpdateContext context)
     {
         LaserBeamSkillConfig laser = skillConfig.LaserBeam;
-        if (Input.GetKeyDown(laser.Presentation.ActivationKey) && _laserCooldownTimer <= 0f)
+        if (Input.GetKeyDown(laser.Presentation.ActivationKey) && _laserCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LaserBeam))
         {
             _laserCooldownTimer = laser.Cooldown;
             _laserTimer = laser.BaseDuration + (_skillLevels[2] / 30f) * laser.DurationPerThirtyLevels;
@@ -455,7 +714,7 @@ public partial class RougeGameManager
             _meleeComboStep = 0;
         }
 
-        if (Input.GetMouseButtonDown(0) && _meleeCooldownTimer <= 0f)
+        if (Input.GetMouseButtonDown(0) && _meleeCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeleeSlash))
         {
             _meleePos = context.PlayerPosition;
             _meleeDir = context.AimDirection;
@@ -756,7 +1015,7 @@ public partial class RougeGameManager
     private void UpdateShockwaveSkill(SkillUpdateContext context)
     {
         ShockwaveSkillConfig shockwave = skillConfig.Shockwave;
-        if (_shockwaveState == 0 && !IsMovementSkillLocked(PlayerSkillType.Shockwave) && Input.GetKeyDown(shockwave.Presentation.ActivationKey) && _shockwaveCooldownTimer <= 0f && player != null && _jumpState == 0)
+        if (_shockwaveState == 0 && CanStartMovementSkill(PlayerSkillType.Shockwave) && Input.GetKeyDown(shockwave.Presentation.ActivationKey) && _shockwaveCooldownTimer <= 0f && player != null && _jumpState == 0 && TryStartSkillActivation(PlayerSkillType.Shockwave))
         {
             _shockwaveCooldownTimer = shockwave.Cooldown;
             _shockwavePos = context.PlayerPosition;
@@ -837,7 +1096,7 @@ public partial class RougeGameManager
     private void UpdateMeteorSkill(SkillUpdateContext context)
     {
         MeteorRainSkillConfig meteor = skillConfig.MeteorRain;
-        if (Input.GetKeyDown(meteor.Presentation.ActivationKey) && _meteorCooldownTimer <= 0f)
+        if (Input.GetKeyDown(meteor.Presentation.ActivationKey) && _meteorCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeteorRain))
         {
             _meteorCooldownTimer = meteor.Cooldown;
             _meteorTimer = meteor.Duration;
@@ -916,7 +1175,7 @@ public partial class RougeGameManager
     private void UpdateIceZoneSkill(SkillUpdateContext context)
     {
         IceZoneSkillConfig iceZone = skillConfig.IceZone;
-        if (Input.GetKeyDown(iceZone.Presentation.ActivationKey) && _iceZoneCooldownTimer <= 0f)
+        if (Input.GetKeyDown(iceZone.Presentation.ActivationKey) && _iceZoneCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.IceZone))
         {
             _iceZoneCooldownTimer = iceZone.Cooldown;
             _iceZoneTimer = iceZone.Duration;
@@ -975,6 +1234,11 @@ public partial class RougeGameManager
                 if (_activePoisonBottles[i].Active)
                 {
                     continue;
+                }
+
+                if (!TryStartSkillActivation(PlayerSkillType.PoisonBottle))
+                {
+                    break;
                 }
 
                 _poisonCooldownTimer = poison.Cooldown;
@@ -1148,7 +1412,7 @@ public partial class RougeGameManager
     private void UpdateDashSkill(SkillUpdateContext context)
     {
         DashSkillConfig dash = skillConfig.Dash;
-        if (_dashSpinTimer <= 0f && !IsMovementSkillLocked(PlayerSkillType.Dash) && Input.GetKeyDown(dash.Presentation.ActivationKey) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null)
+        if (_dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && Input.GetKeyDown(dash.Presentation.ActivationKey) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
         {
             _dashCooldownTimer = dash.Cooldown;
             _dashSpinTimer = dash.Duration;

@@ -37,6 +37,13 @@ public enum SkillHitEffectTag
     Burn = 1 << 5
 }
 
+public enum SkillExecutionType
+{
+    Instant,
+    Sustained,
+    Passive
+}
+
 [Serializable]
 public struct SkillHitEffectConfig
 {
@@ -119,6 +126,8 @@ public class SkillPresentationConfig
     public string TriggerLabel = "UNBOUND";
     public bool IsPassive;
     public KeyCode ActivationKey = KeyCode.None;
+    public SkillExecutionType ExecutionType = SkillExecutionType.Instant;
+    public int SustainPriority;
 
     public SkillPresentationConfig()
     {
@@ -130,15 +139,38 @@ public class SkillPresentationConfig
         TriggerLabel = triggerLabel;
         IsPassive = isPassive;
         ActivationKey = activationKey;
+        ExecutionType = isPassive ? SkillExecutionType.Passive : SkillExecutionType.Instant;
+        SustainPriority = 0;
+    }
+
+    public SkillExecutionType GetExecutionType()
+    {
+        return IsPassive ? SkillExecutionType.Passive : ExecutionType;
+    }
+
+    public void NormalizeExecutionType()
+    {
+        if (IsPassive && ExecutionType != SkillExecutionType.Passive)
+        {
+            ExecutionType = SkillExecutionType.Passive;
+        }
+
+        IsPassive = ExecutionType == SkillExecutionType.Passive;
+        if (ExecutionType != SkillExecutionType.Sustained)
+        {
+            SustainPriority = 0;
+        }
     }
 
     public PlayerSkillDefinition ToDefinition(PlayerSkillType type)
     {
+        NormalizeExecutionType();
+        SkillExecutionType executionType = GetExecutionType();
         string displayName = string.IsNullOrWhiteSpace(DisplayName) ? type.ToString() : DisplayName;
         string triggerLabel = string.IsNullOrWhiteSpace(TriggerLabel)
-            ? (ActivationKey == KeyCode.None ? (IsPassive ? "PASSIVE" : "UNBOUND") : ActivationKey.ToString().ToUpperInvariant())
+            ? (ActivationKey == KeyCode.None ? (executionType == SkillExecutionType.Passive ? "PASSIVE" : "UNBOUND") : ActivationKey.ToString().ToUpperInvariant())
             : TriggerLabel;
-        return new PlayerSkillDefinition(type, displayName, triggerLabel, IsPassive);
+        return new PlayerSkillDefinition(type, displayName, triggerLabel, executionType == SkillExecutionType.Passive);
     }
 }
 
@@ -536,6 +568,19 @@ public class PlayerSkillConfigSet
         if (PoisonBottle == null) PoisonBottle = new PoisonBottleSkillConfig();
         if (Dash == null) Dash = new DashSkillConfig();
         if (OrbitBall == null) OrbitBall = new OrbitBallSkillConfig();
+
+        AutoShoot.Presentation.NormalizeExecutionType();
+        LeapSmash.Presentation.NormalizeExecutionType();
+        LightPillar.Presentation.NormalizeExecutionType();
+        BombThrow.Presentation.NormalizeExecutionType();
+        LaserBeam.Presentation.NormalizeExecutionType();
+        MeleeSlash.Presentation.NormalizeExecutionType();
+        Shockwave.Presentation.NormalizeExecutionType();
+        MeteorRain.Presentation.NormalizeExecutionType();
+        IceZone.Presentation.NormalizeExecutionType();
+        PoisonBottle.Presentation.NormalizeExecutionType();
+        Dash.Presentation.NormalizeExecutionType();
+        OrbitBall.Presentation.NormalizeExecutionType();
     }
 
     public PlayerSkillDefinition GetDefinition(PlayerSkillType type)

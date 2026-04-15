@@ -52,6 +52,7 @@
                 Varyings output;
                 float4 positionScale = _PositionScaleBuffer[input.instanceID];
                 float4 state = _StateBuffer[input.instanceID];
+                float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 float scale = max(state.y * _ScaleMultiplier, 0.0001);
                 
                 float3 positionWS = float3(
@@ -63,7 +64,7 @@
                 output.positionHCS = TransformWorldToHClip(positionWS);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 output.flash = frac(max(state.w, 0.0));
-                output.curse = step(9.5, state.w);
+                output.curse = step(0.5, fmod(visualFlags, 2.0));
                 
                 return output;
             }
