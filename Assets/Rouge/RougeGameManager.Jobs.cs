@@ -269,8 +269,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     private const float PoisonTickInterval = 0.5f;
     private const float PoisonTickMaxHealthRatio = 0.1f;
     private const float BurnTickInterval = 0.5f;
-    private const float BurnGroundRadius = 6f;
+    private const float BurnGroundRadius = 5f;
     private const float DeadFlashDecayRate = 2f;
+    private const float BurnPatchReapplyCooldown = 0.85f;
+    private const float BurnPatchDurationMultiplier = 0.45f;
+    private const float BurnPatchDamageMultiplier = 0.55f;
 
     [ReadOnly] public NativeArray<ulong> SortedKeys;
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
@@ -307,6 +310,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     public float ObstacleRepulsion;
     public float ObstacleOrbitStrength;
     public float KnockbackResist;
+    public float PlayerContactPadding;
     [WriteOnly] public NativeQueue<float2>.ParallelWriter ExplosionQueue;
     [WriteOnly] public NativeQueue<RougeSkillEvent>.ParallelWriter SkillEventQueue;
     public int CurrentMaxEnemies;
@@ -610,6 +614,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.PoisonSpreadRadius = 0f;
             }
 
+            if (effects.BurnReapplyCooldown > 0f)
+            {
+                effects.BurnReapplyCooldown = math.max(0f, effects.BurnReapplyCooldown - DeltaTime);
+            }
+
             if (effects.BurnTimer > 0f)
             {
                 effects.BurnTimer = math.max(0f, effects.BurnTimer - DeltaTime);
@@ -626,6 +635,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     effects.BurnTickTimer = 0f;
                     effects.BurnDamage = 0f;
                     effects.BurnDuration = 0f;
+                    effects.BurnReapplyCooldown = 0f;
                 }
             }
             else
@@ -633,6 +643,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.BurnTickTimer = 0f;
                 effects.BurnDamage = 0f;
                 effects.BurnDuration = 0f;
+                effects.BurnReapplyCooldown = 0f;
             }
 
             if (BulletCount > 0 && pos.x >= BulletMin.x && pos.x <= BulletMax.x && pos.z >= BulletMin.y && pos.z <= BulletMax.y && !isAirborne)
@@ -667,7 +678,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
             bool hitPlayer = false;
             float distToPlayerSq = math.lengthsq(pos.xz - PlayerPos);
-            if (health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + 0.5f) * (radius + 0.5f))
+            if (health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
             {
                 System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);
                 health = -1f;
@@ -1120,14 +1131,53 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
         if ((tags & SkillHitEffectTag.Burn) != 0)
         {
+            bool isBurnPatch = skill.Type == 11;
+            float burnDuration = skill.EffectBurnDuration > 0f ? skill.EffectBurnDuration : 2f;
+            float burnDamage = math.max(skill.EffectBurnDamage, 0f);
+            if (isBurnPatch)
+            {
+                if (effects.BurnReapplyCooldown > 0f)
+                {
+                    flashTimer = math.max(flashTimer, 0.1f);
+                    return;
+                }
+
+                burnDuration *= BurnPatchDurationMultiplier;
+                burnDamage *= BurnPatchDamageMultiplier;
+            }
+
+            if (burnDamage <= 0f || burnDuration <= 0f)
+            {
+                flashTimer = math.max(flashTimer, 0.18f);
+                return;
+            }
+
             if (effects.BurnTimer <= 0f)
             {
                 effects.BurnTickTimer = BurnTickInterval;
             }
 
-            effects.BurnTimer = math.max(effects.BurnTimer, skill.EffectBurnDuration > 0f ? skill.EffectBurnDuration : 2f);
-            effects.BurnDamage = math.max(effects.BurnDamage, skill.EffectBurnDamage);
-            effects.BurnDuration = math.max(effects.BurnDuration, skill.EffectBurnDuration > 0f ? skill.EffectBurnDuration : 2f);
+            if (isBurnPatch)
+            {
+                if (effects.BurnTimer <= 0f)
+                {
+                    effects.BurnTimer = burnDuration;
+                }
+                else
+                {
+                    effects.BurnTimer = math.max(effects.BurnTimer, math.min(burnDuration, 0.35f));
+                }
+
+                effects.BurnReapplyCooldown = BurnPatchReapplyCooldown;
+            }
+            else
+            {
+                effects.BurnTimer = math.max(effects.BurnTimer, burnDuration);
+                effects.BurnReapplyCooldown = 0.15f;
+            }
+
+            effects.BurnDamage = math.max(effects.BurnDamage, burnDamage);
+            effects.BurnDuration = math.max(effects.BurnDuration, burnDuration);
         }
 
         flashTimer = math.max(flashTimer, 0.25f);

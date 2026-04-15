@@ -1041,7 +1041,6 @@ public partial class RougeGameManager
             player.transform.position = new Vector3(landingPosition.x, renderHeight + shockwave.JumpHeight * riseEase, landingPosition.z);
             _cameraLiftOffset = math.max(_cameraLiftOffset, shockwave.CameraLift * riseEase);
             _cameraFovOffset = math.min(_cameraFovOffset, -shockwave.CameraFovKick * riseEase);
-            _meleeHitShake = math.max(_meleeHitShake, 0.05f + riseEase * 0.04f);
 
             if (_shockwaveTimer <= 0f)
             {
@@ -1058,7 +1057,6 @@ public partial class RougeGameManager
         player.transform.position = new Vector3(landingPosition.x, renderHeight + remainingHeight, landingPosition.z);
         _cameraLiftOffset = math.max(_cameraLiftOffset, shockwave.CameraLift * (1f - slamProgress));
         _cameraFovOffset = math.lerp(-shockwave.CameraFovKick * 0.55f, 0f, slamProgress);
-        _meleeHitShake = math.max(_meleeHitShake, 0.08f + slamProgress * 0.08f);
 
         if (_shockwaveTimer > 0f)
         {

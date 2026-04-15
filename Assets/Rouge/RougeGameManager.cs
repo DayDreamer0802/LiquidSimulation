@@ -80,10 +80,16 @@ public partial class RougeGameManager : MonoBehaviour
 
     [Header("Player Stats")]
     [SerializeField] private float playerMaxHealth = 100f;
+    [SerializeField] private float playerContactDamage = 8f;
+    [SerializeField] private float playerHitInvincibilityDuration = 0.33f;
+    [SerializeField] private float playerContactPadding = 0.22f;
+    [SerializeField] private float playerHitRepulseRadius = 8f;
+    [SerializeField] private float playerHitRepulseForce = 220f;
+    [SerializeField] private float playerHitRepulseLift = 18f;
     private float playerHealth;
     private float _fps;
-    private const float BurnGroundDuration = 4f;
-    private const float BurnGroundRadius = 6f;
+    private const float BurnGroundDuration = 2.75f;
+    private const float BurnGroundRadius = 5f;
     private const float DeathBurstDuration = 0.45f;
 
     private NativeArray<float4> _positionsA;
@@ -279,6 +285,8 @@ public partial class RougeGameManager : MonoBehaviour
     private float2 _dashDirection;
     private Vector3 _dashStartPosition;
     private Vector3 _dashTargetPosition;
+    private bool _pendingPlayerHitRepulse;
+    private float2 _pendingPlayerHitRepulsePosition;
     private GameObject _dashVisual;
     private Material _dashMat;
     private bool _hasActiveSustainedSkill;
@@ -494,8 +502,14 @@ public partial class RougeGameManager : MonoBehaviour
         {
             if (_jumpState == 0 && _invincibilityTimer <= 0f)
             {
-                playerHealth -= damage * 2f;
+                playerHealth -= playerContactDamage;
                 playerHealth = Mathf.Max(0f, playerHealth);
+                _invincibilityTimer = math.max(_invincibilityTimer, playerHitInvincibilityDuration);
+                if (player != null)
+                {
+                    _pendingPlayerHitRepulse = true;
+                    _pendingPlayerHitRepulsePosition = player.PlanarPosition;
+                }
             }
             _playerDamageCount[0] = 0;
         }
@@ -520,6 +534,7 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         UpdateSkills(dt);
+        ApplyPendingPlayerHitRepulse();
 
      
         while (_explosionQueue.TryDequeue(out float2 expPos)) {
@@ -581,8 +596,13 @@ public partial class RougeGameManager : MonoBehaviour
                     SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.1f, skillEvent.Position.y), skillEvent.Radius, 0.3f, new Color(0.35f, 1f, 0.45f, 1f));
                     break;
                 case RougeSkillEventType.BurnGround:
-                    ActivateBurnPatch(skillEvent.Position, skillEvent.Radius, BurnGroundDuration, skillEvent.Damage, skillEvent.Duration);
-                    SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.05f, skillEvent.Position.y), skillEvent.Radius, 0.28f, new Color(1f, 0.4f, 0.08f, 1f));
+                    ActivateBurnPatch(
+                        skillEvent.Position,
+                        skillEvent.Radius,
+                        BurnGroundDuration,
+                        skillEvent.Damage * 0.55f,
+                        math.max(0.35f, skillEvent.Duration * 0.55f));
+                    SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.05f, skillEvent.Position.y), skillEvent.Radius * 0.92f, 0.28f, new Color(1f, 0.4f, 0.08f, 1f));
                     break;
                 case RougeSkillEventType.EnemyDeathBurst:
                     SpawnDeathBurstVFX(new Vector3(skillEvent.Position.x, renderHeight + 0.35f, skillEvent.Position.y), math.max(0.8f, skillEvent.Radius * 2.4f));
@@ -1019,8 +1039,18 @@ public partial class RougeGameManager : MonoBehaviour
             Destroy(_iceZoneVisual.GetComponent<Collider>());
             _iceZoneVisual.name = "Ice Zone Visual";
             _iceZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
-            _iceZoneMat.color = new Color(0.35f, 0.82f, 1f, 0.75f);
-            _iceZoneMat.renderQueue = 2450;
+            ConfigureGroundZoneMaterial(
+                _iceZoneMat,
+                new Color(0.35f, 0.82f, 1f, 0.78f),
+                new Color(0.88f, 0.98f, 1f, 0.42f),
+                1f,
+                1.55f,
+                0.08f,
+                2.2f,
+                0.22f,
+                1.25f,
+                1.05f,
+                1.35f);
             _iceZoneVisual.GetComponent<MeshRenderer>().material = _iceZoneMat;
             ConfigureGroundAoEVisual(_iceZoneVisual.GetComponent<MeshRenderer>(), _iceZoneMat);
             _iceZoneVisual.SetActive(false);
@@ -1037,15 +1067,35 @@ public partial class RougeGameManager : MonoBehaviour
         if (_poisonZoneMat == null)
         {
             _poisonZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
-            _poisonZoneMat.color = new Color(0.26f, 1f, 0.36f, 0.72f);
-            _poisonZoneMat.renderQueue = 2450;
+            ConfigureGroundZoneMaterial(
+                _poisonZoneMat,
+                new Color(0.26f, 1f, 0.36f, 0.78f),
+                new Color(0.05f, 0.22f, 0.08f, 0.32f),
+                0f,
+                1.9f,
+                0.24f,
+                1.8f,
+                0.7f,
+                0.95f,
+                1.15f,
+                0.9f);
         }
 
         if (_burnPatchMat == null)
         {
             _burnPatchMat = new Material(Shader.Find("Rouge/GroundZone"));
-            _burnPatchMat.color = new Color(1f, 0.42f, 0.08f, 0.78f);
-            _burnPatchMat.renderQueue = 2450;
+            ConfigureGroundZoneMaterial(
+                _burnPatchMat,
+                new Color(1f, 0.48f, 0.08f, 0.85f),
+                new Color(0.32f, 0.04f, 0.01f, 0.35f),
+                2f,
+                2.35f,
+                0.18f,
+                5.2f,
+                1.45f,
+                1.9f,
+                1.2f,
+                1.15f);
         }
 
         for (int i = 0; i < MaxPoisonBottles; i++)
@@ -1158,6 +1208,38 @@ public partial class RougeGameManager : MonoBehaviour
         renderer.sortingOrder = -50;
         renderer.receiveShadows = false;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    private void ConfigureGroundZoneMaterial(
+        Material material,
+        Color primaryColor,
+        Color secondaryColor,
+        float zoneType,
+        float noiseScale,
+        float edgeIrregularity,
+        float pulseSpeed,
+        float flowSpeed,
+        float emissionStrength,
+        float coreStrength,
+        float rimStrength)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        material.color = primaryColor;
+        material.renderQueue = 2450;
+        material.SetColor("_Color", primaryColor);
+        material.SetColor("_SecondaryColor", secondaryColor);
+        material.SetFloat("_ZoneType", zoneType);
+        material.SetFloat("_NoiseScale", noiseScale);
+        material.SetFloat("_EdgeIrregularity", edgeIrregularity);
+        material.SetFloat("_PulseSpeed", pulseSpeed);
+        material.SetFloat("_FlowSpeed", flowSpeed);
+        material.SetFloat("_EmissionStrength", emissionStrength);
+        material.SetFloat("_CoreStrength", coreStrength);
+        material.SetFloat("_RimStrength", rimStrength);
     }
 
     private void ApplyCameraEffects()
@@ -1541,6 +1623,7 @@ public partial class RougeGameManager : MonoBehaviour
             ObstacleRepulsion = obstacleRepulsion,
             ObstacleOrbitStrength = obstacleOrbitStrength,
             KnockbackResist = math.max(0.1f, 1f - currentLevel * 0.0002f),
+            PlayerContactPadding = playerContactPadding,
             SkillAreas = _skillAreasDb,
             SkillAreaCount = _skillAreaCount,
             BulletMin = _bulletMin,
@@ -1646,6 +1729,31 @@ public partial class RougeGameManager : MonoBehaviour
         }
     }
 
+    private void ApplyPendingPlayerHitRepulse()
+    {
+        if (!_pendingPlayerHitRepulse)
+        {
+            return;
+        }
+
+        _pendingPlayerHitRepulse = false;
+        TryAddSkillArea(new RougeSkillArea
+        {
+            Type = 2,
+            Position = _pendingPlayerHitRepulsePosition,
+            Radius = playerHitRepulseRadius,
+            Damage = 0f,
+            PullForce = playerHitRepulseForce,
+            VerticalForce = playerHitRepulseLift
+        });
+
+        SpawnAOERing(
+            new Vector3(_pendingPlayerHitRepulsePosition.x, renderHeight + 0.06f, _pendingPlayerHitRepulsePosition.y),
+            playerHitRepulseRadius,
+            0.22f,
+            new Color(1f, 0.92f, 0.55f, 1f));
+    }
+
     private void UpdateBurnPatches(float dt)
     {
         for (int i = 0; i < MaxBurnPatches; i++)
@@ -1675,11 +1783,12 @@ public partial class RougeGameManager : MonoBehaviour
             if (_burnPatchVisuals[i] != null)
             {
                 float normalizedLifetime = 1f - (_activeBurnPatches[i].Timer / math.max(0.01f, BurnGroundDuration));
-                float pulse = 1f + math.sin((_survivalTime + i * 0.41f) * 7f) * 0.08f;
+                float pulse = 1f + math.sin((_survivalTime + i * 0.41f) * 6.5f) * 0.12f;
+                float drift = math.sin((_survivalTime + i * 0.63f) * 1.7f) * 0.18f;
                 _burnPatchVisuals[i].SetActive(true);
-                _burnPatchVisuals[i].transform.position = new Vector3(_activeBurnPatches[i].Position.x, renderHeight + 0.03f, _activeBurnPatches[i].Position.y);
-                _burnPatchVisuals[i].transform.rotation = Quaternion.Euler(0f, normalizedLifetime * 75f, 0f);
-                _burnPatchVisuals[i].transform.localScale = new Vector3(_activeBurnPatches[i].Radius * 2f * pulse, 0.06f, _activeBurnPatches[i].Radius * 2f / math.max(pulse, 0.01f));
+                _burnPatchVisuals[i].transform.position = new Vector3(_activeBurnPatches[i].Position.x + drift, renderHeight + 0.03f, _activeBurnPatches[i].Position.y - drift * 0.45f);
+                _burnPatchVisuals[i].transform.rotation = Quaternion.Euler(0f, normalizedLifetime * 110f, 0f);
+                _burnPatchVisuals[i].transform.localScale = new Vector3(_activeBurnPatches[i].Radius * 2f * pulse, 0.08f, _activeBurnPatches[i].Radius * 2f / math.max(pulse, 0.01f));
             }
 
             TryAddSkillArea(new RougeSkillArea
@@ -2151,6 +2260,7 @@ public struct RougeEnemyEffectState
     public float BurnTimer;
     public float BurnTickTimer;
     public float BurnDamage;
+    public float BurnReapplyCooldown;
     public float CurseExplosionDamage;
     public float CurseExplosionRadius;
     public float LaunchLandingDamage;
