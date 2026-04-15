@@ -995,6 +995,18 @@ MonoBehaviour:
         TriggerLabel: AUTO SHOOT
         IsPassive: 1
         ActivationKey: 0
+      Effects:
+        Tags: 1
+        KnockbackForce: 10
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       MaxBullets: 128
       FireInterval: 0.06
       BulletSpeed: 42
@@ -1009,6 +1021,18 @@ MonoBehaviour:
         TriggerLabel: SPACE
         IsPassive: 0
         ActivationKey: 32
+      Effects:
+        Tags: 3
+        KnockbackForce: 5
+        LaunchHeight: 10
+        LaunchLandingRadius: 2
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 8
       AirTime: 0.5
       MaxDistance: 20
@@ -1024,6 +1048,18 @@ MonoBehaviour:
         TriggerLabel: Q
         IsPassive: 0
         ActivationKey: 113
+      Effects:
+        Tags: 0
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 10
       BaseStrikeCount: 4
       BonusStrikeLevelStep: 5
@@ -1035,7 +1071,7 @@ MonoBehaviour:
       BaseDamage: 400
       DamagePerLevel: 40
       PullForce: -120
-      VerticalForce: 45
+      VerticalForce: 70
       StrikeInterval: 0.15
       VisualDuration: 0.5
       RingDuration: 0.4
@@ -1045,6 +1081,18 @@ MonoBehaviour:
         TriggerLabel: E
         IsPassive: 0
         ActivationKey: 101
+      Effects:
+        Tags: 1
+        KnockbackForce: 10
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 3
       SpawnHeight: 2
       MaxThrowDistance: 30
@@ -1077,6 +1125,18 @@ MonoBehaviour:
         TriggerLabel: R
         IsPassive: 0
         ActivationKey: 114
+      Effects:
+        Tags: 0
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 6
       BaseDuration: 0.5
       DurationPerThirtyLevels: 1.5
@@ -1084,12 +1144,30 @@ MonoBehaviour:
       MaxWidth: 15
       Damage: 600
       PullForce: 50
+      ExtraBeamLevelStep: 10
+      ExtraBeamsPerStep: 2
+      MaxBeamCount: 7
+      ScatterAngle: 20
+      SubBeamRadiusMultiplier: 0.5
+      SubBeamDamageMultiplier: 0.5
     MeleeSlash:
       Presentation:
         DisplayName: Melee Slash
         TriggerLabel: MOUSE L-CLICK
         IsPassive: 0
         ActivationKey: 0
+      Effects:
+        Tags: 0
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       SlashCooldown: 0.22
       FinisherCooldown: 1.5
       ComboWindow: 1.5
@@ -1110,11 +1188,15 @@ MonoBehaviour:
       SlashVerticalForce: 80
       ThrustVerticalForce: 90
       FinisherSlamDuration: 0.12
-      FinisherSlamHeight: 16
       FinisherSlamWidth: 5
       FinisherSlamLength: 12
       FinisherSlamThickness: 0.8
       FinisherSlamForwardOffset: 7
+      FinisherArcHeight: 13
+      FinisherArcRadius: 10
+      FinisherArcStartAngle: 120
+      FinisherArcEndAngle: -12
+      FinisherArcTilt: 0
       SpikeDuration: 0.28
       SpikeRiseRatio: 0.25
       CenterSpikeHeight: 14
@@ -1124,8 +1206,8 @@ MonoBehaviour:
       CenterSpikeDistance: 14
       SideSpikeDistance: 12
       SideSpikeAngle: 28
-      CenterSpikeVerticalForce: 90
-      SideSpikeVerticalForce: 65
+      CenterSpikeVerticalForce: 45
+      SideSpikeVerticalForce: 35
       SpikePullForce: 40
     Shockwave:
       Presentation:
@@ -1133,11 +1215,23 @@ MonoBehaviour:
         TriggerLabel: V
         IsPassive: 0
         ActivationKey: 118
+      Effects:
+        Tags: 0
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 30
-      Duration: 0.6
-      LaunchDuration: 0.18
-      SlamDuration: 0.12
-      JumpHeight: 12
+      Duration: 0.75
+      LaunchDuration: 0.25
+      SlamDuration: 0.5
+      JumpHeight: 30
       RingLifetime: 0.7
       RingDelay: 0.06
       RingStartRadius: 8
@@ -1160,6 +1254,18 @@ MonoBehaviour:
         TriggerLabel: T
         IsPassive: 0
         ActivationKey: 116
+      Effects:
+        Tags: 33
+        KnockbackForce: 10
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 300
+        BurnDuration: 5
       Cooldown: 8
       Duration: 2
       WaveCount: 8
@@ -1182,6 +1288,18 @@ MonoBehaviour:
         TriggerLabel: C
         IsPassive: 0
         ActivationKey: 99
+      Effects:
+        Tags: 8
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 75
+        SlowDuration: 3
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 10
       Duration: 4
       BaseRadius: 8
@@ -1197,12 +1315,61 @@ MonoBehaviour:
       PulseBaseAlpha: 0.3
       PulseAmplitude: 0.1
       PulseSpeed: 6
+    PoisonBottle:
+      Presentation:
+        DisplayName: Poison Bottle
+        TriggerLabel: X
+        IsPassive: 0
+        ActivationKey: 120
+      Effects:
+        Tags: 4
+        KnockbackForce: 0
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 4
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
+      Cooldown: 5
+      SpawnHeight: 2
+      MaxThrowDistance: 28
+      FlightTime: 0.65
+      BottleVisualScale: 1.6
+      ZoneDuration: 5
+      ZoneRadius: 10
+      ZoneCoreRatio: 0.65
+      ZoneIrregularity: 0.18
+      ZoneNoiseScale: 0.18
+      PoisonDuration: 2
+      StackDpsPerSecond: 26
+      MaxPoisonDps: 120
+      InitialSpreadCount: 2
+      SpreadRadius: 4
+      SpreadStackDps: 36
+      SpreadRingDuration: 0.3
+      ZonePulseSpeed: 3.5
+      ZonePulseAmplitude: 0.12
     Dash:
       Presentation:
         DisplayName: Whirlwind
         TriggerLabel: L-SHIFT
         IsPassive: 0
         ActivationKey: 304
+      Effects:
+        Tags: 3
+        KnockbackForce: 20
+        LaunchHeight: 20
+        LaunchLandingRadius: 3
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       Cooldown: 3
       Duration: 1.5
       Distance: 21
@@ -1212,11 +1379,11 @@ MonoBehaviour:
       BladeWidth: 4
       BladeLength: 11
       BladeThickness: 0.75
-      MaxSpinRate: 3000
+      MaxSpinRate: 2600
       ImpactRadius: 10
-      ImpactDamage: 260
-      PullForce: 320
-      VerticalForce: 90
+      ImpactDamage: 300
+      PullForce: 0
+      VerticalForce: 0
       RingDuration: 0.5
     OrbitBall:
       Presentation:
@@ -1224,6 +1391,18 @@ MonoBehaviour:
         TriggerLabel: PASSIVE
         IsPassive: 1
         ActivationKey: 0
+      Effects:
+        Tags: 1
+        KnockbackForce: 3
+        LaunchHeight: 0
+        LaunchLandingRadius: 0
+        PoisonSpreadRadius: 0
+        SlowPercent: 0
+        SlowDuration: 0
+        CurseExplosionDamage: 0
+        CurseExplosionRadius: 0
+        BurnDamage: 0
+        BurnDuration: 0
       MaxBalls: 8
       LevelsPerBall: 4
       OrbitSpeed: 2.5

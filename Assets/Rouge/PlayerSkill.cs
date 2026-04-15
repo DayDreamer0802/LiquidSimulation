@@ -25,6 +25,34 @@ public enum PlayerSkillTag
     Movement = 1 << 0
 }
 
+[Flags]
+public enum SkillHitEffectTag
+{
+    None = 0,
+    Knockback = 1 << 0,
+    Launch = 1 << 1,
+    Poison = 1 << 2,
+    Slow = 1 << 3,
+    Curse = 1 << 4,
+    Burn = 1 << 5
+}
+
+[Serializable]
+public struct SkillHitEffectConfig
+{
+    public SkillHitEffectTag Tags;
+    public float KnockbackForce;
+    public float LaunchHeight;
+    public float LaunchLandingRadius;
+    public float PoisonSpreadRadius;
+    public float SlowPercent;
+    public float SlowDuration;
+    public float CurseExplosionDamage;
+    public float CurseExplosionRadius;
+    public float BurnDamage;
+    public float BurnDuration;
+}
+
 public readonly struct PlayerSkillDefinition
 {
     public PlayerSkillDefinition(PlayerSkillType type, string displayName, string triggerLabel, bool isPassive = false)
@@ -118,6 +146,7 @@ public class SkillPresentationConfig
 public class AutoShootSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Auto Shoot", "AUTO SHOOT", true);
+    public SkillHitEffectConfig Effects;
     public int MaxBullets = 128;
     public float FireInterval = 0.06f;
     public float BulletSpeed = 42f;
@@ -137,6 +166,7 @@ public class AutoShootSkillConfig
 public class LeapSmashSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Leap Smash", "SPACE", false, KeyCode.Space);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 8f;
     public float AirTime = 0.5f;
     public float MaxDistance = 20f;
@@ -157,6 +187,7 @@ public class LeapSmashSkillConfig
 public class LightPillarSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Light Pillar Strike", "Q", false, KeyCode.Q);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 10f;
     public int BaseStrikeCount = 4;
     public int BonusStrikeLevelStep = 5;
@@ -183,6 +214,7 @@ public class LightPillarSkillConfig
 public class BombThrowSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Bomb Throw", "E", false, KeyCode.E);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 3f;
     public float SpawnHeight = 2f;
     public float MaxThrowDistance = 30f;
@@ -220,6 +252,7 @@ public class BombThrowSkillConfig
 public class LaserBeamSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Laser Beam", "R", false, KeyCode.R);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 6f;
     public float BaseDuration = 0.5f;
     public float DurationPerThirtyLevels = 1.5f;
@@ -244,6 +277,7 @@ public class LaserBeamSkillConfig
 public class MeleeSlashSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Melee Slash", "MOUSE L-CLICK", false);
+    public SkillHitEffectConfig Effects;
     public float SlashCooldown = 0.22f;
     public float FinisherCooldown = 1.5f;
     public float ComboWindow = 1.5f;
@@ -296,6 +330,7 @@ public class MeleeSlashSkillConfig
 public class ShockwaveSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Shockwave", "V", false, KeyCode.V);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 30f;
     public float Duration = 0.6f;
     public float LaunchDuration = 0.18f;
@@ -328,6 +363,7 @@ public class ShockwaveSkillConfig
 public class MeteorRainSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Meteor Rain", "T", false, KeyCode.T);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 8f;
     public float Duration = 2f;
     public int WaveCount = 8;
@@ -355,6 +391,7 @@ public class MeteorRainSkillConfig
 public class IceZoneSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Ice Zone", "C", false, KeyCode.C);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 10f;
     public float Duration = 4f;
     public float BaseRadius = 8f;
@@ -381,6 +418,11 @@ public class IceZoneSkillConfig
 public class PoisonBottleSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Poison Bottle", "X", false, KeyCode.X);
+    public SkillHitEffectConfig Effects = new SkillHitEffectConfig
+    {
+        Tags = SkillHitEffectTag.Poison,
+        PoisonSpreadRadius = 4f
+    };
     public float Cooldown = 5f;
     public float SpawnHeight = 2f;
     public float MaxThrowDistance = 28f;
@@ -411,6 +453,7 @@ public class PoisonBottleSkillConfig
 public class DashSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Whirlwind", "L-SHIFT", false, KeyCode.LeftShift);
+    public SkillHitEffectConfig Effects;
     public float Cooldown = 3f;
     public float Duration = 1.5f;
     public float Distance = 21f;
@@ -437,6 +480,7 @@ public class DashSkillConfig
 public class OrbitBallSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Orbit Ball", "PASSIVE", true);
+    public SkillHitEffectConfig Effects;
     public int MaxBalls = 8;
     public int LevelsPerBall = 4;
     public float OrbitSpeed = 2.5f;

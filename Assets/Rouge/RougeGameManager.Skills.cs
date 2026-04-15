@@ -59,9 +59,15 @@ public partial class RougeGameManager
         return true;
     }
 
-    private bool TryAddCircularSkillArea(float2 position, float radius, float damage, float pullForce, float verticalForce, int type = 2)
+    private bool TryAddSkillArea(RougeSkillArea area, SkillHitEffectConfig effects)
     {
-        return TryAddSkillArea(new RougeSkillArea
+        ApplySkillEffects(ref area, effects);
+        return TryAddSkillArea(area);
+    }
+
+    private bool TryAddCircularSkillArea(float2 position, float radius, float damage, float pullForce, float verticalForce, SkillHitEffectConfig effects, int type = 2)
+    {
+        RougeSkillArea area = new RougeSkillArea
         {
             Type = type,
             Position = position,
@@ -69,7 +75,25 @@ public partial class RougeGameManager
             Damage = damage,
             PullForce = pullForce,
             VerticalForce = verticalForce
-        });
+        };
+
+        ApplySkillEffects(ref area, effects);
+        return TryAddSkillArea(area);
+    }
+
+    private void ApplySkillEffects(ref RougeSkillArea area, SkillHitEffectConfig effects)
+    {
+        area.EffectFlags = (int)effects.Tags;
+        area.EffectKnockbackForce = effects.KnockbackForce;
+        area.EffectLaunchHeight = effects.LaunchHeight;
+        area.EffectLaunchLandingRadius = effects.LaunchLandingRadius;
+        area.EffectPoisonSpreadRadius = effects.PoisonSpreadRadius;
+        area.EffectSlowPercent = effects.SlowPercent;
+        area.EffectSlowDuration = effects.SlowDuration;
+        area.EffectCurseExplosionDamage = effects.CurseExplosionDamage;
+        area.EffectCurseExplosionRadius = effects.CurseExplosionRadius;
+        area.EffectBurnDamage = effects.BurnDamage;
+        area.EffectBurnDuration = effects.BurnDuration;
     }
 
     private bool IsMovementSkillLocked(PlayerSkillType skillType)
@@ -119,7 +143,7 @@ public partial class RougeGameManager
                 _jumpState = 0;
                 _jumpArcPos = _jumpTarget;
                 float2 landPos = PlayerSkillMath.ToPlanar(_jumpTarget);
-                if (TryAddCircularSkillArea(landPos, leap.LandingRadius, leap.LandingDamage, leap.LandingPullForce, leap.LandingVerticalForce))
+                if (TryAddCircularSkillArea(landPos, leap.LandingRadius, leap.LandingDamage, leap.LandingPullForce, leap.LandingVerticalForce, leap.Effects))
                 {
                     SpawnImpact(landPos, leap.LandingRadius * 0.5f, leap.LandingRadius, 0.5f, new Color(1f, 0.85f, 0.1f, 1f));
                     _meleeHitShake = 0.25f;
@@ -178,7 +202,7 @@ public partial class RougeGameManager
             break;
         }
 
-        if (TryAddCircularSkillArea(strikePos, strikeRadius, lightPillar.BaseDamage + currentLevel * lightPillar.DamagePerLevel, lightPillar.PullForce, lightPillar.VerticalForce))
+        if (TryAddCircularSkillArea(strikePos, strikeRadius, lightPillar.BaseDamage + currentLevel * lightPillar.DamagePerLevel, lightPillar.PullForce, lightPillar.VerticalForce, lightPillar.Effects))
         {
             SpawnImpact(strikePos, strikeRadius, strikeRadius, lightPillar.RingDuration, new Color(1f, 0.9f, 0.2f, 1f));
         }
@@ -244,7 +268,7 @@ public partial class RougeGameManager
             float bounceDamage = math.max(bomb.BaseDamage * (float)math.pow(bomb.DamageFalloff, _activeBombs[i].BounceCount), bomb.MinDamage);
             float2 bombPos = PlayerSkillMath.ToPlanar(_activeBombs[i].Position);
 
-            if (TryAddCircularSkillArea(bombPos, bounceRadius, bounceDamage, bomb.PullForce, bomb.VerticalForce))
+            if (TryAddCircularSkillArea(bombPos, bounceRadius, bounceDamage, bomb.PullForce, bomb.VerticalForce, bomb.Effects))
             {
                 SpawnImpact(bombPos, bounceRadius * 0.5f, bounceRadius, bomb.RingDuration, new Color(1f, 0.5f, 0f, 1f));
             }
@@ -373,7 +397,7 @@ public partial class RougeGameManager
             Damage = laser.Damage,
             PullForce = laser.PullForce,
             VerticalForce = 0f
-        });
+        }, laser.Effects);
 
         int extraBeamCount = beamCount - 1;
         for (int i = 0; i < MaxLaserSubBeams; i++)
@@ -415,7 +439,7 @@ public partial class RougeGameManager
                 Damage = subDamage,
                 PullForce = laser.PullForce,
                 VerticalForce = 0f
-            });
+            }, laser.Effects);
         }
     }
 
@@ -531,7 +555,7 @@ public partial class RougeGameManager
                 Damage = _meleeComboStep == 4 ? melee.SpinDamage : melee.SlashDamage,
                 PullForce = melee.PullForce,
                 VerticalForce = _meleeComboStep == 3 ? melee.ThrustVerticalForce : melee.SlashVerticalForce
-            });
+            }, melee.Effects);
         }
         else if (_meleeVisual)
         {
@@ -649,7 +673,7 @@ public partial class RougeGameManager
                     VerticalForce = i == 0 ? melee.CenterSpikeVerticalForce : melee.SideSpikeVerticalForce,
                     PullForce = melee.SpikePullForce,
                     Damage = 0f
-                });
+                }, melee.Effects);
             }
         }
 
@@ -725,7 +749,7 @@ public partial class RougeGameManager
                 Damage = orbit.BaseDamage + currentLevel * orbit.DamagePerLevel,
                 PullForce = orbit.PullForce,
                 VerticalForce = orbit.VerticalForce
-            });
+            }, orbit.Effects);
         }
     }
 
@@ -788,7 +812,7 @@ public partial class RougeGameManager
         _cameraFovOffset = 0f;
         _meleeHitShake = math.max(_meleeHitShake, shockwave.LandingShake);
 
-        TryAddCircularSkillArea(_shockwavePos, shockwave.ImpactRadius, shockwave.ImpactDamage, shockwave.PullForce, shockwave.VerticalForce);
+        TryAddCircularSkillArea(_shockwavePos, shockwave.ImpactRadius, shockwave.ImpactDamage, shockwave.PullForce, shockwave.VerticalForce, shockwave.Effects);
 
         int ringCount = math.max(1, shockwave.ImpactRingCount);
         for (int i = 0; i < ringCount; i++)
@@ -806,7 +830,7 @@ public partial class RougeGameManager
                 Damage = 0f,
                 PullForce = shockwave.PullForce,
                 VerticalForce = shockwave.VerticalForce
-            });
+            }, shockwave.Effects);
         }
     }
 
@@ -881,7 +905,7 @@ public partial class RougeGameManager
             if (_meteorVisualTimers[i] <= 0f && previousTimer > 0f)
             {
                 float2 impactPos = new float2(target.x, target.z);
-                if (TryAddCircularSkillArea(impactPos, meteor.ImpactRadius, meteor.ImpactDamage, meteor.PullForce, meteor.VerticalForce))
+                if (TryAddCircularSkillArea(impactPos, meteor.ImpactRadius, meteor.ImpactDamage, meteor.PullForce, meteor.VerticalForce, meteor.Effects))
                 {
                     SpawnImpact(impactPos, meteor.ImpactRadius, meteor.ImpactRadius, meteor.RingDuration, new Color(1f, 0.2f, 0f, 1f));
                 }
@@ -930,11 +954,11 @@ public partial class RougeGameManager
             Damage = iceZone.TickDamage,
             PullForce = iceZone.TickPullForce,
             VerticalForce = 0f
-        });
+        }, iceZone.Effects);
 
         if (previousTimer > 0f && _iceZoneTimer <= 0f)
         {
-            if (TryAddCircularSkillArea(_iceZonePos, iceRadius + iceZone.BurstRadiusBonus, iceZone.BurstDamage, iceZone.BurstPullForce, iceZone.BurstVerticalForce))
+            if (TryAddCircularSkillArea(_iceZonePos, iceRadius + iceZone.BurstRadiusBonus, iceZone.BurstDamage, iceZone.BurstPullForce, iceZone.BurstVerticalForce, iceZone.Effects))
             {
                 SpawnImpact(_iceZonePos, iceRadius, iceRadius + iceZone.BurstRadiusBonus, iceZone.RingDuration, new Color(0.3f, 0.7f, 1f, 1f), 2f);
             }
@@ -1066,15 +1090,15 @@ public partial class RougeGameManager
                 Position = _activePoisonZones[i].Position,
                 Radius = _activePoisonZones[i].Radius,
                 Length = _activePoisonZones[i].Radius * math.clamp(poison.ZoneCoreRatio, 0.2f, 0.95f),
-                Damage = poison.MaxPoisonDps,
-                PullForce = poison.PoisonDuration,
-                SpinForce = poison.StackDpsPerSecond,
-                VerticalForce = math.max(0f, poison.InitialSpreadCount),
+                Damage = 0f,
+                PullForce = 0f,
+                SpinForce = 0f,
+                VerticalForce = 0f,
                 AuxA = poison.ZoneIrregularity,
                 AuxB = 0f,
                 AuxC = poison.ZoneNoiseScale,
                 AuxD = _activePoisonZones[i].Seed
-            });
+            }, poison.Effects);
         }
     }
 
@@ -1192,7 +1216,7 @@ public partial class RougeGameManager
             Damage = dash.SpinDamage * (0.85f + spinFactor * 0.35f),
             PullForce = math.abs(dash.PullForce) * (0.85f + spinFactor * 0.25f),
             VerticalForce = dash.VerticalForce
-        });
+        }, dash.Effects);
 
         if (_dashSpinTimer > 0f)
         {
@@ -1201,7 +1225,7 @@ public partial class RougeGameManager
 
         float2 endPos = new float2(player.transform.position.x, player.transform.position.z);
         SpawnImpact(endPos, dash.ImpactRadius, dash.ImpactRadius, dash.RingDuration, new Color(1f, 0.75f, 0.15f, 1f));
-        TryAddCircularSkillArea(endPos, dash.ImpactRadius, dash.ImpactDamage, math.abs(dash.PullForce), dash.VerticalForce);
+        TryAddCircularSkillArea(endPos, dash.ImpactRadius, dash.ImpactDamage, math.abs(dash.PullForce), dash.VerticalForce, dash.Effects);
 
         if (_dashVisual != null)
         {

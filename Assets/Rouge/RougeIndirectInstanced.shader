@@ -44,6 +44,7 @@
                 float4 positionHCS : SV_POSITION;
                 float3 normalWS : TEXCOORD0;
                 float flash : TEXCOORD1;
+                float curse : TEXCOORD2;
             };
 
             Varyings Vert(Attributes input)
@@ -61,7 +62,8 @@
                 
                 output.positionHCS = TransformWorldToHClip(positionWS);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
-                output.flash = state.w;
+                output.flash = frac(max(state.w, 0.0));
+                output.curse = step(9.5, state.w);
                 
                 return output;
             }
@@ -73,6 +75,7 @@
                 float shade = 0.25 + ndotl * 0.75;
                 
                 half3 col = _BaseColor.rgb * shade;
+                col = lerp(col, half3(0.03, 0.03, 0.03), input.curse);
                 col = lerp(col, half3(1.0, 1.0, 1.0), saturate(input.flash));
                 
                 return half4(col, _BaseColor.a);

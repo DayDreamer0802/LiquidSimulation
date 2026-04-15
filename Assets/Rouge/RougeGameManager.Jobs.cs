@@ -229,11 +229,11 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
     [ReadOnly] public NativeArray<float4> VelocityIn;
     [ReadOnly] public NativeArray<float4> StateIn;
-    [ReadOnly] public NativeArray<float4> PoisonStateIn;
+    [ReadOnly] public NativeArray<RougeEnemyEffectState> EffectStateIn;
     [NativeDisableParallelForRestriction] public NativeArray<float4> PositionScaleOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> VelocityOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> StateOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> PoisonStateOut;
+    [NativeDisableParallelForRestriction] public NativeArray<RougeEnemyEffectState> EffectStateOut;
 
     public void Execute(int startIndex, int count)
     {
@@ -241,11 +241,11 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
         float4* posInPtr = (float4*)PositionScaleIn.GetUnsafeReadOnlyPtr();
         float4* velInPtr = (float4*)VelocityIn.GetUnsafeReadOnlyPtr();
         float4* stateInPtr = (float4*)StateIn.GetUnsafeReadOnlyPtr();
-        float4* poisonInPtr = (float4*)PoisonStateIn.GetUnsafeReadOnlyPtr();
+        RougeEnemyEffectState* effectInPtr = (RougeEnemyEffectState*)EffectStateIn.GetUnsafeReadOnlyPtr();
         float4* posOutPtr = (float4*)PositionScaleOut.GetUnsafePtr();
         float4* velOutPtr = (float4*)VelocityOut.GetUnsafePtr();
         float4* stateOutPtr = (float4*)StateOut.GetUnsafePtr();
-        float4* poisonOutPtr = (float4*)PoisonStateOut.GetUnsafePtr();
+        RougeEnemyEffectState* effectOutPtr = (RougeEnemyEffectState*)EffectStateOut.GetUnsafePtr();
         int end = startIndex + count;
 
         for (int i = startIndex; i < end; i++)
@@ -254,7 +254,7 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
             posOutPtr[i] = posInPtr[sourceIndex];
             velOutPtr[i] = velInPtr[sourceIndex];
             stateOutPtr[i] = stateInPtr[sourceIndex];
-            poisonOutPtr[i] = poisonInPtr[sourceIndex];
+            effectOutPtr[i] = effectInPtr[sourceIndex];
         }
     }
 }
@@ -262,11 +262,18 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 {
+    private const float CurseVisualOffset = 10f;
+    private const float PoisonDurationSeconds = 2f;
+    private const float PoisonTickInterval = 0.5f;
+    private const float PoisonTickMaxHealthRatio = 0.1f;
+    private const float BurnTickInterval = 0.5f;
+    private const float BurnGroundRadius = 6f;
+
     [ReadOnly] public NativeArray<ulong> SortedKeys;
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
     [ReadOnly] public NativeArray<float4> VelocityIn;
     [ReadOnly] public NativeArray<float4> StateIn;
-    [ReadOnly] public NativeArray<float4> PoisonStateIn;
+    [ReadOnly] public NativeArray<RougeEnemyEffectState> EffectStateIn;
     [ReadOnly] public NativeArray<int> CellOffsets;
     [ReadOnly] public NativeArray<int> CellCounts;
     [ReadOnly] public NativeArray<int2> NeighborOffsets;
@@ -277,7 +284,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     [NativeDisableParallelForRestriction] public NativeArray<float4> PositionScaleOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> VelocityOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> StateOut;
-    [NativeDisableParallelForRestriction] public NativeArray<float4> PoisonStateOut;
+    [NativeDisableParallelForRestriction] public NativeArray<RougeEnemyEffectState> EffectStateOut;
 
     public int BulletCount;
     public int ObstacleCount;
@@ -298,7 +305,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     public float ObstacleOrbitStrength;
     public float KnockbackResist;
     [WriteOnly] public NativeQueue<float2>.ParallelWriter ExplosionQueue;
-    [WriteOnly] public NativeQueue<RougePoisonBurstEvent>.ParallelWriter PoisonBurstQueue;
+    [WriteOnly] public NativeQueue<RougeSkillEvent>.ParallelWriter SkillEventQueue;
     public int CurrentMaxEnemies;
     [ReadOnly] public NativeArray<RougeSkillArea> SkillAreas;
     public int SkillAreaCount;
@@ -322,11 +329,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         float4* posInPtr = (float4*)PositionScaleIn.GetUnsafeReadOnlyPtr();
         float4* velInPtr = (float4*)VelocityIn.GetUnsafeReadOnlyPtr();
         float4* stateInPtr = (float4*)StateIn.GetUnsafeReadOnlyPtr();
-        float4* poisonInPtr = (float4*)PoisonStateIn.GetUnsafeReadOnlyPtr();
+        RougeEnemyEffectState* effectInPtr = (RougeEnemyEffectState*)EffectStateIn.GetUnsafeReadOnlyPtr();
         float4* posOutPtr = (float4*)PositionScaleOut.GetUnsafePtr();
         float4* velOutPtr = (float4*)VelocityOut.GetUnsafePtr();
         float4* stateOutPtr = (float4*)StateOut.GetUnsafePtr();
-        float4* poisonOutPtr = (float4*)PoisonStateOut.GetUnsafePtr();
+        RougeEnemyEffectState* effectOutPtr = (RougeEnemyEffectState*)EffectStateOut.GetUnsafePtr();
         int* offsetsPtr = (int*)CellOffsets.GetUnsafeReadOnlyPtr();
         int* countsPtr = (int*)CellCounts.GetUnsafeReadOnlyPtr();
         int2* neighborOffsetsPtr = (int2*)NeighborOffsets.GetUnsafeReadOnlyPtr();
@@ -348,14 +355,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 posOutPtr[sourceIndex] = new float4(99999f, -9999f, 99999f, 0f);
                 velOutPtr[sourceIndex] = float4.zero;
                 stateOutPtr[sourceIndex] = new float4(-1f, 0f, 0f, 0f);
-                poisonOutPtr[sourceIndex] = float4.zero;
+                effectOutPtr[sourceIndex] = default;
                 continue;
             }
 
             float4 pos4 = posInPtr[i];
             float4 vel4 = velInPtr[i];
             float4 state4 = stateInPtr[i];
-            float4 poison4 = poisonInPtr[i];
+            RougeEnemyEffectState effects = effectInPtr[i];
 
             float3 pos = pos4.xyz;
             float3 vel = vel4.xyz;
@@ -363,18 +370,15 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float health = state4.x;
             float radius = state4.y;
             float maxSpeed = state4.z;
-            float flashTimer = state4.w;
-            float poisonDps = poison4.x;
-            float poisonTimer = poison4.y;
-            float poisonSpreadBudget = poison4.z;
+            float flashTimer = math.frac(math.max(state4.w, 0f));
 
             if (health <= 0f || math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
             {
-                Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref poison4);
+                Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref effects);
                 posOutPtr[sourceIndex] = pos4;
                 velOutPtr[sourceIndex] = vel4;
                 stateOutPtr[sourceIndex] = state4;
-                poisonOutPtr[sourceIndex] = poison4;
+                effectOutPtr[sourceIndex] = effects;
                 continue;
             }
 
@@ -394,12 +398,26 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 }
             }
 
+            if (effects.SlowTimer > 0f)
+            {
+                effects.SlowTimer = math.max(0f, effects.SlowTimer - DeltaTime);
+                if (effects.SlowTimer <= 0f)
+                {
+                    effects.SlowPercent = 0f;
+                }
+            }
+            else
+            {
+                effects.SlowPercent = 0f;
+            }
+
+            float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
             float2 desired = math.normalizesafe(PlayerPos - pos.xz);
             bool isAirborne = pos.y > RenderHeight + 0.5f;
             float3 acceleration = new float3(0f, -30f, 0f);
             if (!isAirborne)
             {
-                acceleration.xz += desired * ChaseAcceleration;
+                acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor);
             }
 
             float2 separation = float2.zero;
@@ -455,10 +473,10 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                         {
                             float2 normal = diff / dist;
                             float weight = 1f - math.saturate(edgeDist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight);
+                            acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                             float2 tangent = new float2(-normal.y, normal.x);
                             if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight);
+                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                         }
                     }
                 }
@@ -493,10 +511,10 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                             float dist = math.sqrt(math.max(distSq, 0.0001f));
                             float2 normal = diff / dist;
                             float weight = 1f - math.saturate(dist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight);
+                            acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                             float2 tangent = new float2(-normal.y, normal.x);
                             if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight);
+                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                         }
                     }
                 }
@@ -507,38 +525,75 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 RougeSkillArea skill = SkillAreas[s];
                 switch (skill.Type)
                 {
-                    case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, pos, skill); break;
-                    case 2: ProcessBomb(ref vel, ref health, ref flashTimer, pos, skill); break;
-                    case 3: ProcessLaser(ref acceleration, ref vel, ref health, ref flashTimer, pos, skill); break;
-                    case 4: ProcessMelee(ref acceleration, ref vel, ref health, ref flashTimer, pos, skill); break;
-                    case 5: ProcessOrbit(ref acceleration, ref vel, ref health, ref flashTimer, pos, skill); break;
-                    case 6: ProcessSpike(ref acceleration, ref vel, ref flashTimer, ref tornadoMark, pos, skill); break;
-                    case 7: ProcessShockwave(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, pos, skill); break;
-                    case 8: ProcessIceZone(ref acceleration, ref health, ref flashTimer, ref vel, pos, skill); break;
-                    case 9: ProcessPoisonZone(ref poisonDps, ref poisonTimer, ref poisonSpreadBudget, ref flashTimer, ref vel, pos, skill, DeltaTime); break;
-                    case 10: ProcessPoisonBurst(ref poisonDps, ref poisonTimer, ref poisonSpreadBudget, ref flashTimer, pos, skill); break;
+                    case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 2: ProcessBomb(ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 3: ProcessLaser(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 4: ProcessMelee(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 5: ProcessOrbit(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 6: ProcessSpike(ref acceleration, ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 7: ProcessShockwave(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                    case 8: ProcessIceZone(ref acceleration, ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill); break;
+                    case 9:
+                    case 10:
+                    case 11:
+                        ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
+                        break;
                 }
             }
 
             bool diedFromPoison = false;
-            if (poisonTimer > 0f && poisonDps > 0f)
+            if (effects.PoisonTimer > 0f)
             {
-                float previousHealth = health;
-                health -= poisonDps * DeltaTime;
-                poisonTimer = math.max(0f, poisonTimer - DeltaTime);
-                flashTimer = math.max(flashTimer, 0.35f);
-                diedFromPoison = previousHealth > 0f && health <= 0f;
-                if (poisonTimer <= 0f)
+                effects.PoisonTimer = math.max(0f, effects.PoisonTimer - DeltaTime);
+                effects.PoisonTickTimer -= DeltaTime;
+                while (effects.PoisonTimer > 0f && effects.PoisonTickTimer <= 0f)
                 {
-                    poisonDps = 0f;
-                    poisonSpreadBudget = 0f;
+                    float previousHealth = health;
+                    health -= EnemyMaxHealth * PoisonTickMaxHealthRatio;
+                    flashTimer = math.max(flashTimer, 0.45f);
+                    effects.PoisonTickTimer += PoisonTickInterval;
+                    if (previousHealth > 0f && health <= 0f)
+                    {
+                        diedFromPoison = true;
+                        break;
+                    }
+                }
+
+                if (effects.PoisonTimer <= 0f)
+                {
+                    effects.PoisonTickTimer = 0f;
+                    effects.PoisonSpreadRadius = 0f;
                 }
             }
             else
             {
-                poisonTimer = 0f;
-                poisonDps = 0f;
-                poisonSpreadBudget = 0f;
+                effects.PoisonTickTimer = 0f;
+                effects.PoisonSpreadRadius = 0f;
+            }
+
+            if (effects.BurnTimer > 0f)
+            {
+                effects.BurnTimer = math.max(0f, effects.BurnTimer - DeltaTime);
+                effects.BurnTickTimer -= DeltaTime;
+                while (effects.BurnTimer > 0f && effects.BurnTickTimer <= 0f)
+                {
+                    health -= effects.BurnDamage;
+                    flashTimer = math.max(flashTimer, 0.3f);
+                    effects.BurnTickTimer += BurnTickInterval;
+                }
+
+                if (effects.BurnTimer <= 0f)
+                {
+                    effects.BurnTickTimer = 0f;
+                    effects.BurnDamage = 0f;
+                    effects.BurnDuration = 0f;
+                }
+            }
+            else
+            {
+                effects.BurnTickTimer = 0f;
+                effects.BurnDamage = 0f;
+                effects.BurnDuration = 0f;
             }
 
             if (BulletCount > 0 && pos.x >= BulletMin.x && pos.x <= BulletMax.x && pos.z >= BulletMin.y && pos.z <= BulletMax.y && !isAirborne)
@@ -583,6 +638,18 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             vel += acceleration * DeltaTime;
             if (!isAirborne)
             {
+                if (effects.SlowTimer > 0f)
+                {
+                    if (slowMoveFactor >= 0f)
+                    {
+                        vel.xz *= math.saturate(slowMoveFactor);
+                    }
+                    else
+                    {
+                        vel.xz = -vel.xz * math.min(math.abs(slowMoveFactor), 2f);
+                    }
+                }
+
                 float speedSq = math.lengthsq(vel.xz);
                 if (speedSq > maxSpeed * maxSpeed)
                 {
@@ -602,21 +669,41 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 if (vel.y < -3.5f || tornadoMark > 0.5f)
                 {
                     bool isSkillKill = tornadoMark > 0.5f;
-                    bool isSpikeKill = tornadoMark > 1.5f;
+                    bool isSpikeKill = tornadoMark > 1.5f && tornadoMark < 2.5f;
+                    bool isLaunchKill = tornadoMark > 2.5f;
                     health = 0f;
                     tornadoMark = 0f;
                     if (isSkillKill)
                     {
-                        ExplosionQueue.Enqueue(pos.xz);
-                        if (isSpikeKill)
+                        if (isLaunchKill)
                         {
-                            System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[3]);
+                            if (effects.LaunchLandingRadius > 0f)
+                            {
+                                SkillEventQueue.Enqueue(new RougeSkillEvent
+                                {
+                                    Type = (int)RougeSkillEventType.LaunchLandingExplosion,
+                                    Position = pos.xz,
+                                    Radius = effects.LaunchLandingRadius,
+                                    Damage = effects.LaunchLandingDamage
+                                });
+                            }
                         }
                         else
                         {
-                            System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[0]);
+                            ExplosionQueue.Enqueue(pos.xz);
+                            if (isSpikeKill)
+                            {
+                                System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[3]);
+                            }
+                            else
+                            {
+                                System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[0]);
+                            }
                         }
                     }
+
+                    effects.LaunchLandingDamage = 0f;
+                    effects.LaunchLandingRadius = 0f;
                 }
                 else if (vel.y < -1f)
                 {
@@ -630,20 +717,41 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
             if (health <= 0f && !hitPlayer)
             {
-                if (diedFromPoison && poisonTimer > 0f && poisonDps > 0f && poisonSpreadBudget > 0.5f)
+                if (diedFromPoison && effects.PoisonSpreadRadius > 0f)
                 {
-                    PoisonBurstQueue.Enqueue(new RougePoisonBurstEvent
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
                     {
+                        Type = (int)RougeSkillEventType.PoisonSpread,
                         Position = pos.xz,
-                        RemainingSpreadBudget = poisonSpreadBudget - 1f,
-                        Potency = poisonDps
+                        Radius = effects.PoisonSpreadRadius
+                    });
+                }
+
+                if (effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f)
+                {
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
+                    {
+                        Type = (int)RougeSkillEventType.CurseExplosion,
+                        Position = pos.xz,
+                        Radius = effects.CurseExplosionRadius,
+                        Damage = effects.CurseExplosionDamage
+                    });
+                }
+
+                if (effects.BurnTimer > 0f && effects.BurnDamage > 0f)
+                {
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
+                    {
+                        Type = (int)RougeSkillEventType.BurnGround,
+                        Position = pos.xz,
+                        Radius = BurnGroundRadius,
+                        Damage = effects.BurnDamage,
+                        Duration = math.max(effects.BurnDuration, 0.1f)
                     });
                 }
 
                 System.Threading.Interlocked.Increment(ref ((int*)EnemyKillCount.GetUnsafePtr())[0]);
-                poisonDps = 0f;
-                poisonTimer = 0f;
-                poisonSpreadBudget = 0f;
+                effects = default;
             }
 
             pos.x = math.clamp(pos.x, -ArenaHalfExtent, ArenaHalfExtent);
@@ -652,12 +760,16 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             flashTimer = math.max(0f, flashTimer - DeltaTime * 5f);
             posOutPtr[sourceIndex] = new float4(pos, radius);
             velOutPtr[sourceIndex] = new float4(vel, tornadoMark);
-            stateOutPtr[sourceIndex] = new float4(health, radius, maxSpeed, flashTimer);
-            poisonOutPtr[sourceIndex] = new float4(poisonDps, poisonTimer, poisonSpreadBudget, 0f);
+            stateOutPtr[sourceIndex] = new float4(
+                health,
+                radius,
+                maxSpeed,
+                math.min(flashTimer, 0.99f) + (effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f ? CurseVisualOffset : 0f));
+            effectOutPtr[sourceIndex] = effects;
         }
     }
 
-    private void ProcessTornado(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, float3 pos, RougeSkillArea skill)
+    private void ProcessTornado(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         float2 diff = pos.xz - skill.Position;
         float distSq = math.lengthsq(diff);
@@ -673,10 +785,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             tornadoMark = 1f;
             health -= skill.Damage * 0.05f * DeltaTime;
             flashTimer = 1f;
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessBomb(ref float3 vel, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    private void ProcessBomb(ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 5f) return;
         float2 diff = skill.Position - pos.xz;
@@ -695,10 +808,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             {
                 System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[1]);
             }
+
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessLaser(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    private void ProcessLaser(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 6f) return;
         float2 pToS = pos.xz - skill.Position;
@@ -720,11 +835,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
                 acceleration.xz += skill.Direction * (skill.PullForce * weight * KnockbackResist);
                 vel.y = math.max(vel.y, skill.VerticalForce * weight * KnockbackResist);
+                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
             }
         }
     }
 
-    private void ProcessMelee(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    private void ProcessMelee(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 6f) return;
         float2 pToS = pos.xz - skill.Position;
@@ -745,11 +861,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
                 acceleration.xz += dir * skill.PullForce * KnockbackResist;
                 vel.y = math.max(vel.y, skill.VerticalForce * KnockbackResist);
+                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
             }
         }
     }
 
-    private void ProcessOrbit(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    private void ProcessOrbit(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 6f) return;
         float2 diff = skill.Position - pos.xz;
@@ -768,10 +885,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             {
                 System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[4]);
             }
+
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessSpike(ref float3 acceleration, ref float3 vel, ref float flashTimer, ref float tornadoMark, float3 pos, RougeSkillArea skill)
+    private void ProcessSpike(ref float3 acceleration, ref float3 vel, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (pos.y > RenderHeight + 3f) return;
         float2 diff = pos.xz - skill.Position;
@@ -784,10 +903,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             acceleration.xz += dir * (skill.PullForce + 25f);
             tornadoMark = 2f;
             flashTimer = 1f;
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessShockwave(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, float3 pos, RougeSkillArea skill)
+    private void ProcessShockwave(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (pos.y > RenderHeight + 3f) return;
         float2 diff = pos.xz - skill.Position;
@@ -809,10 +929,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             {
                 System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[3]);
             }
+
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessIceZone(ref float3 acceleration, ref float health, ref float flashTimer, ref float3 vel, float3 pos, RougeSkillArea skill)
+    private void ProcessIceZone(ref float3 acceleration, ref float health, ref float flashTimer, ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 4f) return;
         float2 diff = pos.xz - skill.Position;
@@ -830,44 +952,36 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             {
                 System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[2]);
             }
+
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
     }
 
-    private void ProcessPoisonZone(ref float poisonDps, ref float poisonTimer, ref float poisonSpreadBudget, ref float flashTimer, ref float3 vel, float3 pos, RougeSkillArea skill, float dt)
+    private void ProcessTaggedArea(ref float health, ref float flashTimer, ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 5f) return;
         float2 diff = pos.xz - skill.Position;
         float distSq = math.lengthsq(diff);
         if (distSq > skill.Radius * skill.Radius) return;
 
-        float dist = math.sqrt(math.max(distSq, 0.0001f));
-        float edgeNoise = SamplePoisonNoise(skill.Position, diff, skill.AuxC, skill.AuxD);
-        float outerRadius = skill.Radius * (1f + edgeNoise * skill.AuxA);
-        if (dist > outerRadius) return;
+        if (skill.AuxA > 0f)
+        {
+            float dist = math.sqrt(math.max(distSq, 0.0001f));
+            float edgeNoise = SamplePoisonNoise(skill.Position, diff, skill.AuxC, skill.AuxD);
+            float outerRadius = skill.Radius * (1f + edgeNoise * skill.AuxA);
+            if (dist > outerRadius)
+            {
+                return;
+            }
+        }
 
-        float coreRadius = math.max(0.5f, skill.Length);
-        float influence = dist <= coreRadius ? 1f : 1f - math.saturate((dist - coreRadius) / math.max(outerRadius - coreRadius, 0.001f));
-        float stackDelta = skill.SpinForce * dt * math.lerp(0.7f, 1.7f, influence);
-        poisonDps = math.min(skill.Damage, poisonDps + math.max(stackDelta, skill.SpinForce * 0.08f));
-        poisonTimer = skill.PullForce;
-        poisonSpreadBudget = math.max(poisonSpreadBudget, skill.VerticalForce);
-        vel.xz *= math.lerp(1f, 0.82f, influence * dt * 10f);
-        flashTimer = math.max(flashTimer, 0.18f);
-    }
+        if (skill.Damage > 0f)
+        {
+            health -= skill.Damage * DeltaTime;
+        }
 
-    private void ProcessPoisonBurst(ref float poisonDps, ref float poisonTimer, ref float poisonSpreadBudget, ref float flashTimer, float3 pos, RougeSkillArea skill)
-    {
-        if (skill.AuxA < 0.5f || math.abs(pos.y - RenderHeight) > 5f) return;
-        float2 diff = pos.xz - skill.Position;
-        float distSq = math.lengthsq(diff);
-        if (distSq > skill.Radius * skill.Radius) return;
-
-        float dist = math.sqrt(math.max(distSq, 0.0001f));
-        float influence = 1f - math.saturate(dist / math.max(skill.Radius, 0.001f));
-        poisonDps = math.min(skill.Damage, poisonDps + skill.SpinForce * math.lerp(0.85f, 1.4f, influence));
-        poisonTimer = skill.PullForce;
-        poisonSpreadBudget = math.max(poisonSpreadBudget, skill.VerticalForce);
-        flashTimer = math.max(flashTimer, 0.5f);
+        flashTimer = math.max(flashTimer, 0.2f);
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
     }
 
     private static float SamplePoisonNoise(float2 center, float2 offset, float noiseScale, float seed)
@@ -878,7 +992,69 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         return (a + b) * 0.5f;
     }
 
-    private void Respawn(int index, ref float4 pos4, ref float4 vel4, ref float4 state4, ref float4 poison4)
+    private void ApplySkillEffects(ref float3 vel, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
+    {
+        SkillHitEffectTag tags = (SkillHitEffectTag)skill.EffectFlags;
+        if (tags == SkillHitEffectTag.None)
+        {
+            return;
+        }
+
+        float2 pushDir = math.normalizesafe(pos.xz - skill.Position, new float2(0f, 1f));
+        if ((tags & SkillHitEffectTag.Knockback) != 0)
+        {
+            float knockbackForce = skill.EffectKnockbackForce == 0f ? 35f : skill.EffectKnockbackForce;
+            vel.xz += pushDir * (knockbackForce * KnockbackResist);
+        }
+
+        if ((tags & SkillHitEffectTag.Launch) != 0)
+        {
+            float launchHeight = skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight;
+            vel.y = math.max(vel.y, launchHeight * KnockbackResist);
+            tornadoMark = 3f;
+            effects.LaunchLandingDamage = math.max(effects.LaunchLandingDamage, skill.Damage * 0.5f);
+            effects.LaunchLandingRadius = math.max(effects.LaunchLandingRadius, skill.EffectLaunchLandingRadius);
+        }
+
+        if ((tags & SkillHitEffectTag.Poison) != 0)
+        {
+            if (effects.PoisonTimer <= 0f)
+            {
+                effects.PoisonTickTimer = PoisonTickInterval;
+            }
+
+            effects.PoisonTimer = PoisonDurationSeconds;
+            effects.PoisonSpreadRadius = math.max(effects.PoisonSpreadRadius, skill.EffectPoisonSpreadRadius);
+        }
+
+        if ((tags & SkillHitEffectTag.Slow) != 0)
+        {
+            effects.SlowPercent = skill.EffectSlowPercent;
+            effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
+        }
+
+        if ((tags & SkillHitEffectTag.Curse) != 0)
+        {
+            effects.CurseExplosionDamage = math.max(effects.CurseExplosionDamage, skill.EffectCurseExplosionDamage);
+            effects.CurseExplosionRadius = math.max(effects.CurseExplosionRadius, skill.EffectCurseExplosionRadius);
+        }
+
+        if ((tags & SkillHitEffectTag.Burn) != 0)
+        {
+            if (effects.BurnTimer <= 0f)
+            {
+                effects.BurnTickTimer = BurnTickInterval;
+            }
+
+            effects.BurnTimer = math.max(effects.BurnTimer, skill.EffectBurnDuration > 0f ? skill.EffectBurnDuration : 2f);
+            effects.BurnDamage = math.max(effects.BurnDamage, skill.EffectBurnDamage);
+            effects.BurnDuration = math.max(effects.BurnDuration, skill.EffectBurnDuration > 0f ? skill.EffectBurnDuration : 2f);
+        }
+
+        flashTimer = math.max(flashTimer, 0.25f);
+    }
+
+    private void Respawn(int index, ref float4 pos4, ref float4 vel4, ref float4 state4, ref RougeEnemyEffectState effects)
     {
         uint hash = math.hash(new uint2((uint)index + FrameSeed, FrameSeed ^ 0xA511E9B3u));
         float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
@@ -890,7 +1066,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         pos4 = new float4(spawn.x, RenderHeight, spawn.y, EnemyRadius);
         vel4 = float4.zero;
         state4 = new float4(EnemyMaxHealth, EnemyRadius, EnemyMaxSpeed * speedScale, 0f);
-        poison4 = float4.zero;
+        effects = default;
     }
 
     private static float DistanceSqPointSegment(float2 point, float2 a, float2 b)
