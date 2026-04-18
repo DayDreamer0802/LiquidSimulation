@@ -990,6 +990,7 @@ MonoBehaviour:
     m_Bits: 4294967295
   skillConfig:
     AutoShoot:
+      MaxLevel: 60
       Presentation:
         DisplayName: Auto Shoot
         TriggerLabel: AUTO SHOOT
@@ -998,26 +999,81 @@ MonoBehaviour:
         ExecutionType: 2
         SustainPriority: 0
       Effects:
-        Tags: 1
-        KnockbackForce: 10
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      MaxBullets: 128
-      FireInterval: 0.06
-      BulletSpeed: 42
-      BulletRadius: 0.2
-      BulletDamage: 14
-      BulletLifetime: 1.5
-      BulletsPerShot: 1
-      SpreadAngle: 4
+        Tags: 0
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      MaxBullets:
+        x: 128
+        y: 128
+        z: 0
+      FireInterval:
+        x: 0.06
+        y: 0.06
+        z: 0
+      BulletSpeed:
+        x: 42
+        y: 42
+        z: 0
+      BulletRadius:
+        x: 0.2
+        y: 0.2
+        z: 0
+      BulletDamage:
+        x: 14
+        y: 14
+        z: 0
+      BulletLifetime:
+        x: 1.5
+        y: 1.5
+        z: 0
+      BulletsPerShot:
+        x: 1
+        y: 1
+        z: 0
+      SpreadAngle:
+        x: 4
+        y: 4
+        z: 0
     LeapSmash:
+      MaxLevel: 60
       Presentation:
         DisplayName: Leap Smash
         TriggerLabel: SPACE
@@ -1027,26 +1083,84 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 3
-        KnockbackForce: 5
-        LaunchHeight: 10
-        LaunchLandingRadius: 2
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 8
-      AirTime: 0.5
-      MaxDistance: 20
-      ArcHeight: 8
-      LandingRadius: 18
-      LandingDamage: 1500
-      LandingPullForce: -300
-      LandingVerticalForce: 60
-      LandingInvincibility: 0.5
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 8
+        y: 8
+        z: 0
+      AirTime:
+        x: 0.5
+        y: 0.5
+        z: 0
+      MaxDistance:
+        x: 20
+        y: 20
+        z: 0
+      ArcHeight:
+        x: 8
+        y: 8
+        z: 0
+      LandingRadius:
+        x: 18
+        y: 18
+        z: 0
+      LandingDamage:
+        x: 1500
+        y: 1500
+        z: 0
+      LandingPullForce:
+        x: -300
+        y: -300
+        z: 0
+      LandingVerticalForce:
+        x: 60
+        y: 60
+        z: 0
+      LandingInvincibility:
+        x: 0.5
+        y: 0.5
+        z: 0
     LightPillar:
+      MaxLevel: 60
       Presentation:
         DisplayName: Light Pillar Strike
         TriggerLabel: Q
@@ -1056,32 +1170,92 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 0
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 10
-      BaseStrikeCount: 4
-      BonusStrikeLevelStep: 5
-      StartDistance: 6
-      DistanceStep: 14
-      BaseRadius: 10
-      RadiusPerLevel: 0.1
-      MaxRadius: 25
-      BaseDamage: 400
-      DamagePerLevel: 40
-      PullForce: -120
-      VerticalForce: 70
-      StrikeInterval: 0.15
-      VisualDuration: 0.5
-      RingDuration: 0.4
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 10
+        y: 10
+        z: 0
+      StrikeCount:
+        x: 4
+        y: 16
+        z: 1
+      StartDistance:
+        x: 6
+        y: 6
+        z: 0
+      DistanceStep:
+        x: 14
+        y: 14
+        z: 0
+      Radius:
+        x: 10
+        y: 25
+        z: 1
+      Damage:
+        x: 400
+        y: 2800
+        z: 2
+      PullForce:
+        x: -120
+        y: -120
+        z: 0
+      VerticalForce:
+        x: 70
+        y: 70
+        z: 0
+      StrikeInterval:
+        x: 0.15
+        y: 0.15
+        z: 0
+      VisualDuration:
+        x: 0.5
+        y: 0.5
+        z: 0
+      RingDuration:
+        x: 0.4
+        y: 0.4
+        z: 0
     BombThrow:
+      MaxLevel: 60
       Presentation:
         DisplayName: Bomb Throw
         TriggerLabel: E
@@ -1091,43 +1265,144 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 1
-        KnockbackForce: 10
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 3
-      SpawnHeight: 2
-      MaxThrowDistance: 30
-      FlightTime: 0.8
-      BaseRadius: 15
-      FragmentRadius: 10
-      MinRadius: 4
-      RadiusLossPerBounce: 2.5
-      BaseDamage: 350
-      DamageFalloff: 0.65
-      MinDamage: 60
-      PullForce: -150
-      VerticalForce: 50
-      MaxBounceCount: 4
-      StopHorizontalVelocitySq: 4
-      BounceHorizontalRetention: 0.75
-      BounceVerticalRetention: 0.85
-      BounceUpVelocity: 12
-      BounceUpVelocityLossPerBounce: 2
-      FragmentUnlockLevel: 5
-      FragmentBaseCount: 2
-      FragmentCountLevelStep: 10
-      MaxFragmentCount: 10
-      FragmentHorizontalSpeed: 12
-      FragmentVerticalSpeed: 14
-      RingDuration: 0.4
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 3
+        y: 3
+        z: 0
+      SpawnHeight:
+        x: 2
+        y: 2
+        z: 0
+      MaxThrowDistance:
+        x: 30
+        y: 30
+        z: 0
+      FlightTime:
+        x: 0.8
+        y: 0.8
+        z: 0
+      BaseRadius:
+        x: 15
+        y: 22
+        z: 1
+      FragmentRadius:
+        x: 10
+        y: 14
+        z: 1
+      MinRadius:
+        x: 4
+        y: 4
+        z: 0
+      RadiusLossPerBounce:
+        x: 2.5
+        y: 1.25
+        z: 3
+      BaseDamage:
+        x: 350
+        y: 1800
+        z: 2
+      DamageFalloff:
+        x: 0.65
+        y: 0.85
+        z: 2
+      MinDamage:
+        x: 60
+        y: 240
+        z: 2
+      PullForce:
+        x: -150
+        y: -150
+        z: 0
+      VerticalForce:
+        x: 50
+        y: 50
+        z: 0
+      MaxBounceCount:
+        x: 4
+        y: 6
+        z: 3
+      StopHorizontalVelocitySq:
+        x: 4
+        y: 4
+        z: 0
+      BounceHorizontalRetention:
+        x: 0.75
+        y: 0.82
+        z: 3
+      BounceVerticalRetention:
+        x: 0.85
+        y: 0.92
+        z: 3
+      BounceUpVelocity:
+        x: 12
+        y: 15
+        z: 2
+      BounceUpVelocityLossPerBounce:
+        x: 2
+        y: 1
+        z: 3
+      FragmentUnlockLevel:
+        x: 5
+        y: 5
+        z: 0
+      FragmentCount:
+        x: 2
+        y: 10
+        z: 1
+      FragmentHorizontalSpeed:
+        x: 12
+        y: 12
+        z: 0
+      FragmentVerticalSpeed:
+        x: 14
+        y: 14
+        z: 0
+      RingDuration:
+        x: 0.4
+        y: 0.4
+        z: 0
     LaserBeam:
+      MaxLevel: 60
       Presentation:
         DisplayName: Laser Beam
         TriggerLabel: R
@@ -1137,30 +1412,88 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 0
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 6
-      BaseDuration: 0.5
-      DurationPerThirtyLevels: 1.5
-      MaxLength: 150
-      MaxWidth: 15
-      Damage: 600
-      PullForce: 50
-      ExtraBeamLevelStep: 10
-      ExtraBeamsPerStep: 2
-      MaxBeamCount: 7
-      ScatterAngle: 20
-      SubBeamRadiusMultiplier: 0.5
-      SubBeamDamageMultiplier: 0.5
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 6
+        y: 6
+        z: 0
+      Duration:
+        x: 0.5
+        y: 3.5
+        z: 2
+      MaxLength:
+        x: 150
+        y: 150
+        z: 0
+      MaxWidth:
+        x: 14
+        y: 18
+        z: 2
+      Damage:
+        x: 400
+        y: 2000
+        z: 2
+      PullForce:
+        x: 50
+        y: 75
+        z: 2
+      BeamCount:
+        x: 1
+        y: 7
+        z: 2
+      ScatterAngle:
+        x: 20
+        y: 26
+        z: 2
+      SubBeamRadiusMultiplier:
+        x: 0.5
+        y: 0.7
+        z: 3
+      SubBeamDamageMultiplier:
+        x: 0.5
+        y: 0.8
+        z: 2
     MeleeSlash:
+      MaxLevel: 60
       Presentation:
         DisplayName: Melee Slash
         TriggerLabel: MOUSE L-CLICK
@@ -1170,58 +1503,212 @@ MonoBehaviour:
         SustainPriority: 1000
       Effects:
         Tags: 0
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      SlashCooldown: 0.22
-      FinisherCooldown: 1.5
-      ComboWindow: 1.5
-      SlashDuration: 0.22
-      SlashRadius: 8
-      SlashDepth: 3
-      ThrustRadiusMin: 3
-      ThrustRadiusMax: 10
-      ThrustWidth: 3
-      ThrustLength: 8
-      DefaultLunge: 3
-      ThrustLunge: 4
-      SpinLunge: 1.5
-      ThrustAdvanceSpeed: 20
-      SlashDamage: 800
-      SpinDamage: 1200
-      PullForce: 120
-      SlashVerticalForce: 80
-      ThrustVerticalForce: 90
-      FinisherSlamDuration: 0.12
-      FinisherSlamWidth: 5
-      FinisherSlamLength: 12
-      FinisherSlamThickness: 0.8
-      FinisherSlamForwardOffset: 7
-      FinisherArcHeight: 13
-      FinisherArcRadius: 10
-      FinisherArcStartAngle: 120
-      FinisherArcEndAngle: -12
-      FinisherArcTilt: 0
-      SpikeDuration: 0.28
-      SpikeRiseRatio: 0.25
-      CenterSpikeHeight: 14
-      SideSpikeHeight: 10
-      CenterSpikeRadius: 7
-      SideSpikeRadius: 5
-      CenterSpikeDistance: 14
-      SideSpikeDistance: 12
-      SideSpikeAngle: 28
-      CenterSpikeVerticalForce: 45
-      SideSpikeVerticalForce: 35
-      SpikePullForce: 40
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      SlashCooldown:
+        x: 0.22
+        y: 0.22
+        z: 0
+      FinisherCooldown:
+        x: 1.5
+        y: 1.5
+        z: 0
+      ComboWindow:
+        x: 1.5
+        y: 1.5
+        z: 0
+      SlashDuration:
+        x: 0.22
+        y: 0.22
+        z: 0
+      SlashRadius:
+        x: 8
+        y: 12
+        z: 2
+      SlashDepth:
+        x: 3
+        y: 4.5
+        z: 2
+      ThrustRadiusMin:
+        x: 3
+        y: 4
+        z: 2
+      ThrustRadiusMax:
+        x: 10
+        y: 14
+        z: 2
+      ThrustWidth:
+        x: 3
+        y: 4
+        z: 2
+      ThrustLength:
+        x: 8
+        y: 12
+        z: 2
+      DefaultLunge:
+        x: 3
+        y: 3
+        z: 0
+      ThrustLunge:
+        x: 4
+        y: 5
+        z: 2
+      SpinLunge:
+        x: 1.5
+        y: 2.2
+        z: 2
+      ThrustAdvanceSpeed:
+        x: 20
+        y: 24
+        z: 2
+      SlashDamage:
+        x: 800
+        y: 2200
+        z: 2
+      SpinDamage:
+        x: 1200
+        y: 3200
+        z: 2
+      PullForce:
+        x: 120
+        y: 160
+        z: 2
+      SlashVerticalForce:
+        x: 80
+        y: 110
+        z: 2
+      ThrustVerticalForce:
+        x: 90
+        y: 125
+        z: 2
+      FinisherSlamDuration:
+        x: 0.12
+        y: 0.12
+        z: 0
+      FinisherSlamWidth:
+        x: 5
+        y: 6.5
+        z: 2
+      FinisherSlamLength:
+        x: 12
+        y: 15
+        z: 2
+      FinisherSlamThickness:
+        x: 0.8
+        y: 1.1
+        z: 2
+      FinisherSlamForwardOffset:
+        x: 7
+        y: 8.5
+        z: 2
+      FinisherArcHeight:
+        x: 13
+        y: 16
+        z: 2
+      FinisherArcRadius:
+        x: 10
+        y: 12
+        z: 2
+      FinisherArcStartAngle:
+        x: 120
+        y: 120
+        z: 0
+      FinisherArcEndAngle:
+        x: -12
+        y: -12
+        z: 0
+      FinisherArcTilt:
+        x: 0
+        y: 0
+        z: 0
+      SpikeDuration:
+        x: 0.28
+        y: 0.28
+        z: 0
+      SpikeRiseRatio:
+        x: 0.25
+        y: 0.25
+        z: 0
+      CenterSpikeHeight:
+        x: 14
+        y: 18
+        z: 2
+      SideSpikeHeight:
+        x: 10
+        y: 14
+        z: 2
+      CenterSpikeRadius:
+        x: 7
+        y: 9
+        z: 2
+      SideSpikeRadius:
+        x: 5
+        y: 7
+        z: 2
+      CenterSpikeDistance:
+        x: 14
+        y: 17
+        z: 2
+      SideSpikeDistance:
+        x: 12
+        y: 15
+        z: 2
+      SideSpikeAngle:
+        x: 28
+        y: 35
+        z: 2
+      CenterSpikeVerticalForce:
+        x: 90
+        y: 120
+        z: 2
+      SideSpikeVerticalForce:
+        x: 65
+        y: 95
+        z: 2
+      SpikePullForce:
+        x: 40
+        y: 60
+        z: 2
     Shockwave:
+      MaxLevel: 60
       Presentation:
         DisplayName: Shockwave
         TriggerLabel: V
@@ -1231,38 +1718,132 @@ MonoBehaviour:
         SustainPriority: 99999
       Effects:
         Tags: 0
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 30
-      Duration: 0.75
-      LaunchDuration: 0.25
-      SlamDuration: 0.5
-      JumpHeight: 30
-      RingLifetime: 0.7
-      RingDelay: 0.06
-      RingStartRadius: 8
-      RingEndRadius: 48
-      ImpactRadius: 38
-      ImpactRingCount: 5
-      RingThickness: 7
-      RingRadiusOffset: 0
-      RingLiftHeight: 4
-      RingLiftFalloff: 0.5
-      ImpactDamage: 2400
-      PullForce: -240
-      VerticalForce: 125
-      CameraLift: 1.35
-      CameraFovKick: 8
-      LandingShake: 0.26
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 30
+        y: 30
+        z: 0
+      Duration:
+        x: 0.6
+        y: 0.6
+        z: 0
+      LaunchDuration:
+        x: 0.18
+        y: 0.18
+        z: 0
+      SlamDuration:
+        x: 0.12
+        y: 0.12
+        z: 0
+      JumpHeight:
+        x: 12
+        y: 16
+        z: 2
+      RingLifetime:
+        x: 0.7
+        y: 0.9
+        z: 2
+      RingDelay:
+        x: 0.06
+        y: 0.04
+        z: 3
+      RingStartRadius:
+        x: 8
+        y: 10
+        z: 2
+      RingEndRadius:
+        x: 48
+        y: 60
+        z: 2
+      ImpactRadius:
+        x: 38
+        y: 48
+        z: 2
+      ImpactRingCount:
+        x: 5
+        y: 8
+        z: 2
+      RingThickness:
+        x: 7
+        y: 10
+        z: 2
+      RingRadiusOffset:
+        x: 0
+        y: 0
+        z: 0
+      RingLiftHeight:
+        x: 4
+        y: 6
+        z: 2
+      RingLiftFalloff:
+        x: 0.5
+        y: 0.35
+        z: 3
+      ImpactDamage:
+        x: 2400
+        y: 5200
+        z: 2
+      PullForce:
+        x: -240
+        y: -300
+        z: 2
+      VerticalForce:
+        x: 125
+        y: 170
+        z: 2
+      CameraLift:
+        x: 1.35
+        y: 1.35
+        z: 0
+      CameraFovKick:
+        x: 8
+        y: 8
+        z: 0
+      LandingShake:
+        x: 0.26
+        y: 0.26
+        z: 0
     MeteorRain:
+      MaxLevel: 60
       Presentation:
         DisplayName: Meteor Rain
         TriggerLabel: T
@@ -1272,33 +1853,112 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 33
-        KnockbackForce: 10
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 300
-        BurnDuration: 5
-      Cooldown: 8
-      Duration: 2
-      WaveCount: 8
-      WaveInterval: 0.2
-      ScatterRadius: 20
-      VisualDuration: 0.5
-      StartOffsetX: 10
-      StartOffsetZ: 5
-      FallHeight: 60
-      StartScale: 6
-      EndScale: 3
-      ImpactRadius: 15
-      ImpactDamage: 900
-      PullForce: -220
-      VerticalForce: 55
-      RingDuration: 0.45
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 8
+        y: 8
+        z: 0
+      Duration:
+        x: 2
+        y: 2.8
+        z: 2
+      WaveCount:
+        x: 8
+        y: 14
+        z: 2
+      WaveInterval:
+        x: 0.2
+        y: 0.14
+        z: 3
+      ScatterRadius:
+        x: 20
+        y: 26
+        z: 2
+      VisualDuration:
+        x: 0.5
+        y: 0.5
+        z: 0
+      StartOffsetX:
+        x: 10
+        y: 10
+        z: 0
+      StartOffsetZ:
+        x: 5
+        y: 5
+        z: 0
+      FallHeight:
+        x: 60
+        y: 60
+        z: 0
+      StartScale:
+        x: 6
+        y: 7
+        z: 2
+      EndScale:
+        x: 3
+        y: 4
+        z: 2
+      ImpactRadius:
+        x: 15
+        y: 22
+        z: 2
+      ImpactDamage:
+        x: 900
+        y: 2600
+        z: 2
+      PullForce:
+        x: -220
+        y: -260
+        z: 2
+      VerticalForce:
+        x: 55
+        y: 80
+        z: 2
+      RingDuration:
+        x: 0.45
+        y: 0.45
+        z: 0
     IceZone:
+      MaxLevel: 60
       Presentation:
         DisplayName: Ice Zone
         TriggerLabel: C
@@ -1308,32 +1968,100 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 8
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 75
-        SlowDuration: 3
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 10
-      Duration: 4
-      BaseRadius: 8
-      MaxRadius: 25
-      MaxRadiusLevel: 500
-      TickDamage: 80
-      TickPullForce: 30
-      BurstRadiusBonus: 5
-      BurstDamage: 800
-      BurstPullForce: -250
-      BurstVerticalForce: 40
-      RingDuration: 0.6
-      PulseBaseAlpha: 0.3
-      PulseAmplitude: 0.1
-      PulseSpeed: 6
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 10
+        y: 10
+        z: 0
+      Duration:
+        x: 4
+        y: 6
+        z: 2
+      Radius:
+        x: 8
+        y: 25
+        z: 2
+      TickDamage:
+        x: 80
+        y: 240
+        z: 2
+      TickPullForce:
+        x: 30
+        y: 45
+        z: 2
+      BurstRadiusBonus:
+        x: 5
+        y: 8
+        z: 2
+      BurstDamage:
+        x: 800
+        y: 2600
+        z: 2
+      BurstPullForce:
+        x: -250
+        y: -320
+        z: 2
+      BurstVerticalForce:
+        x: 40
+        y: 65
+        z: 2
+      RingDuration:
+        x: 0.6
+        y: 0.6
+        z: 0
+      PulseBaseAlpha:
+        x: 0.3
+        y: 0.3
+        z: 0
+      PulseAmplitude:
+        x: 0.1
+        y: 0.1
+        z: 0
+      PulseSpeed:
+        x: 6
+        y: 6
+        z: 0
     PoisonBottle:
+      MaxLevel: 60
       Presentation:
         DisplayName: Poison Bottle
         TriggerLabel: X
@@ -1343,36 +2071,124 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 4
-        KnockbackForce: 0
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 4
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 5
-      SpawnHeight: 2
-      MaxThrowDistance: 28
-      FlightTime: 0.65
-      BottleVisualScale: 1.6
-      ZoneDuration: 5
-      ZoneRadius: 10
-      ZoneCoreRatio: 0.65
-      ZoneIrregularity: 0.18
-      ZoneNoiseScale: 0.18
-      PoisonDuration: 2
-      StackDpsPerSecond: 26
-      MaxPoisonDps: 120
-      InitialSpreadCount: 2
-      SpreadRadius: 4
-      SpreadStackDps: 36
-      SpreadRingDuration: 0.3
-      ZonePulseSpeed: 3.5
-      ZonePulseAmplitude: 0.12
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 4
+          y: 6
+          z: 2
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 5
+        y: 5
+        z: 0
+      SpawnHeight:
+        x: 2
+        y: 2
+        z: 0
+      MaxThrowDistance:
+        x: 28
+        y: 28
+        z: 0
+      FlightTime:
+        x: 0.65
+        y: 0.65
+        z: 0
+      BottleVisualScale:
+        x: 1.6
+        y: 2
+        z: 2
+      ZoneDuration:
+        x: 5
+        y: 7
+        z: 2
+      ZoneRadius:
+        x: 10
+        y: 16
+        z: 2
+      ZoneCoreRatio:
+        x: 0.65
+        y: 0.8
+        z: 2
+      ZoneIrregularity:
+        x: 0.18
+        y: 0.18
+        z: 0
+      ZoneNoiseScale:
+        x: 0.18
+        y: 0.18
+        z: 0
+      PoisonDuration:
+        x: 2
+        y: 4
+        z: 2
+      StackDpsPerSecond:
+        x: 26
+        y: 70
+        z: 2
+      MaxPoisonDps:
+        x: 120
+        y: 320
+        z: 2
+      InitialSpreadCount:
+        x: 2
+        y: 5
+        z: 2
+      SpreadRadius:
+        x: 4
+        y: 8
+        z: 2
+      SpreadStackDps:
+        x: 36
+        y: 90
+        z: 2
+      SpreadRingDuration:
+        x: 0.3
+        y: 0.3
+        z: 0
+      ZonePulseSpeed:
+        x: 3.5
+        y: 3.5
+        z: 0
+      ZonePulseAmplitude:
+        x: 0.12
+        y: 0.12
+        z: 0
     Dash:
+      MaxLevel: 60
       Presentation:
         DisplayName: Whirlwind
         TriggerLabel: L-SHIFT
@@ -1382,32 +2198,108 @@ MonoBehaviour:
         SustainPriority: 2000
       Effects:
         Tags: 3
-        KnockbackForce: 20
-        LaunchHeight: 20
-        LaunchLandingRadius: 3
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      Cooldown: 3
-      Duration: 1.5
-      Distance: 21
-      InvincibilityDuration: 1.5
-      SpinDamage: 9
-      HitRadius: 8
-      BladeWidth: 4
-      BladeLength: 11
-      BladeThickness: 0.75
-      MaxSpinRate: 2600
-      ImpactRadius: 10
-      ImpactDamage: 300
-      PullForce: 0
-      VerticalForce: 0
-      RingDuration: 0.5
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      Cooldown:
+        x: 3
+        y: 3
+        z: 0
+      Duration:
+        x: 1.5
+        y: 1.8
+        z: 2
+      Distance:
+        x: 21
+        y: 28
+        z: 2
+      InvincibilityDuration:
+        x: 1.5
+        y: 1.8
+        z: 2
+      SpinDamage:
+        x: 9
+        y: 22
+        z: 2
+      HitRadius:
+        x: 8
+        y: 12
+        z: 2
+      BladeWidth:
+        x: 4
+        y: 5
+        z: 2
+      BladeLength:
+        x: 11
+        y: 14
+        z: 2
+      BladeThickness:
+        x: 0.75
+        y: 1
+        z: 2
+      MaxSpinRate:
+        x: 3000
+        y: 3600
+        z: 2
+      ImpactRadius:
+        x: 10
+        y: 16
+        z: 2
+      ImpactDamage:
+        x: 260
+        y: 900
+        z: 2
+      PullForce:
+        x: 320
+        y: 420
+        z: 2
+      VerticalForce:
+        x: 90
+        y: 130
+        z: 2
+      RingDuration:
+        x: 0.5
+        y: 0.5
+        z: 0
     OrbitBall:
+      MaxLevel: 60
       Presentation:
         DisplayName: Orbit Ball
         TriggerLabel: PASSIVE
@@ -1417,34 +2309,101 @@ MonoBehaviour:
         SustainPriority: 0
       Effects:
         Tags: 1
-        KnockbackForce: 3
-        LaunchHeight: 0
-        LaunchLandingRadius: 0
-        PoisonSpreadRadius: 0
-        SlowPercent: 0
-        SlowDuration: 0
-        CurseExplosionDamage: 0
-        CurseExplosionRadius: 0
-        BurnDamage: 0
-        BurnDuration: 0
-      MaxBalls: 8
-      LevelsPerBall: 4
-      OrbitSpeed: 2.5
-      FirstRingRadius: 6
-      SecondRingRadius: 10
-      FirstRingSpeedMultiplier: 1
-      SecondRingSpeedMultiplier: 0.75
-      VisualScale: 3
-      DamageRadius: 2
-      BaseDamage: 45
-      DamagePerLevel: 2
-      PullForce: 15
-      VerticalForce: 3
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      MaxBalls:
+        x: 8
+        y: 12
+        z: 2
+      OrbitSpeed:
+        x: 2.5
+        y: 3.2
+        z: 2
+      FirstRingRadius:
+        x: 6
+        y: 7
+        z: 2
+      SecondRingRadius:
+        x: 10
+        y: 12
+        z: 2
+      FirstRingSpeedMultiplier:
+        x: 1
+        y: 1
+        z: 0
+      SecondRingSpeedMultiplier:
+        x: 0.75
+        y: 0.9
+        z: 2
+      VisualScale:
+        x: 3
+        y: 3.8
+        z: 2
+      DamageRadius:
+        x: 2
+        y: 3
+        z: 2
+      Damage:
+        x: 45
+        y: 180
+        z: 2
+      PullForce:
+        x: 15
+        y: 28
+        z: 2
+      VerticalForce:
+        x: 3
+        y: 8
+        z: 2
   tornadoMesh: {fileID: 2534964839176971238, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
   sortBatchSize: 2048
   simulationBatchSize: 256
   fixedSimulationDt: 1
   playerMaxHealth: 100
+  playerContactDamage: 8
+  playerHitInvincibilityDuration: 0.33
+  playerContactPadding: 0.22
+  playerHitRepulseRadius: 8
+  playerHitRepulseForce: 220
+  playerHitRepulseLift: 18
   totalKills: 0
   currentLevel: 1
 --- !u!4 &1458908833
@@ -1773,6 +2732,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2130041843
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2130041845}
+  - component: {fileID: 2130041844}
+  m_Layer: 0
+  m_Name: Rouge Input Manager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &2130041844
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2130041843}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec3ea339a0b34514d9d1ae7d38bc9e65, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &2130041845
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2130041843}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1786,3 +2789,4 @@ SceneRoots:
   - {fileID: 1458908833}
   - {fileID: 150345404}
   - {fileID: 1725931991}
+  - {fileID: 2130041845}

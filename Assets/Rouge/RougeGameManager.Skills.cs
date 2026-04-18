@@ -45,7 +45,8 @@ public partial class RougeGameManager
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         Vector3 aim = player != null ? player.AimDirection : Vector3.forward;
         float2 aimDir = math.normalizesafe(new float2(aim.x, aim.z), new float2(0f, 1f));
-        bool hasMouseGroundPoint = PlayerSkillMath.TryGetMouseGroundPoint(Camera.main, Input.mousePosition, renderHeight, out Vector3 mouseGroundPoint);
+        Vector2 pointerPosition = RougeInputManager.Instance.ReadPointerPosition();
+        bool hasMouseGroundPoint = PlayerSkillMath.TryGetMouseGroundPoint(Camera.main, new Vector3(pointerPosition.x, pointerPosition.y, 0f), renderHeight, out Vector3 mouseGroundPoint);
 
         return new SkillUpdateContext(dt, playerPos, aimDir, hasMouseGroundPoint, mouseGroundPoint, renderHeight, arenaHalfExtent);
     }
@@ -387,7 +388,7 @@ public partial class RougeGameManager
         float leapLandingVerticalForce = leap.GetValue(leap.LandingVerticalForce, leapLevel);
         float leapArcHeight = leap.GetValue(leap.ArcHeight, leapLevel);
 
-        if (_jumpState == 0 && CanStartMovementSkill(PlayerSkillType.LeapSmash) && Input.GetKeyDown(leap.Presentation.ActivationKey) && _jumpCooldownTimer <= 0f && player != null && TryStartSkillActivation(PlayerSkillType.LeapSmash))
+        if (_jumpState == 0 && CanStartMovementSkill(PlayerSkillType.LeapSmash) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.LeapSmash) && _jumpCooldownTimer <= 0f && player != null && TryStartSkillActivation(PlayerSkillType.LeapSmash))
         {
             Vector3 startPos = player.transform.position;
             Vector3 targetPos = context.HasMouseGroundPoint
@@ -446,7 +447,7 @@ public partial class RougeGameManager
         float lightPillarStrikeInterval = lightPillar.GetValue(lightPillar.StrikeInterval, lightPillarLevel);
         float lightPillarRingDuration = lightPillar.GetValue(lightPillar.RingDuration, lightPillarLevel);
 
-        if (Input.GetKeyDown(lightPillar.Presentation.ActivationKey) && _tornadoCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LightPillarStrike))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.LightPillarStrike) && _tornadoCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LightPillarStrike))
         {
             _tornadoCooldownTimer = lightPillarCooldown;
             _pillarStrikesTotal = lightPillarStrikeCount;
@@ -526,7 +527,7 @@ public partial class RougeGameManager
         float bombRingDuration = bomb.GetValue(bomb.RingDuration, bombLevel);
 
         bool hasActiveBomb = HasActiveBomb();
-        if (Input.GetKeyDown(bomb.Presentation.ActivationKey) && _bombCooldownTimer <= 0f && !hasActiveBomb && TryStartSkillActivation(PlayerSkillType.BombThrow))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.BombThrow) && _bombCooldownTimer <= 0f && !hasActiveBomb && TryStartSkillActivation(PlayerSkillType.BombThrow))
         {
             _bombCooldownTimer = bombCooldown;
 
@@ -676,7 +677,7 @@ public partial class RougeGameManager
         float laserSubBeamRadiusMultiplier = laser.GetValue(laser.SubBeamRadiusMultiplier, laserBeamLevel);
         float laserSubBeamDamageMultiplier = laser.GetValue(laser.SubBeamDamageMultiplier, laserBeamLevel);
 
-        if (Input.GetKeyDown(laser.Presentation.ActivationKey) && _laserCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LaserBeam))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.LaserBeam) && _laserCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LaserBeam))
         {
             _laserCooldownTimer = laserCooldown;
             _laserTimer = laserDuration;
@@ -802,7 +803,7 @@ public partial class RougeGameManager
             _meleeComboStep = 0;
         }
 
-        if (Input.GetMouseButtonDown(0) && _meleeCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeleeSlash))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.PrimaryAttack) && _meleeCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeleeSlash))
         {
             _meleePos = context.PlayerPosition;
             _meleeDir = context.AimDirection;
@@ -1154,7 +1155,7 @@ public partial class RougeGameManager
         float shockwaveRingLifetime = shockwave.GetValue(shockwave.RingLifetime, shockwaveLevel);
         float shockwaveRingDelay = shockwave.GetValue(shockwave.RingDelay, shockwaveLevel);
 
-        if (_shockwaveState == 0 && CanStartMovementSkill(PlayerSkillType.Shockwave) && Input.GetKeyDown(shockwave.Presentation.ActivationKey) && _shockwaveCooldownTimer <= 0f && player != null && _jumpState == 0 && TryStartSkillActivation(PlayerSkillType.Shockwave))
+        if (_shockwaveState == 0 && CanStartMovementSkill(PlayerSkillType.Shockwave) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Shockwave) && _shockwaveCooldownTimer <= 0f && player != null && _jumpState == 0 && TryStartSkillActivation(PlayerSkillType.Shockwave))
         {
             _shockwaveCooldownTimer = shockwaveCooldown;
             _shockwavePos = context.PlayerPosition;
@@ -1251,7 +1252,7 @@ public partial class RougeGameManager
         float meteorVerticalForce = meteor.GetValue(meteor.VerticalForce, meteorLevel);
         float meteorRingDuration = meteor.GetValue(meteor.RingDuration, meteorLevel);
 
-        if (Input.GetKeyDown(meteor.Presentation.ActivationKey) && _meteorCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeteorRain))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.MeteorRain) && _meteorCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeteorRain))
         {
             _meteorCooldownTimer = meteorCooldown;
             _meteorTimer = meteorDuration;
@@ -1346,7 +1347,7 @@ public partial class RougeGameManager
         float icePulseAmplitude = iceZone.GetValue(iceZone.PulseAmplitude, iceZoneLevel);
         float icePulseSpeed = iceZone.GetValue(iceZone.PulseSpeed, iceZoneLevel);
 
-        if (Input.GetKeyDown(iceZone.Presentation.ActivationKey) && _iceZoneCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.IceZone))
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.IceZone) && _iceZoneCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.IceZone))
         {
             _iceZoneCooldownTimer = iceZoneCooldown;
             _iceZoneTimer = iceZoneDuration;
@@ -1412,7 +1413,7 @@ public partial class RougeGameManager
         float poisonZonePulseSpeed = poison.GetValue(poison.ZonePulseSpeed, poisonLevel);
         float poisonZonePulseAmplitude = poison.GetValue(poison.ZonePulseAmplitude, poisonLevel);
 
-        if (Input.GetKeyDown(poison.Presentation.ActivationKey) && _poisonCooldownTimer <= 0f)
+        if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.PoisonBottle) && _poisonCooldownTimer <= 0f)
         {
             for (int i = 0; i < MaxPoisonBottles; i++)
             {
@@ -1615,7 +1616,7 @@ public partial class RougeGameManager
         float dashVerticalForce = dash.GetValue(dash.VerticalForce, dashLevel);
         float dashRingDuration = dash.GetValue(dash.RingDuration, dashLevel);
 
-        if (_dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && Input.GetKeyDown(dash.Presentation.ActivationKey) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
+        if (_dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Dash) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
         {
             _dashCooldownTimer = dashCooldown;
             _dashSpinTimer = dashDuration;

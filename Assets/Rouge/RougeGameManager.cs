@@ -2108,6 +2108,7 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         skillConfig.EnsureInitialized();
+        RougeInputManager.Instance.ApplySkillPresentationDefaults(skillConfig);
     }
 
     private void ApplySkillConfigValues()

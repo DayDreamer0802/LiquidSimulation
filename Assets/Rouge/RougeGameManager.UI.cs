@@ -177,9 +177,9 @@ public partial class RougeGameManager
 
     private string GetSkillTriggerLabel(PlayerSkillType type, PlayerSkillDefinition definition)
     {
-        if (type == PlayerSkillType.MeleeSlash)
+        if (RougeInputManager.TryGetBinding(type, out RougeInputBinding binding))
         {
-            return "MOUSE L-CLICK";
+            return RougeInputManager.Instance.GetBindingDisplayString(binding);
         }
 
         if (type == PlayerSkillType.AutoShoot)

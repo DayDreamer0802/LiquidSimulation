@@ -33,7 +33,8 @@ public class PlayerBase : MonoBehaviour
 
     private void UpdateMovement(float dt)
     {
-        Vector3 input = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
+        Vector2 moveInput = RougeInputManager.Instance.ReadMoveVector();
+        Vector3 input = new Vector3(moveInput.x, 0f, moveInput.y);
         if (input.sqrMagnitude > 1f)
         {
             input.Normalize();
@@ -64,7 +65,8 @@ public class PlayerBase : MonoBehaviour
         }
 
         Plane plane = new Plane(Vector3.up, new Vector3(0f, aimPlaneHeight, 0f));
-        Ray ray = aimCamera.ScreenPointToRay(Input.mousePosition);
+        Vector2 pointerPosition = RougeInputManager.Instance.ReadPointerPosition();
+        Ray ray = aimCamera.ScreenPointToRay(new Vector3(pointerPosition.x, pointerPosition.y, 0f));
         if (plane.Raycast(ray, out float distance))
         {
             Vector3 hitPoint = ray.GetPoint(distance);
