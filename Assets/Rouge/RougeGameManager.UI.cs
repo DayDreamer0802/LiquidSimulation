@@ -52,8 +52,9 @@ public partial class RougeGameManager
             string triggerLabel = GetSkillTriggerLabel(skillType, skill);
             if (skill.Type == PlayerSkillType.OrbitBall)
             {
-                int numOrbBalls = math.min(skillConfig.OrbitBall.MaxBalls, 1 + _skillLevels[4] / math.max(1, skillConfig.OrbitBall.LevelsPerBall));
-                sb.AppendLine($"{triggerLabel}: {skill.DisplayName} x{numOrbBalls}/{skillConfig.OrbitBall.MaxBalls} (Passive)");
+                int numOrbBalls = math.max(0, skillConfig.OrbitBall.GetIntValue(skillConfig.OrbitBall.MaxBalls, _skillLevels[4]));
+                int maxOrbBalls = math.max(0, skillConfig.OrbitBall.GetIntValue(skillConfig.OrbitBall.MaxBalls, skillConfig.OrbitBall.MaxLevel));
+                sb.AppendLine($"{triggerLabel}: {skill.DisplayName} x{numOrbBalls}/{maxOrbBalls} (Passive)");
                 continue;
             }
 

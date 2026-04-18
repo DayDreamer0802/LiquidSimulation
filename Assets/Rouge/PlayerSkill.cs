@@ -45,7 +45,7 @@ public enum SkillExecutionType
 }
 
 [Serializable]
-public struct SkillHitEffectConfig
+public struct ResolvedSkillHitEffectConfig
 {
     public SkillHitEffectTag Tags;
     public float KnockbackForce;
@@ -58,6 +58,103 @@ public struct SkillHitEffectConfig
     public float CurseExplosionRadius;
     public float BurnDamage;
     public float BurnDuration;
+}
+
+[Serializable]
+public abstract class LevelScaledSkillConfig
+{
+    public int MaxLevel = 60;
+
+    public float GetValue(float3 value, int level)
+    {
+        return GetSkillValue(value, level, MaxLevel);
+    }
+
+    public int GetIntValue(float3 value, int level)
+    {
+        return Mathf.FloorToInt(GetValue(value, level));
+    }
+
+    public float GetBaseValue(float3 value)
+    {
+        return value.x;
+    }
+
+    public int GetBaseIntValue(float3 value)
+    {
+        return Mathf.FloorToInt(value.x);
+    }
+
+    public static float GetSkillValue(float3 value, int level, int maxLevel)
+    {
+        int lerpType = Mathf.FloorToInt(value.z);
+        if (lerpType <= 0 || maxLevel <= 0)
+        {
+            return value.x;
+        }
+
+        float t = math.saturate(level / (float)maxLevel);
+        switch (lerpType)
+        {
+            case 1:
+                return math.lerp(value.x, value.y, t);
+            case 2:
+                return math.lerp(value.x, value.y, 1f - math.pow(1f - t, 2f));
+            case 3:
+                return math.lerp(value.x, value.y, t * t);
+            case 4:
+                return math.lerp(value.x, value.y, t * t * (3f - 2f * t));
+            case 5:
+                return math.lerp(value.x, value.y, math.sin(t * math.PI * 0.5f));
+            case 6:
+                return math.lerp(value.x, value.y, 1f - math.cos(t * math.PI * 0.5f));
+            default:
+                return value.x;
+        }
+    }
+}
+
+[Serializable]
+public static class PlayerSkillScaling
+{
+    public static float3 Constant(float value)
+    {
+        return new float3(value, value, 0f);
+    }
+}
+
+[Serializable]
+public struct SkillHitEffectConfig
+{
+    public SkillHitEffectTag Tags;
+    public float3 KnockbackForce;
+    public float3 LaunchHeight;
+    public float3 LaunchLandingRadius;
+    public float3 PoisonSpreadRadius;
+    public float3 SlowPercent;
+    public float3 SlowDuration;
+    public float3 CurseExplosionDamage;
+    public float3 CurseExplosionRadius;
+    public float3 BurnDamage;
+    public float3 BurnDuration;
+
+    public ResolvedSkillHitEffectConfig Resolve(int level, int maxLevel)
+    {
+        return new ResolvedSkillHitEffectConfig
+        {
+            Tags = Tags,
+            KnockbackForce = LevelScaledSkillConfig.GetSkillValue(KnockbackForce, level, maxLevel),
+            LaunchHeight = LevelScaledSkillConfig.GetSkillValue(LaunchHeight, level, maxLevel),
+            LaunchLandingRadius = LevelScaledSkillConfig.GetSkillValue(LaunchLandingRadius, level, maxLevel),
+            PoisonSpreadRadius = LevelScaledSkillConfig.GetSkillValue(PoisonSpreadRadius, level, maxLevel),
+            SlowPercent = LevelScaledSkillConfig.GetSkillValue(SlowPercent, level, maxLevel),
+            SlowDuration = LevelScaledSkillConfig.GetSkillValue(SlowDuration, level, maxLevel),
+            CurseExplosionDamage = LevelScaledSkillConfig.GetSkillValue(CurseExplosionDamage, level, maxLevel),
+            CurseExplosionRadius = LevelScaledSkillConfig.GetSkillValue(CurseExplosionRadius, level, maxLevel),
+            BurnDamage = LevelScaledSkillConfig.GetSkillValue(BurnDamage, level, maxLevel),
+            BurnDuration = LevelScaledSkillConfig.GetSkillValue(BurnDuration, level, maxLevel)
+        };
+    }
 }
 
 public readonly struct PlayerSkillDefinition
@@ -175,18 +272,18 @@ public class SkillPresentationConfig
 }
 
 [Serializable]
-public class AutoShootSkillConfig
+public class AutoShootSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Auto Shoot", "AUTO SHOOT", true);
     public SkillHitEffectConfig Effects;
-    public int MaxBullets = 128;
-    public float FireInterval = 0.06f;
-    public float BulletSpeed = 42f;
-    public float BulletRadius = 0.2f;
-    public float BulletDamage = 14f;
-    public float BulletLifetime = 1.5f;
-    public int BulletsPerShot = 1;
-    public float SpreadAngle = 4f;
+    public float3 MaxBullets = new float3(128f, 128f, 0f);
+    public float3 FireInterval = new float3(0.06f, 0.06f, 0f);
+    public float3 BulletSpeed = new float3(42f, 42f, 0f);
+    public float3 BulletRadius = new float3(0.2f, 0.2f, 0f);
+    public float3 BulletDamage = new float3(14f, 14f, 0f);
+    public float3 BulletLifetime = new float3(1.5f, 1.5f, 0f);
+    public float3 BulletsPerShot = new float3(1f, 1f, 0f);
+    public float3 SpreadAngle = new float3(4f, 4f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -195,19 +292,19 @@ public class AutoShootSkillConfig
 }
 
 [Serializable]
-public class LeapSmashSkillConfig
+public class LeapSmashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Leap Smash", "SPACE", false, KeyCode.Space);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 8f;
-    public float AirTime = 0.5f;
-    public float MaxDistance = 20f;
-    public float ArcHeight = 8f;
-    public float LandingRadius = 18f;
-    public float LandingDamage = 1500f;
-    public float LandingPullForce = -300f;
-    public float LandingVerticalForce = 60f;
-    public float LandingInvincibility = 0.5f;
+    public float3 Cooldown = new float3(8f, 8f, 0f);
+    public float3 AirTime = new float3(0.5f, 0.5f, 0f);
+    public float3 MaxDistance = new float3(20f, 20f, 0f);
+    public float3 ArcHeight = new float3(8f, 8f, 0f);
+    public float3 LandingRadius = new float3(18f, 18f, 0f);
+    public float3 LandingDamage = new float3(1500f, 1500f, 0f);
+    public float3 LandingPullForce = new float3(-300f, -300f, 0f);
+    public float3 LandingVerticalForce = new float3(60f, 60f, 0f);
+    public float3 LandingInvincibility = new float3(0.5f, 0.5f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -216,25 +313,21 @@ public class LeapSmashSkillConfig
 }
 
 [Serializable]
-public class LightPillarSkillConfig
+public class LightPillarSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Light Pillar Strike", "Q", false, KeyCode.Q);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 10f;
-    public int BaseStrikeCount = 4;
-    public int BonusStrikeLevelStep = 5;
-    public float StartDistance = 6f;
-    public float DistanceStep = 14f;
-    public float BaseRadius = 10f;
-    public float RadiusPerLevel = 0.1f;
-    public float MaxRadius = 25f;
-    public float BaseDamage = 400f;
-    public float DamagePerLevel = 40f;
-    public float PullForce = -120f;
-    public float VerticalForce = 70f;
-    public float StrikeInterval = 0.15f;
-    public float VisualDuration = 0.5f;
-    public float RingDuration = 0.4f;
+    public float3 Cooldown = new float3(10f, 10f, 0f);
+    public float3 StrikeCount = new float3(4f, 16f, 1f);
+    public float3 StartDistance = new float3(6f, 6f, 0f);
+    public float3 DistanceStep = new float3(14f, 14f, 0f);
+    public float3 Radius = new float3(10f, 25f, 1f);
+    public float3 Damage = new float3(400f, 2800f, 2f);
+    public float3 PullForce = new float3(-120f, -120f, 0f);
+    public float3 VerticalForce = new float3(70f, 70f, 0f);
+    public float3 StrikeInterval = new float3(0.15f, 0.15f, 0f);
+    public float3 VisualDuration = new float3(0.5f, 0.5f, 0f);
+    public float3 RingDuration = new float3(0.4f, 0.4f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -243,36 +336,34 @@ public class LightPillarSkillConfig
 }
 
 [Serializable]
-public class BombThrowSkillConfig
+public class BombThrowSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Bomb Throw", "E", false, KeyCode.E);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 3f;
-    public float SpawnHeight = 2f;
-    public float MaxThrowDistance = 30f;
-    public float FlightTime = 0.8f;
-    public float BaseRadius = 15f;
-    public float FragmentRadius = 10f;
-    public float MinRadius = 4f;
-    public float RadiusLossPerBounce = 2.5f;
-    public float BaseDamage = 350f;
-    public float DamageFalloff = 0.65f;
-    public float MinDamage = 60f;
-    public float PullForce = -150f;
-    public float VerticalForce = 50f;
-    public int MaxBounceCount = 4;
-    public float StopHorizontalVelocitySq = 4f;
-    public float BounceHorizontalRetention = 0.75f;
-    public float BounceVerticalRetention = 0.85f;
-    public float BounceUpVelocity = 12f;
-    public float BounceUpVelocityLossPerBounce = 2f;
-    public int FragmentUnlockLevel = 5;
-    public int FragmentBaseCount = 2;
-    public int FragmentCountLevelStep = 10;
-    public int MaxFragmentCount = 10;
-    public float FragmentHorizontalSpeed = 12f;
-    public float FragmentVerticalSpeed = 14f;
-    public float RingDuration = 0.4f;
+    public float3 Cooldown = new float3(3f, 3f, 0f);
+    public float3 SpawnHeight = new float3(2f, 2f, 0f);
+    public float3 MaxThrowDistance = new float3(30f, 30f, 0f);
+    public float3 FlightTime = new float3(0.8f, 0.8f, 0f);
+    public float3 BaseRadius = new float3(15f, 22f, 1f);
+    public float3 FragmentRadius = new float3(10f, 14f, 1f);
+    public float3 MinRadius = new float3(4f, 4f, 0f);
+    public float3 RadiusLossPerBounce = new float3(2.5f, 1.25f, 3f);
+    public float3 BaseDamage = new float3(350f, 1800f, 2f);
+    public float3 DamageFalloff = new float3(0.65f, 0.85f, 2f);
+    public float3 MinDamage = new float3(60f, 240f, 2f);
+    public float3 PullForce = new float3(-150f, -150f, 0f);
+    public float3 VerticalForce = new float3(50f, 50f, 0f);
+    public float3 MaxBounceCount = new float3(4f, 6f, 3f);
+    public float3 StopHorizontalVelocitySq = new float3(4f, 4f, 0f);
+    public float3 BounceHorizontalRetention = new float3(0.75f, 0.82f, 3f);
+    public float3 BounceVerticalRetention = new float3(0.85f, 0.92f, 3f);
+    public float3 BounceUpVelocity = new float3(12f, 15f, 2f);
+    public float3 BounceUpVelocityLossPerBounce = new float3(2f, 1f, 3f);
+    public float3 FragmentUnlockLevel = new float3(5f, 5f, 0f);
+    public float3 FragmentCount = new float3(2f, 10f, 1f);
+    public float3 FragmentHorizontalSpeed = new float3(12f, 12f, 0f);
+    public float3 FragmentVerticalSpeed = new float3(14f, 14f, 0f);
+    public float3 RingDuration = new float3(0.4f, 0.4f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -281,23 +372,20 @@ public class BombThrowSkillConfig
 }
 
 [Serializable]
-public class LaserBeamSkillConfig
+public class LaserBeamSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Laser Beam", "R", false, KeyCode.R);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 6f;
-    public float BaseDuration = 0.5f;
-    public float DurationPerThirtyLevels = 1.5f;
-    public float MaxLength = 150f;
-    public float MaxWidth = 14f;
-    public float Damage = 400f;
-    public float PullForce = 50f;
-    public int ExtraBeamLevelStep = 10;
-    public int ExtraBeamsPerStep = 2;
-    public int MaxBeamCount = 7;
-    public float ScatterAngle = 20f;
-    public float SubBeamRadiusMultiplier = 0.5f;
-    public float SubBeamDamageMultiplier = 0.5f;
+    public float3 Cooldown = new float3(6f, 6f, 0f);
+    public float3 Duration = new float3(0.5f, 3.5f, 2f);
+    public float3 MaxLength = new float3(150f, 150f, 0f);
+    public float3 MaxWidth = new float3(14f, 18f, 2f);
+    public float3 Damage = new float3(400f, 2000f, 2f);
+    public float3 PullForce = new float3(50f, 75f, 2f);
+    public float3 BeamCount = new float3(1f, 7f, 2f);
+    public float3 ScatterAngle = new float3(20f, 26f, 2f);
+    public float3 SubBeamRadiusMultiplier = new float3(0.5f, 0.7f, 3f);
+    public float3 SubBeamDamageMultiplier = new float3(0.5f, 0.8f, 2f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -306,51 +394,51 @@ public class LaserBeamSkillConfig
 }
 
 [Serializable]
-public class MeleeSlashSkillConfig
+public class MeleeSlashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Melee Slash", "MOUSE L-CLICK", false);
     public SkillHitEffectConfig Effects;
-    public float SlashCooldown = 0.22f;
-    public float FinisherCooldown = 1.5f;
-    public float ComboWindow = 1.5f;
-    public float SlashDuration = 0.22f;
-    public float SlashRadius = 8f;
-    public float SlashDepth = 3f;
-    public float ThrustRadiusMin = 3f;
-    public float ThrustRadiusMax = 10f;
-    public float ThrustWidth = 3f;
-    public float ThrustLength = 8f;
-    public float DefaultLunge = 3f;
-    public float ThrustLunge = 4f;
-    public float SpinLunge = 1.5f;
-    public float ThrustAdvanceSpeed = 20f;
-    public float SlashDamage = 800f;
-    public float SpinDamage = 1200f;
-    public float PullForce = 120f;
-    public float SlashVerticalForce = 80f;
-    public float ThrustVerticalForce = 90f;
-    public float FinisherSlamDuration = 0.12f;
-    public float FinisherSlamWidth = 5f;
-    public float FinisherSlamLength = 12f;
-    public float FinisherSlamThickness = 0.8f;
-    public float FinisherSlamForwardOffset = 7f;
-    public float FinisherArcHeight = 13f;
-    public float FinisherArcRadius = 10f;
-    public float FinisherArcStartAngle = 120f;
-    public float FinisherArcEndAngle = -12f;
-    public float FinisherArcTilt = 0f;
-    public float SpikeDuration = 0.28f;
-    public float SpikeRiseRatio = 0.25f;
-    public float CenterSpikeHeight = 14f;
-    public float SideSpikeHeight = 10f;
-    public float CenterSpikeRadius = 7f;
-    public float SideSpikeRadius = 5f;
-    public float CenterSpikeDistance = 14f;
-    public float SideSpikeDistance = 12f;
-    public float SideSpikeAngle = 28f;
-    public float CenterSpikeVerticalForce = 90f;
-    public float SideSpikeVerticalForce = 65f;
-    public float SpikePullForce = 40f;
+    public float3 SlashCooldown = new float3(0.22f, 0.22f, 0f);
+    public float3 FinisherCooldown = new float3(1.5f, 1.5f, 0f);
+    public float3 ComboWindow = new float3(1.5f, 1.5f, 0f);
+    public float3 SlashDuration = new float3(0.22f, 0.22f, 0f);
+    public float3 SlashRadius = new float3(8f, 12f, 2f);
+    public float3 SlashDepth = new float3(3f, 4.5f, 2f);
+    public float3 ThrustRadiusMin = new float3(3f, 4f, 2f);
+    public float3 ThrustRadiusMax = new float3(10f, 14f, 2f);
+    public float3 ThrustWidth = new float3(3f, 4f, 2f);
+    public float3 ThrustLength = new float3(8f, 12f, 2f);
+    public float3 DefaultLunge = new float3(3f, 3f, 0f);
+    public float3 ThrustLunge = new float3(4f, 5f, 2f);
+    public float3 SpinLunge = new float3(1.5f, 2.2f, 2f);
+    public float3 ThrustAdvanceSpeed = new float3(20f, 24f, 2f);
+    public float3 SlashDamage = new float3(800f, 2200f, 2f);
+    public float3 SpinDamage = new float3(1200f, 3200f, 2f);
+    public float3 PullForce = new float3(120f, 160f, 2f);
+    public float3 SlashVerticalForce = new float3(80f, 110f, 2f);
+    public float3 ThrustVerticalForce = new float3(90f, 125f, 2f);
+    public float3 FinisherSlamDuration = new float3(0.12f, 0.12f, 0f);
+    public float3 FinisherSlamWidth = new float3(5f, 6.5f, 2f);
+    public float3 FinisherSlamLength = new float3(12f, 15f, 2f);
+    public float3 FinisherSlamThickness = new float3(0.8f, 1.1f, 2f);
+    public float3 FinisherSlamForwardOffset = new float3(7f, 8.5f, 2f);
+    public float3 FinisherArcHeight = new float3(13f, 16f, 2f);
+    public float3 FinisherArcRadius = new float3(10f, 12f, 2f);
+    public float3 FinisherArcStartAngle = new float3(120f, 120f, 0f);
+    public float3 FinisherArcEndAngle = new float3(-12f, -12f, 0f);
+    public float3 FinisherArcTilt = new float3(0f, 0f, 0f);
+    public float3 SpikeDuration = new float3(0.28f, 0.28f, 0f);
+    public float3 SpikeRiseRatio = new float3(0.25f, 0.25f, 0f);
+    public float3 CenterSpikeHeight = new float3(14f, 18f, 2f);
+    public float3 SideSpikeHeight = new float3(10f, 14f, 2f);
+    public float3 CenterSpikeRadius = new float3(7f, 9f, 2f);
+    public float3 SideSpikeRadius = new float3(5f, 7f, 2f);
+    public float3 CenterSpikeDistance = new float3(14f, 17f, 2f);
+    public float3 SideSpikeDistance = new float3(12f, 15f, 2f);
+    public float3 SideSpikeAngle = new float3(28f, 35f, 2f);
+    public float3 CenterSpikeVerticalForce = new float3(90f, 120f, 2f);
+    public float3 SideSpikeVerticalForce = new float3(65f, 95f, 2f);
+    public float3 SpikePullForce = new float3(40f, 60f, 2f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -359,31 +447,31 @@ public class MeleeSlashSkillConfig
 }
 
 [Serializable]
-public class ShockwaveSkillConfig
+public class ShockwaveSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Shockwave", "V", false, KeyCode.V);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 30f;
-    public float Duration = 0.6f;
-    public float LaunchDuration = 0.18f;
-    public float SlamDuration = 0.12f;
-    public float JumpHeight = 12f;
-    public float RingLifetime = 0.7f;
-    public float RingDelay = 0.06f;
-    public float RingStartRadius = 8f;
-    public float RingEndRadius = 48f;
-    public float ImpactRadius = 38f;
-    public int ImpactRingCount = 5;
-    public float RingThickness = 7f;
-    public float RingRadiusOffset = 0f;
-    public float RingLiftHeight = 4f;
-    public float RingLiftFalloff = 0.5f;
-    public float ImpactDamage = 2400f;
-    public float PullForce = -240f;
-    public float VerticalForce = 125f;
-    public float CameraLift = 1.35f;
-    public float CameraFovKick = 8f;
-    public float LandingShake = 0.26f;
+    public float3 Cooldown = new float3(30f, 30f, 0f);
+    public float3 Duration = new float3(0.6f, 0.6f, 0f);
+    public float3 LaunchDuration = new float3(0.18f, 0.18f, 0f);
+    public float3 SlamDuration = new float3(0.12f, 0.12f, 0f);
+    public float3 JumpHeight = new float3(12f, 16f, 2f);
+    public float3 RingLifetime = new float3(0.7f, 0.9f, 2f);
+    public float3 RingDelay = new float3(0.06f, 0.04f, 3f);
+    public float3 RingStartRadius = new float3(8f, 10f, 2f);
+    public float3 RingEndRadius = new float3(48f, 60f, 2f);
+    public float3 ImpactRadius = new float3(38f, 48f, 2f);
+    public float3 ImpactRingCount = new float3(5f, 8f, 2f);
+    public float3 RingThickness = new float3(7f, 10f, 2f);
+    public float3 RingRadiusOffset = new float3(0f, 0f, 0f);
+    public float3 RingLiftHeight = new float3(4f, 6f, 2f);
+    public float3 RingLiftFalloff = new float3(0.5f, 0.35f, 3f);
+    public float3 ImpactDamage = new float3(2400f, 5200f, 2f);
+    public float3 PullForce = new float3(-240f, -300f, 2f);
+    public float3 VerticalForce = new float3(125f, 170f, 2f);
+    public float3 CameraLift = new float3(1.35f, 1.35f, 0f);
+    public float3 CameraFovKick = new float3(8f, 8f, 0f);
+    public float3 LandingShake = new float3(0.26f, 0.26f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -392,26 +480,26 @@ public class ShockwaveSkillConfig
 }
 
 [Serializable]
-public class MeteorRainSkillConfig
+public class MeteorRainSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Meteor Rain", "T", false, KeyCode.T);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 8f;
-    public float Duration = 2f;
-    public int WaveCount = 8;
-    public float WaveInterval = 0.2f;
-    public float ScatterRadius = 20f;
-    public float VisualDuration = 0.5f;
-    public float StartOffsetX = 10f;
-    public float StartOffsetZ = 5f;
-    public float FallHeight = 60f;
-    public float StartScale = 6f;
-    public float EndScale = 3f;
-    public float ImpactRadius = 15f;
-    public float ImpactDamage = 900f;
-    public float PullForce = -220f;
-    public float VerticalForce = 55f;
-    public float RingDuration = 0.45f;
+    public float3 Cooldown = new float3(8f, 8f, 0f);
+    public float3 Duration = new float3(2f, 2.8f, 2f);
+    public float3 WaveCount = new float3(8f, 14f, 2f);
+    public float3 WaveInterval = new float3(0.2f, 0.14f, 3f);
+    public float3 ScatterRadius = new float3(20f, 26f, 2f);
+    public float3 VisualDuration = new float3(0.5f, 0.5f, 0f);
+    public float3 StartOffsetX = new float3(10f, 10f, 0f);
+    public float3 StartOffsetZ = new float3(5f, 5f, 0f);
+    public float3 FallHeight = new float3(60f, 60f, 0f);
+    public float3 StartScale = new float3(6f, 7f, 2f);
+    public float3 EndScale = new float3(3f, 4f, 2f);
+    public float3 ImpactRadius = new float3(15f, 22f, 2f);
+    public float3 ImpactDamage = new float3(900f, 2600f, 2f);
+    public float3 PullForce = new float3(-220f, -260f, 2f);
+    public float3 VerticalForce = new float3(55f, 80f, 2f);
+    public float3 RingDuration = new float3(0.45f, 0.45f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -420,25 +508,23 @@ public class MeteorRainSkillConfig
 }
 
 [Serializable]
-public class IceZoneSkillConfig
+public class IceZoneSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Ice Zone", "C", false, KeyCode.C);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 10f;
-    public float Duration = 4f;
-    public float BaseRadius = 8f;
-    public float MaxRadius = 25f;
-    public float MaxRadiusLevel = 500f;
-    public float TickDamage = 80f;
-    public float TickPullForce = 30f;
-    public float BurstRadiusBonus = 5f;
-    public float BurstDamage = 800f;
-    public float BurstPullForce = -250f;
-    public float BurstVerticalForce = 40f;
-    public float RingDuration = 0.6f;
-    public float PulseBaseAlpha = 0.3f;
-    public float PulseAmplitude = 0.1f;
-    public float PulseSpeed = 6f;
+    public float3 Cooldown = new float3(10f, 10f, 0f);
+    public float3 Duration = new float3(4f, 6f, 2f);
+    public float3 Radius = new float3(8f, 25f, 2f);
+    public float3 TickDamage = new float3(80f, 240f, 2f);
+    public float3 TickPullForce = new float3(30f, 45f, 2f);
+    public float3 BurstRadiusBonus = new float3(5f, 8f, 2f);
+    public float3 BurstDamage = new float3(800f, 2600f, 2f);
+    public float3 BurstPullForce = new float3(-250f, -320f, 2f);
+    public float3 BurstVerticalForce = new float3(40f, 65f, 2f);
+    public float3 RingDuration = new float3(0.6f, 0.6f, 0f);
+    public float3 PulseBaseAlpha = new float3(0.3f, 0.3f, 0f);
+    public float3 PulseAmplitude = new float3(0.1f, 0.1f, 0f);
+    public float3 PulseSpeed = new float3(6f, 6f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -447,33 +533,33 @@ public class IceZoneSkillConfig
 }
 
 [Serializable]
-public class PoisonBottleSkillConfig
+public class PoisonBottleSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Poison Bottle", "X", false, KeyCode.X);
     public SkillHitEffectConfig Effects = new SkillHitEffectConfig
     {
         Tags = SkillHitEffectTag.Poison,
-        PoisonSpreadRadius = 4f
+        PoisonSpreadRadius = new float3(4f, 6f, 2f)
     };
-    public float Cooldown = 5f;
-    public float SpawnHeight = 2f;
-    public float MaxThrowDistance = 28f;
-    public float FlightTime = 0.65f;
-    public float BottleVisualScale = 1.6f;
-    public float ZoneDuration = 5f;
-    public float ZoneRadius = 10f;
-    public float ZoneCoreRatio = 0.65f;
-    public float ZoneIrregularity = 0.18f;
-    public float ZoneNoiseScale = 0.18f;
-    public float PoisonDuration = 2f;
-    public float StackDpsPerSecond = 26f;
-    public float MaxPoisonDps = 120f;
-    public int InitialSpreadCount = 2;
-    public float SpreadRadius = 4f;
-    public float SpreadStackDps = 36f;
-    public float SpreadRingDuration = 0.3f;
-    public float ZonePulseSpeed = 3.5f;
-    public float ZonePulseAmplitude = 0.12f;
+    public float3 Cooldown = new float3(5f, 5f, 0f);
+    public float3 SpawnHeight = new float3(2f, 2f, 0f);
+    public float3 MaxThrowDistance = new float3(28f, 28f, 0f);
+    public float3 FlightTime = new float3(0.65f, 0.65f, 0f);
+    public float3 BottleVisualScale = new float3(1.6f, 2f, 2f);
+    public float3 ZoneDuration = new float3(5f, 7f, 2f);
+    public float3 ZoneRadius = new float3(10f, 16f, 2f);
+    public float3 ZoneCoreRatio = new float3(0.65f, 0.8f, 2f);
+    public float3 ZoneIrregularity = new float3(0.18f, 0.18f, 0f);
+    public float3 ZoneNoiseScale = new float3(0.18f, 0.18f, 0f);
+    public float3 PoisonDuration = new float3(2f, 4f, 2f);
+    public float3 StackDpsPerSecond = new float3(26f, 70f, 2f);
+    public float3 MaxPoisonDps = new float3(120f, 320f, 2f);
+    public float3 InitialSpreadCount = new float3(2f, 5f, 2f);
+    public float3 SpreadRadius = new float3(4f, 8f, 2f);
+    public float3 SpreadStackDps = new float3(36f, 90f, 2f);
+    public float3 SpreadRingDuration = new float3(0.3f, 0.3f, 0f);
+    public float3 ZonePulseSpeed = new float3(3.5f, 3.5f, 0f);
+    public float3 ZonePulseAmplitude = new float3(0.12f, 0.12f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -482,25 +568,25 @@ public class PoisonBottleSkillConfig
 }
 
 [Serializable]
-public class DashSkillConfig
+public class DashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Whirlwind", "L-SHIFT", false, KeyCode.LeftShift);
     public SkillHitEffectConfig Effects;
-    public float Cooldown = 3f;
-    public float Duration = 1.5f;
-    public float Distance = 21f;
-    public float InvincibilityDuration = 1.5f;
-    public float SpinDamage = 9f;
-    public float HitRadius = 8f;
-    public float BladeWidth = 4f;
-    public float BladeLength = 11f;
-    public float BladeThickness = 0.75f;
-    public float MaxSpinRate = 3000f;
-    public float ImpactRadius = 10f;
-    public float ImpactDamage = 260f;
-    public float PullForce = 320f;
-    public float VerticalForce = 90f;
-    public float RingDuration = 0.5f;
+    public float3 Cooldown = new float3(3f, 3f, 0f);
+    public float3 Duration = new float3(1.5f, 1.8f, 2f);
+    public float3 Distance = new float3(21f, 28f, 2f);
+    public float3 InvincibilityDuration = new float3(1.5f, 1.8f, 2f);
+    public float3 SpinDamage = new float3(9f, 22f, 2f);
+    public float3 HitRadius = new float3(8f, 12f, 2f);
+    public float3 BladeWidth = new float3(4f, 5f, 2f);
+    public float3 BladeLength = new float3(11f, 14f, 2f);
+    public float3 BladeThickness = new float3(0.75f, 1f, 2f);
+    public float3 MaxSpinRate = new float3(3000f, 3600f, 2f);
+    public float3 ImpactRadius = new float3(10f, 16f, 2f);
+    public float3 ImpactDamage = new float3(260f, 900f, 2f);
+    public float3 PullForce = new float3(320f, 420f, 2f);
+    public float3 VerticalForce = new float3(90f, 130f, 2f);
+    public float3 RingDuration = new float3(0.5f, 0.5f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -509,23 +595,21 @@ public class DashSkillConfig
 }
 
 [Serializable]
-public class OrbitBallSkillConfig
+public class OrbitBallSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Orbit Ball", "PASSIVE", true);
     public SkillHitEffectConfig Effects;
-    public int MaxBalls = 8;
-    public int LevelsPerBall = 4;
-    public float OrbitSpeed = 2.5f;
-    public float FirstRingRadius = 6f;
-    public float SecondRingRadius = 10f;
-    public float FirstRingSpeedMultiplier = 1f;
-    public float SecondRingSpeedMultiplier = 0.75f;
-    public float VisualScale = 3f;
-    public float DamageRadius = 2f;
-    public float BaseDamage = 45f;
-    public float DamagePerLevel = 2f;
-    public float PullForce = 15f;
-    public float VerticalForce = 3f;
+    public float3 MaxBalls = new float3(8f, 12f, 2f);
+    public float3 OrbitSpeed = new float3(2.5f, 3.2f, 2f);
+    public float3 FirstRingRadius = new float3(6f, 7f, 2f);
+    public float3 SecondRingRadius = new float3(10f, 12f, 2f);
+    public float3 FirstRingSpeedMultiplier = new float3(1f, 1f, 0f);
+    public float3 SecondRingSpeedMultiplier = new float3(0.75f, 0.9f, 2f);
+    public float3 VisualScale = new float3(3f, 3.8f, 2f);
+    public float3 DamageRadius = new float3(2f, 3f, 2f);
+    public float3 Damage = new float3(45f, 180f, 2f);
+    public float3 PullForce = new float3(15f, 28f, 2f);
+    public float3 VerticalForce = new float3(3f, 8f, 2f);
 
     public PlayerSkillDefinition ToDefinition()
     {

@@ -2115,76 +2115,76 @@ public partial class RougeGameManager : MonoBehaviour
         EnsureSkillConfigInitialized();
         MigrateLegacySkillConfig();
 
-        maxBullets = Mathf.Max(1, skillConfig.AutoShoot.MaxBullets);
-        fireInterval = Mathf.Max(0.01f, skillConfig.AutoShoot.FireInterval);
-        bulletSpeed = Mathf.Max(0.1f, skillConfig.AutoShoot.BulletSpeed);
-        bulletRadius = Mathf.Max(0.01f, skillConfig.AutoShoot.BulletRadius);
-        bulletDamage = Mathf.Max(0.1f, skillConfig.AutoShoot.BulletDamage);
-        bulletLifetime = Mathf.Max(0.05f, skillConfig.AutoShoot.BulletLifetime);
-        bulletsPerShot = Mathf.Max(1, skillConfig.AutoShoot.BulletsPerShot);
-        spreadAngle = Mathf.Max(0f, skillConfig.AutoShoot.SpreadAngle);
+        maxBullets = Mathf.Max(1, skillConfig.AutoShoot.GetIntValue(skillConfig.AutoShoot.MaxBullets, 0));
+        fireInterval = Mathf.Max(0.01f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.FireInterval, 0));
+        bulletSpeed = Mathf.Max(0.1f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.BulletSpeed, 0));
+        bulletRadius = Mathf.Max(0.01f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.BulletRadius, 0));
+        bulletDamage = Mathf.Max(0.1f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.BulletDamage, 0));
+        bulletLifetime = Mathf.Max(0.05f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.BulletLifetime, 0));
+        bulletsPerShot = Mathf.Max(1, skillConfig.AutoShoot.GetIntValue(skillConfig.AutoShoot.BulletsPerShot, 0));
+        spreadAngle = Mathf.Max(0f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.SpreadAngle, 0));
 
         tornadoKey = skillConfig.LightPillar.Presentation.ActivationKey;
-        tornadoRadius = skillConfig.LightPillar.BaseRadius;
-        tornadoPullForce = skillConfig.LightPillar.PullForce;
+        tornadoRadius = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.Radius, 0);
+        tornadoPullForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.PullForce, 0);
         tornadoSpinForce = 85f;
-        tornadoLiftForce = skillConfig.LightPillar.VerticalForce;
-        tornadoDuration = skillConfig.LightPillar.VisualDuration;
-        tornadoCooldown = skillConfig.LightPillar.Cooldown;
-        tornadoTravelSpeed = skillConfig.LightPillar.DistanceStep;
+        tornadoLiftForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VerticalForce, 0);
+        tornadoDuration = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VisualDuration, 0);
+        tornadoCooldown = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.Cooldown, 0);
+        tornadoTravelSpeed = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.DistanceStep, 0);
     }
 
     private void MigrateLegacySkillConfig()
     {
-        if (Mathf.Approximately(skillConfig.Shockwave.Duration, 1.8f) && Mathf.Approximately(skillConfig.Shockwave.RingStartRadius, 2f))
+        if (Mathf.Approximately(skillConfig.Shockwave.GetBaseValue(skillConfig.Shockwave.Duration), 1.8f) && Mathf.Approximately(skillConfig.Shockwave.GetBaseValue(skillConfig.Shockwave.RingStartRadius), 2f))
         {
             skillConfig.Shockwave.Presentation.DisplayName = "Shockwave";
-            skillConfig.Shockwave.Duration = 0.6f;
-            skillConfig.Shockwave.LaunchDuration = 0.18f;
-            skillConfig.Shockwave.SlamDuration = 0.12f;
-            skillConfig.Shockwave.JumpHeight = 12f;
-            skillConfig.Shockwave.RingStartRadius = 8f;
-            skillConfig.Shockwave.RingEndRadius = 48f;
-            skillConfig.Shockwave.ImpactRadius = 38f;
-            skillConfig.Shockwave.ImpactRingCount = 5;
-            skillConfig.Shockwave.RingThickness = 7f;
-            skillConfig.Shockwave.ImpactDamage = 2400f;
-            skillConfig.Shockwave.PullForce = -240f;
-            skillConfig.Shockwave.VerticalForce = 125f;
-            skillConfig.Shockwave.CameraLift = 1.35f;
-            skillConfig.Shockwave.CameraFovKick = 8f;
-            skillConfig.Shockwave.LandingShake = 0.26f;
+            skillConfig.Shockwave.Duration = PlayerSkillScaling.Constant(0.6f);
+            skillConfig.Shockwave.LaunchDuration = PlayerSkillScaling.Constant(0.18f);
+            skillConfig.Shockwave.SlamDuration = PlayerSkillScaling.Constant(0.12f);
+            skillConfig.Shockwave.JumpHeight = PlayerSkillScaling.Constant(12f);
+            skillConfig.Shockwave.RingStartRadius = PlayerSkillScaling.Constant(8f);
+            skillConfig.Shockwave.RingEndRadius = PlayerSkillScaling.Constant(48f);
+            skillConfig.Shockwave.ImpactRadius = PlayerSkillScaling.Constant(38f);
+            skillConfig.Shockwave.ImpactRingCount = PlayerSkillScaling.Constant(5f);
+            skillConfig.Shockwave.RingThickness = PlayerSkillScaling.Constant(7f);
+            skillConfig.Shockwave.ImpactDamage = PlayerSkillScaling.Constant(2400f);
+            skillConfig.Shockwave.PullForce = PlayerSkillScaling.Constant(-240f);
+            skillConfig.Shockwave.VerticalForce = PlayerSkillScaling.Constant(125f);
+            skillConfig.Shockwave.CameraLift = PlayerSkillScaling.Constant(1.35f);
+            skillConfig.Shockwave.CameraFovKick = PlayerSkillScaling.Constant(8f);
+            skillConfig.Shockwave.LandingShake = PlayerSkillScaling.Constant(0.26f);
         }
 
-        if (Mathf.Approximately(skillConfig.Dash.Distance, 12f) && Mathf.Approximately(skillConfig.Dash.InvincibilityDuration, 0.33f))
+        if (Mathf.Approximately(skillConfig.Dash.GetBaseValue(skillConfig.Dash.Distance), 12f) && Mathf.Approximately(skillConfig.Dash.GetBaseValue(skillConfig.Dash.InvincibilityDuration), 0.33f))
         {
             skillConfig.Dash.Presentation.DisplayName = "Whirlwind";
-            skillConfig.Dash.Duration = 1.5f;
-            skillConfig.Dash.Distance = 21f;
-            skillConfig.Dash.InvincibilityDuration = 1.5f;
-            skillConfig.Dash.SpinDamage = 9f;
-            skillConfig.Dash.HitRadius = 8f;
-            skillConfig.Dash.BladeWidth = 4f;
-            skillConfig.Dash.BladeLength = 11f;
-            skillConfig.Dash.BladeThickness = 0.75f;
-            skillConfig.Dash.MaxSpinRate = 3000f;
-            skillConfig.Dash.ImpactRadius = 10f;
-            skillConfig.Dash.ImpactDamage = 260f;
-            skillConfig.Dash.PullForce = 320f;
-            skillConfig.Dash.VerticalForce = 90f;
+            skillConfig.Dash.Duration = PlayerSkillScaling.Constant(1.5f);
+            skillConfig.Dash.Distance = PlayerSkillScaling.Constant(21f);
+            skillConfig.Dash.InvincibilityDuration = PlayerSkillScaling.Constant(1.5f);
+            skillConfig.Dash.SpinDamage = PlayerSkillScaling.Constant(9f);
+            skillConfig.Dash.HitRadius = PlayerSkillScaling.Constant(8f);
+            skillConfig.Dash.BladeWidth = PlayerSkillScaling.Constant(4f);
+            skillConfig.Dash.BladeLength = PlayerSkillScaling.Constant(11f);
+            skillConfig.Dash.BladeThickness = PlayerSkillScaling.Constant(0.75f);
+            skillConfig.Dash.MaxSpinRate = PlayerSkillScaling.Constant(3000f);
+            skillConfig.Dash.ImpactRadius = PlayerSkillScaling.Constant(10f);
+            skillConfig.Dash.ImpactDamage = PlayerSkillScaling.Constant(260f);
+            skillConfig.Dash.PullForce = PlayerSkillScaling.Constant(320f);
+            skillConfig.Dash.VerticalForce = PlayerSkillScaling.Constant(90f);
         }
 
-        if (Mathf.Approximately(skillConfig.MeleeSlash.SlashVerticalForce, 18f))
+        if (Mathf.Approximately(skillConfig.MeleeSlash.GetBaseValue(skillConfig.MeleeSlash.SlashVerticalForce), 18f))
         {
-            skillConfig.MeleeSlash.SlashVerticalForce = 80f;
-            skillConfig.MeleeSlash.ThrustVerticalForce = 90f;
-            skillConfig.MeleeSlash.CenterSpikeVerticalForce = 90f;
-            skillConfig.MeleeSlash.SideSpikeVerticalForce = 65f;
+            skillConfig.MeleeSlash.SlashVerticalForce = PlayerSkillScaling.Constant(80f);
+            skillConfig.MeleeSlash.ThrustVerticalForce = PlayerSkillScaling.Constant(90f);
+            skillConfig.MeleeSlash.CenterSpikeVerticalForce = PlayerSkillScaling.Constant(90f);
+            skillConfig.MeleeSlash.SideSpikeVerticalForce = PlayerSkillScaling.Constant(65f);
         }
 
-        if (Mathf.Approximately(skillConfig.LightPillar.VerticalForce, 45f))
+        if (Mathf.Approximately(skillConfig.LightPillar.GetBaseValue(skillConfig.LightPillar.VerticalForce), 45f))
         {
-            skillConfig.LightPillar.VerticalForce = 70f;
+            skillConfig.LightPillar.VerticalForce = PlayerSkillScaling.Constant(70f);
         }
     }
 
