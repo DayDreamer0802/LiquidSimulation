@@ -60,6 +60,11 @@ public partial class RougeGameManager : MonoBehaviour
     private float bulletLifetime = 1.5f;
     private int bulletsPerShot = 1;
     private float spreadAngle = 4f;
+    private ResolvedSkillHitEffectConfig _autoShootEffects;
+    private ResolvedSkillHitEffectConfig _playerContactEffects;
+    private float _playerContactRepulseDamage;
+    private float _playerContactRingDuration;
+    private bool _playerContactDefeatEnemyOnContact;
 
     [SerializeField] private Mesh tornadoMesh;
     private KeyCode tornadoKey = KeyCode.Q;
@@ -298,11 +303,13 @@ public partial class RougeGameManager : MonoBehaviour
     private float _cameraFovOffset;
     private float _baseCameraFov = -1f;
     private float _meleeHitShake;
+    private readonly Matrix4x4[] _bulletRenderMatrices = new Matrix4x4[1023];
 
     // VFX buffers for explosions
     private const int MaxExplosions = 128;
     private const int MaxDeathBursts = 256;
     private int _explosionCount;
+    private int _deathBurstCount;
     private NativeArray<float4> _expPosData;
     private NativeArray<float4> _expStateData;
     private float[] _expTimers = new float[MaxExplosions];
@@ -429,10 +436,11 @@ public partial class RougeGameManager : MonoBehaviour
         if (_meleeHitShake > 0f)
         {
             _meleeHitShake -= Time.deltaTime;
-            if (Camera.main != null)
+            Camera gameplayCamera = RougeCameraFollow.ResolveCamera();
+            if (gameplayCamera != null)
             {
                 float shakeIntensity = _meleeHitShake * 15f;
-                Camera.main.transform.position += new Vector3(
+                gameplayCamera.transform.position += new Vector3(
                     UnityEngine.Random.Range(-shakeIntensity, shakeIntensity),
                     UnityEngine.Random.Range(-shakeIntensity * 0.5f, shakeIntensity * 0.5f),
                     UnityEngine.Random.Range(-shakeIntensity, shakeIntensity));
@@ -500,12 +508,12 @@ public partial class RougeGameManager : MonoBehaviour
         int damage = _playerDamageCount[0];
         if (damage > 0)
         {
-            if (_jumpState == 0 && _invincibilityTimer <= 0f)
+            if (IsPlayerContactEnabled() && _jumpState == 0 && _invincibilityTimer <= 0f)
             {
                 playerHealth -= playerContactDamage;
                 playerHealth = Mathf.Max(0f, playerHealth);
                 _invincibilityTimer = math.max(_invincibilityTimer, playerHitInvincibilityDuration);
-                if (player != null)
+                if (player != null && playerHitRepulseRadius > 0f)
                 {
                     _pendingPlayerHitRepulse = true;
                     _pendingPlayerHitRepulsePosition = player.PlanarPosition;
@@ -523,18 +531,26 @@ public partial class RougeGameManager : MonoBehaviour
 
         float dt = Mathf.Min(Time.deltaTime, 0.05f) * fixedSimulationDt;
         
+        if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.Plus)) {
+            _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + 10000);
+        }
+        if (Input.GetKeyDown(KeyCode.Minus)) {
+            _currentMaxEnemies = Mathf.Max(10, _currentMaxEnemies - 10000);
+        }
+
         _spawnTimer += dt;
         if (_spawnTimer > 1f) {
             _spawnTimer = 0f;
             if (_currentMaxEnemies < enemyCount) {
                 // Ramping up exponentially + flat faster rate to reach 100k cap sensibly
                 int growth = 20 + currentLevel * 10 + (int)(_currentMaxEnemies * 0.02f);
+                if (Input.GetKey(KeyCode.RightBracket)) growth *= 10;
                 _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + growth);
             }
         }
 
         UpdateSkills(dt);
-        ApplyPendingPlayerHitRepulse();
+        ApplyPendingPlayerContactSkill();
 
      
         while (_explosionQueue.TryDequeue(out float2 expPos)) {
@@ -612,46 +628,87 @@ public partial class RougeGameManager : MonoBehaviour
 
         UpdateBurnPatches(dt);
 
-        // Animate VFX spheres without active objects
+        // Compact active VFX so we only upload and draw live instances.
+        _explosionCount = 0;
         for (int vi = 0; vi < MaxExplosions; vi++)
         {
-            if (_expTimers[vi] > 0f)
+            if (_expTimers[vi] <= 0f)
             {
-                _expTimers[vi] -= dt;
-                float p = 1f - math.max(0, _expTimers[vi] / 0.35f);
-                float currentRadius = _expMaxScales[vi] * p;
-                float4 pos = _expPosData[vi];
-                pos.w = currentRadius;
-                _expPosData[vi] = pos;
+                continue;
             }
-            else
+
+            _expTimers[vi] = math.max(0f, _expTimers[vi] - dt);
+            if (_expTimers[vi] <= 0f)
             {
-                float4 pos = _expPosData[vi];
-                pos.w = 0f;
-                _expPosData[vi] = pos;
+                _expStateData[vi] = new float4(0f, 0f, 0f, 1f);
+                continue;
             }
+
+            float progress = 1f - math.saturate(_expTimers[vi] / 0.35f);
+            float currentRadius = _expMaxScales[vi] * math.saturate(progress);
+            _expStateData[vi] = new float4(currentRadius, currentRadius * 0.72f, currentRadius, progress);
+
+            if (_explosionCount != vi)
+            {
+                _expPosData[_explosionCount] = _expPosData[vi];
+                _expStateData[_explosionCount] = _expStateData[vi];
+                _expTimers[_explosionCount] = _expTimers[vi];
+                _expMaxScales[_explosionCount] = _expMaxScales[vi];
+                _expTimers[vi] = 0f;
+                _expStateData[vi] = new float4(0f, 0f, 0f, 1f);
+            }
+
+            _explosionCount++;
         }
 
+        for (int vi = _explosionCount; vi < MaxExplosions; vi++)
+        {
+            _expStateData[vi] = new float4(0f, 0f, 0f, 1f);
+        }
+
+        _deathBurstCount = 0;
         for (int vi = 0; vi < MaxDeathBursts; vi++)
         {
-            if (_deathTimers[vi] > 0f)
+            if (_deathTimers[vi] <= 0f)
             {
-                _deathTimers[vi] = math.max(0f, _deathTimers[vi] - dt);
-                float duration = math.max(0.01f, _deathDurations[vi]);
-                float progress = 1f - (_deathTimers[vi] / duration);
-                float scale = math.lerp(0.3f, 1f, math.saturate(math.pow(progress, 0.7f)));
-
-                float4 pos = _deathPosData[vi];
-                pos.y += _deathRiseSpeeds[vi] * dt;
-                _deathPosData[vi] = pos;
-
-                float baseRadius = pos.w;
-                _deathStateData[vi] = new float4(baseRadius * scale, baseRadius * 0.55f * scale, baseRadius * scale, math.saturate(progress));
+                continue;
             }
-            else if (_deathStateData.IsCreated)
+
+            _deathTimers[vi] = math.max(0f, _deathTimers[vi] - dt);
+            if (_deathTimers[vi] <= 0f)
             {
-                _deathStateData[vi] = float4.zero;
+                _deathStateData[vi] = new float4(0f, 0f, 0f, 1f);
+                continue;
             }
+
+            float duration = math.max(0.01f, _deathDurations[vi]);
+            float progress = 1f - (_deathTimers[vi] / duration);
+            float scale = math.lerp(0.3f, 1f, math.saturate(math.pow(progress, 0.7f)));
+
+            float4 pos = _deathPosData[vi];
+            pos.y += _deathRiseSpeeds[vi] * dt;
+            _deathPosData[vi] = pos;
+
+            float baseRadius = pos.w;
+            _deathStateData[vi] = new float4(baseRadius * scale, baseRadius * 0.55f * scale, baseRadius * scale, math.saturate(progress));
+
+            if (_deathBurstCount != vi)
+            {
+                _deathPosData[_deathBurstCount] = _deathPosData[vi];
+                _deathStateData[_deathBurstCount] = _deathStateData[vi];
+                _deathTimers[_deathBurstCount] = _deathTimers[vi];
+                _deathDurations[_deathBurstCount] = _deathDurations[vi];
+                _deathRiseSpeeds[_deathBurstCount] = _deathRiseSpeeds[vi];
+                _deathTimers[vi] = 0f;
+                _deathStateData[vi] = new float4(0f, 0f, 0f, 1f);
+            }
+
+            _deathBurstCount++;
+        }
+
+        for (int vi = _deathBurstCount; vi < MaxDeathBursts; vi++)
+        {
+            _deathStateData[vi] = new float4(0f, 0f, 0f, 1f);
         }
 
         UpdateAOERings(dt);
@@ -1244,7 +1301,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void ApplyCameraEffects()
     {
-        Camera camera = Camera.main;
+        Camera camera = RougeCameraFollow.ResolveCamera();
         if (camera == null)
         {
             return;
@@ -1360,6 +1417,15 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void UpdateBullets(float dt)
     {
+        if (!IsSkillEnabled(PlayerSkillType.AutoShoot))
+        {
+            _fireTimer = 0f;
+            _activeBulletCount = 0;
+            _bulletMin = float2.zero;
+            _bulletMax = float2.zero;
+            return;
+        }
+
         _fireTimer -= dt;
         if (_fireTimer <= 0f)
         {
@@ -1406,20 +1472,28 @@ public partial class RougeGameManager : MonoBehaviour
     {
         if (_activeBulletCount <= 0 || _bulletMesh == null || _bulletMaterial == null) return;
 
-        Matrix4x4[] matrices = new Matrix4x4[_activeBulletCount];
-        for (int i = 0; i < _activeBulletCount; i++)
+        for (int startIndex = 0; startIndex < _activeBulletCount; startIndex += _bulletRenderMatrices.Length)
         {
-            RougeBullet bullet = _bullets[i];
-            Vector3 pos = new Vector3(bullet.Current.x, renderHeight + 0.5f, bullet.Current.y);
-            Vector3 scale = Vector3.one * (bullet.Radius * 2f);
-            matrices[i] = Matrix4x4.TRS(pos, Quaternion.identity, scale);
-        }
+            int batchCount = Mathf.Min(_bulletRenderMatrices.Length, _activeBulletCount - startIndex);
+            for (int i = 0; i < batchCount; i++)
+            {
+                RougeBullet bullet = _bullets[startIndex + i];
+                Vector3 pos = new Vector3(bullet.Current.x, renderHeight + 0.5f, bullet.Current.y);
+                Vector3 scale = Vector3.one * (bullet.Radius * 2f);
+                _bulletRenderMatrices[i] = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+            }
 
-        Graphics.DrawMeshInstanced(_bulletMesh, 0, _bulletMaterial, matrices, _activeBulletCount);
+            Graphics.DrawMeshInstanced(_bulletMesh, 0, _bulletMaterial, _bulletRenderMatrices, batchCount);
+        }
     }
 
     private void FireBullets()
     {
+        if (!IsSkillEnabled(PlayerSkillType.AutoShoot))
+        {
+            return;
+        }
+
         if (player == null)
         {
             return;
@@ -1446,25 +1520,35 @@ public partial class RougeGameManager : MonoBehaviour
                 Velocity = dir * bulletSpeed,
                 Radius = bulletRadius,
                 Damage = bulletDamage,
-                Life = bulletLifetime
+                Life = bulletLifetime,
+                EffectFlags = (int)_autoShootEffects.Tags,
+                EffectKnockbackCenter = (int)_autoShootEffects.KnockbackCenter,
+                EffectKnockbackForce = _autoShootEffects.KnockbackForce,
+                EffectLaunchHeight = _autoShootEffects.LaunchHeight,
+                EffectLaunchLandingRadius = _autoShootEffects.LaunchLandingRadius,
+                EffectPoisonSpreadRadius = _autoShootEffects.PoisonSpreadRadius,
+                EffectSlowPercent = _autoShootEffects.SlowPercent,
+                EffectSlowDuration = _autoShootEffects.SlowDuration,
+                EffectCurseExplosionDamage = _autoShootEffects.CurseExplosionDamage,
+                EffectCurseExplosionRadius = _autoShootEffects.CurseExplosionRadius,
+                EffectBurnDamage = _autoShootEffects.BurnDamage,
+                EffectBurnDuration = _autoShootEffects.BurnDuration
             };
         }
     }
 
     private void RenderExplosions()
     {
-        if (_expPosBuffer == null || _vfxSphereMesh == null || _vfxExplosionMat == null) return;
-        
-        int drawCount = MaxExplosions;
-        
-        _expPosBuffer.SetData(_expPosData);
-        _expStateBuffer.SetData(_expStateData);
+        if (_explosionCount <= 0 || _expPosBuffer == null || _vfxSphereMesh == null || _vfxExplosionMat == null) return;
+
+        _expPosBuffer.SetData(_expPosData, 0, 0, _explosionCount);
+        _expStateBuffer.SetData(_expStateData, 0, 0, _explosionCount);
 
         _vfxExplosionMat.SetBuffer(PositionScaleBufferId, _expPosBuffer);
         _vfxExplosionMat.SetBuffer("_StateBuffer", _expStateBuffer);
         _vfxExplosionMat.SetFloat(ScaleMultiplierId, 1f);
 
-        _expDrawArgs[1] = (uint)drawCount;
+        _expDrawArgs[1] = (uint)_explosionCount;
         _expArgsBuffer.SetData(_expDrawArgs);
 
         Bounds bounds = new Bounds(transform.position, new Vector3(1000f, 100f, 1000f));
@@ -1483,17 +1567,17 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void RenderDeathBursts()
     {
-        if (_deathPosBuffer == null || _deathStateBuffer == null || _deathArgsBuffer == null || _vfxSphereMesh == null || _vfxDeathMat == null) return;
+        if (_deathBurstCount <= 0 || _deathPosBuffer == null || _deathStateBuffer == null || _deathArgsBuffer == null || _vfxSphereMesh == null || _vfxDeathMat == null) return;
 
-        _deathPosBuffer.SetData(_deathPosData);
-        _deathStateBuffer.SetData(_deathStateData);
+        _deathPosBuffer.SetData(_deathPosData, 0, 0, _deathBurstCount);
+        _deathStateBuffer.SetData(_deathStateData, 0, 0, _deathBurstCount);
 
         _vfxDeathMat.SetBuffer(PositionScaleBufferId, _deathPosBuffer);
         _vfxDeathMat.SetBuffer("_StateBuffer", _deathStateBuffer);
         _vfxDeathMat.SetFloat(ScaleMultiplierId, 1f);
 
         _deathDrawArgs[0] = _vfxSphereMesh.GetIndexCount(0);
-        _deathDrawArgs[1] = (uint)MaxDeathBursts;
+        _deathDrawArgs[1] = (uint)_deathBurstCount;
         _deathDrawArgs[2] = _vfxSphereMesh.GetIndexStart(0);
         _deathDrawArgs[3] = _vfxSphereMesh.GetBaseVertex(0);
         _deathDrawArgs[4] = 0;
@@ -1517,8 +1601,14 @@ public partial class RougeGameManager : MonoBehaviour
     {
         if (_positionBuffer == null || enemyMesh == null || enemyMaterial == null) return;
 
-        _positionBuffer.SetData(_positionsA);
-        _stateBuffer.SetData(_stateA);
+        int drawCount = Mathf.Clamp(_currentMaxEnemies, 0, enemyCount);
+        if (drawCount <= 0)
+        {
+            return;
+        }
+
+        _positionBuffer.SetData(_positionsA, 0, 0, drawCount);
+        _stateBuffer.SetData(_stateA, 0, 0, drawCount);
 
         enemyMaterial.SetBuffer(PositionScaleBufferId, _positionBuffer);
         enemyMaterial.SetBuffer("_StateBuffer", _stateBuffer);
@@ -1528,6 +1618,9 @@ public partial class RougeGameManager : MonoBehaviour
         Vector3 center = player != null ? player.transform.position : transform.position;
         float extent = math.max(arenaHalfExtent, despawnDistance) * 2f;
         Bounds bounds = new Bounds(center, new Vector3(extent, 32f, extent));
+
+        _drawArgs[1] = (uint)drawCount;
+        _argsBuffer.SetData(_drawArgs);
 
         Graphics.DrawMeshInstancedIndirect(
             enemyMesh,
@@ -1544,6 +1637,14 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void ScheduleSimulation(float dt)
     {
+        int activeEnemyCount = Mathf.Clamp(_currentMaxEnemies, 0, enemyCount);
+        if (activeEnemyCount <= 0)
+        {
+            _simulationHandle = default;
+            return;
+        }
+
+        int activeChunkCount = Mathf.Max(1, Mathf.CeilToInt(activeEnemyCount / (float)sortBatchSize));
         float cellSize = math.max(separationRadius, enemyRadius * 2.5f);
         float invCellSize = 1f / math.max(cellSize, 0.001f);
 
@@ -1553,9 +1654,9 @@ public partial class RougeGameManager : MonoBehaviour
             EnemyKeys = _enemyKeys,
             InvCellSize = invCellSize,
             HashMask = _hashMask
-        }.ScheduleBatch(enemyCount, sortBatchSize);
+        }.ScheduleBatch(activeEnemyCount, sortBatchSize);
 
-        handle = ScheduleRadixSort(handle);
+        handle = ScheduleRadixSort(handle, activeEnemyCount, activeChunkCount);
 
         handle = new ClearGridJob
         {
@@ -1568,7 +1669,7 @@ public partial class RougeGameManager : MonoBehaviour
             SortedKeys = _enemyKeys,
             CellOffsets = _cellOffsets,
             CellCounts = _cellCounts
-        }.ScheduleBatch(enemyCount, sortBatchSize, handle);
+        }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
 
         handle = new ReorderEnemiesJob
         {
@@ -1581,7 +1682,7 @@ public partial class RougeGameManager : MonoBehaviour
             VelocityOut = _velocitiesB,
             StateOut = _stateB,
             EffectStateOut = _effectStateB
-        }.ScheduleBatch(enemyCount, sortBatchSize, handle);
+        }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
 
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         handle = new SimulateEnemiesJob
@@ -1623,6 +1724,8 @@ public partial class RougeGameManager : MonoBehaviour
             ObstacleRepulsion = obstacleRepulsion,
             ObstacleOrbitStrength = obstacleOrbitStrength,
             KnockbackResist = math.max(0.1f, 1f - currentLevel * 0.0002f),
+            PlayerContactEnabled = IsPlayerContactEnabled(),
+            DefeatEnemyOnPlayerContact = _playerContactDefeatEnemyOnContact,
             PlayerContactPadding = playerContactPadding,
             SkillAreas = _skillAreasDb,
             SkillAreaCount = _skillAreaCount,
@@ -1639,12 +1742,12 @@ public partial class RougeGameManager : MonoBehaviour
             MeleeDmgMult  = math.clamp(0.3f + _skillLevels[3] * 0.035f, 0.3f, 2.0f),
             OrbitDmgMult  = math.clamp(2.0f + _skillLevels[4] * 0.5f, 2.0f, 15.0f),
             BulletDmgMult = math.clamp(0.3f + _skillLevels[5] * 0.035f, 0.3f, 2.0f)
-        }.ScheduleBatch(enemyCount, simulationBatchSize, handle);
+        }.ScheduleBatch(activeEnemyCount, simulationBatchSize, handle);
 
         _simulationHandle = handle;
     }
 
-    private JobHandle ScheduleRadixSort(JobHandle dependency)
+    private JobHandle ScheduleRadixSort(JobHandle dependency, int activeEnemyCount, int activeChunkCount)
     {
         JobHandle handle = dependency;
         for (int shift = 32; shift < 64; shift += 8)
@@ -1655,14 +1758,14 @@ public partial class RougeGameManager : MonoBehaviour
                 Histograms = _histograms,
                 BatchSize = sortBatchSize,
                 Shift = shift,
-                ChunkCount = _chunkCount
-            }.ScheduleBatch(enemyCount, sortBatchSize, handle);
+                ChunkCount = activeChunkCount
+            }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
 
             handle = new BinLocalPrefixSumBatchJob
             {
                 Histograms = _histograms,
                 BinTotals = _binTotals,
-                ChunkCount = _chunkCount
+                ChunkCount = activeChunkCount
             }.ScheduleBatch(256, 64, handle);
 
             handle = new GlobalBinSumJob
@@ -1674,7 +1777,7 @@ public partial class RougeGameManager : MonoBehaviour
             {
                 Histograms = _histograms,
                 BinTotals = _binTotals,
-                ChunkCount = _chunkCount
+                ChunkCount = activeChunkCount
             }.ScheduleBatch(256, 64, handle);
 
             handle = new ScatterJob
@@ -1684,14 +1787,14 @@ public partial class RougeGameManager : MonoBehaviour
                 Histograms = _histograms,
                 BatchSize = sortBatchSize,
                 Shift = shift,
-                ChunkCount = _chunkCount
-            }.ScheduleBatch(enemyCount, sortBatchSize, handle);
+                ChunkCount = activeChunkCount
+            }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
 
             handle = new CopyArrayJob
             {
                 Src = _tempEnemyKeys,
                 Dst = _enemyKeys
-            }.ScheduleBatch(enemyCount, sortBatchSize, handle);
+            }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
         }
 
         return handle;
@@ -1727,31 +1830,6 @@ public partial class RougeGameManager : MonoBehaviour
                 }
             }
         }
-    }
-
-    private void ApplyPendingPlayerHitRepulse()
-    {
-        if (!_pendingPlayerHitRepulse)
-        {
-            return;
-        }
-
-        _pendingPlayerHitRepulse = false;
-        TryAddSkillArea(new RougeSkillArea
-        {
-            Type = 2,
-            Position = _pendingPlayerHitRepulsePosition,
-            Radius = playerHitRepulseRadius,
-            Damage = 0f,
-            PullForce = playerHitRepulseForce,
-            VerticalForce = playerHitRepulseLift
-        });
-
-        SpawnAOERing(
-            new Vector3(_pendingPlayerHitRepulsePosition.x, renderHeight + 0.06f, _pendingPlayerHitRepulsePosition.y),
-            playerHitRepulseRadius,
-            0.22f,
-            new Color(1f, 0.92f, 0.55f, 1f));
     }
 
     private void UpdateBurnPatches(float dt)
@@ -2124,15 +2202,14 @@ public partial class RougeGameManager : MonoBehaviour
         bulletLifetime = Mathf.Max(0.05f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.BulletLifetime, 0));
         bulletsPerShot = Mathf.Max(1, skillConfig.AutoShoot.GetIntValue(skillConfig.AutoShoot.BulletsPerShot, 0));
         spreadAngle = Mathf.Max(0f, skillConfig.AutoShoot.GetValue(skillConfig.AutoShoot.SpreadAngle, 0));
-
-        tornadoKey = skillConfig.LightPillar.Presentation.ActivationKey;
-        tornadoRadius = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.Radius, 0);
-        tornadoPullForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.PullForce, 0);
-        tornadoSpinForce = 85f;
-        tornadoLiftForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VerticalForce, 0);
-        tornadoDuration = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VisualDuration, 0);
-        tornadoCooldown = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.Cooldown, 0);
-        tornadoTravelSpeed = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.DistanceStep, 0);
+                _autoShootEffects = skillConfig.AutoShoot.Effects.Resolve(currentLevel, 60);
+                ApplyPlayerContactSkillConfigValues();
+      //  tornadoPullForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.PullForce, 0);
+       // tornadoSpinForce = 85f;
+       // tornadoLiftForce = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VerticalForce, 0);
+      //  tornadoDuration = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.VisualDuration, 0);
+      //  tornadoCooldown = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.Cooldown, 0);
+       // tornadoTravelSpeed = skillConfig.LightPillar.GetValue(skillConfig.LightPillar.DistanceStep, 0);
     }
 
     private void MigrateLegacySkillConfig()
@@ -2150,8 +2227,8 @@ public partial class RougeGameManager : MonoBehaviour
             skillConfig.Shockwave.ImpactRingCount = PlayerSkillScaling.Constant(5f);
             skillConfig.Shockwave.RingThickness = PlayerSkillScaling.Constant(7f);
             skillConfig.Shockwave.ImpactDamage = PlayerSkillScaling.Constant(2400f);
-            skillConfig.Shockwave.PullForce = PlayerSkillScaling.Constant(-240f);
-            skillConfig.Shockwave.VerticalForce = PlayerSkillScaling.Constant(125f);
+     //       skillConfig.Shockwave.PullForce = PlayerSkillScaling.Constant(-240f);
+    //        skillConfig.Shockwave.VerticalForce = PlayerSkillScaling.Constant(125f);
             skillConfig.Shockwave.CameraLift = PlayerSkillScaling.Constant(1.35f);
             skillConfig.Shockwave.CameraFovKick = PlayerSkillScaling.Constant(8f);
             skillConfig.Shockwave.LandingShake = PlayerSkillScaling.Constant(0.26f);
@@ -2171,8 +2248,8 @@ public partial class RougeGameManager : MonoBehaviour
             skillConfig.Dash.MaxSpinRate = PlayerSkillScaling.Constant(3000f);
             skillConfig.Dash.ImpactRadius = PlayerSkillScaling.Constant(10f);
             skillConfig.Dash.ImpactDamage = PlayerSkillScaling.Constant(260f);
-            skillConfig.Dash.PullForce = PlayerSkillScaling.Constant(320f);
-            skillConfig.Dash.VerticalForce = PlayerSkillScaling.Constant(90f);
+      //      skillConfig.Dash.PullForce = PlayerSkillScaling.Constant(320f);
+      //      skillConfig.Dash.VerticalForce = PlayerSkillScaling.Constant(90f);
         }
 
         if (Mathf.Approximately(skillConfig.MeleeSlash.GetBaseValue(skillConfig.MeleeSlash.SlashVerticalForce), 18f))
@@ -2183,10 +2260,10 @@ public partial class RougeGameManager : MonoBehaviour
             skillConfig.MeleeSlash.SideSpikeVerticalForce = PlayerSkillScaling.Constant(65f);
         }
 
-        if (Mathf.Approximately(skillConfig.LightPillar.GetBaseValue(skillConfig.LightPillar.VerticalForce), 45f))
-        {
-            skillConfig.LightPillar.VerticalForce = PlayerSkillScaling.Constant(70f);
-        }
+        // if (Mathf.Approximately(skillConfig.LightPillar.GetBaseValue(skillConfig.LightPillar.VerticalForce), 45f))
+        // {
+        //     skillConfig.LightPillar.VerticalForce = PlayerSkillScaling.Constant(70f);
+        // }
     }
 
     private void SpawnExplosionVFX(Vector3 worldPos, float radius)
@@ -2195,8 +2272,8 @@ public partial class RougeGameManager : MonoBehaviour
         {
             if (_expTimers[i] <= 0f)
             {
-                _expPosData[i] = new float4(worldPos.x, worldPos.y, worldPos.z, radius);
-                _expStateData[i] = new float4(1f, 0f, 0f, 0f);
+                _expPosData[i] = new float4(worldPos.x, worldPos.y, worldPos.z, 0f);
+                _expStateData[i] = new float4(0f, 0f, 0f, 0f);
                 _expMaxScales[i] = radius;
                 _expTimers[i] = 0.35f;
                 return;
@@ -2214,31 +2291,32 @@ public partial class RougeGameManager : MonoBehaviour
             }
 
             _deathPosData[i] = new float4(worldPos.x, worldPos.y, worldPos.z, radius);
-            _deathStateData[i] = new float4(radius * 0.3f, radius * 0.16f, radius * 0.3f, 0f);
+            _deathStateData[i] = float4.zero;
             _deathTimers[i] = DeathBurstDuration;
             _deathDurations[i] = DeathBurstDuration;
-            _deathRiseSpeeds[i] = 1.8f + radius * 0.25f;
+            _deathRiseSpeeds[i] = math.max(2.5f, radius * 1.6f);
             return;
         }
     }
+
 }
 
 public struct RougeSkillArea
 {
-    public int Type; // 1: Tornado, 2: Bomb, 3: Laser
+    public int Type;
     public float2 Position;
     public float2 Direction;
     public float Radius;
     public float Length;
     public float Damage;
     public float PullForce;
-    public float SpinForce;
     public float VerticalForce;
     public float AuxA;
     public float AuxB;
     public float AuxC;
     public float AuxD;
     public int EffectFlags;
+    public int EffectKnockbackCenter;
     public float EffectKnockbackForce;
     public float EffectLaunchHeight;
     public float EffectLaunchLandingRadius;
@@ -2295,6 +2373,19 @@ public struct RougeBullet
     public float Radius;
     public float Damage;
     public float Life;
+    
+    public int EffectFlags;
+    public int EffectKnockbackCenter;
+    public float EffectKnockbackForce;
+    public float EffectLaunchHeight;
+    public float EffectLaunchLandingRadius;
+    public float EffectPoisonSpreadRadius;
+    public float EffectSlowPercent;
+    public float EffectSlowDuration;
+    public float EffectCurseExplosionDamage;
+    public float EffectCurseExplosionRadius;
+    public float EffectBurnDamage;
+    public float EffectBurnDuration;
 }
 
 

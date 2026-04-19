@@ -310,6 +310,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     public float ObstacleRepulsion;
     public float ObstacleOrbitStrength;
     public float KnockbackResist;
+    public bool PlayerContactEnabled;
+    public bool DefeatEnemyOnPlayerContact;
     public float PlayerContactPadding;
     [WriteOnly] public NativeQueue<float2>.ParallelWriter ExplosionQueue;
     [WriteOnly] public NativeQueue<RougeSkillEvent>.ParallelWriter SkillEventQueue;
@@ -457,7 +459,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
             float2 desired = math.normalizesafe(PlayerPos - pos.xz);
             bool isAirborne = pos.y > RenderHeight + 0.5f;
-            float3 acceleration = new float3(0f, -30f, 0f);
+            float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
                 acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor);
@@ -503,18 +505,20 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
                     if (distSq < totalRadius * totalRadius && distSq > 0.0001f)
                     {
-                        float dist = math.sqrt(distSq);
-                        float2 normal = diff / dist;
+                        float invDist = math.rsqrt(distSq);
+                        float dist = distSq * invDist;
+                        float2 normal = diff * invDist;
                         float overlap = totalRadius - dist;
                         acceleration.xz += normal * (ObstacleRepulsion + overlap * 50f);
                     }
                     else if (!isAirborne)
                     {
-                        float dist = math.sqrt(math.max(distSq, 0.0001f));
+                        float invDist = math.rsqrt(math.max(distSq, 0.0001f));
+                        float dist = math.max(distSq, 0.0001f) * invDist;
                         float edgeDist = dist - totalRadius;
                         if (edgeDist >= 0f && edgeDist < ObstacleLookAhead)
                         {
-                            float2 normal = diff / dist;
+                            float2 normal = diff * invDist;
                             float weight = 1f - math.saturate(edgeDist / math.max(ObstacleLookAhead, 0.001f));
                             acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                             float2 tangent = new float2(-normal.y, normal.x);
@@ -672,17 +676,39 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                         {
                             System.Threading.Interlocked.Increment(ref ((int*)SkillKillCounts.GetUnsafePtr())[5]);
                         }
+                        RougeSkillArea mockSkill = new RougeSkillArea
+                        {
+                            Position = bullet.Current,
+                            Type = 0,
+                            Damage = bullet.Damage,
+                            EffectFlags = bullet.EffectFlags,
+                            EffectKnockbackCenter = bullet.EffectKnockbackCenter,
+                            EffectKnockbackForce = bullet.EffectKnockbackForce,
+                            EffectLaunchHeight = bullet.EffectLaunchHeight,
+                            EffectLaunchLandingRadius = bullet.EffectLaunchLandingRadius,
+                            EffectPoisonSpreadRadius = bullet.EffectPoisonSpreadRadius,
+                            EffectSlowPercent = bullet.EffectSlowPercent,
+                            EffectSlowDuration = bullet.EffectSlowDuration,
+                            EffectCurseExplosionDamage = bullet.EffectCurseExplosionDamage,
+                            EffectCurseExplosionRadius = bullet.EffectCurseExplosionRadius,
+                            EffectBurnDamage = bullet.EffectBurnDamage,
+                            EffectBurnDuration = bullet.EffectBurnDuration
+                        };
+                        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, mockSkill);
                     }
                 }
             }
 
             bool hitPlayer = false;
             float distToPlayerSq = math.lengthsq(pos.xz - PlayerPos);
-            if (health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
+            if (PlayerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
             {
                 System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);
-                health = -1f;
-                hitPlayer = true;
+                if (DefeatEnemyOnPlayerContact)
+                {
+                    health = -1f;
+                    hitPlayer = true;
+                }
             }
 
             if (health <= 0f && !isAirborne)
@@ -762,7 +788,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     effects.LaunchLandingDamage = 0f;
                     effects.LaunchLandingRadius = 0f;
                 }
-                else if (vel.y < -1f)
+                else if (isAirborne && vel.y < -1f)
                 {
                     health -= math.abs(vel.y) * 15f;
                     flashTimer = 1f;
@@ -1090,7 +1116,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             return;
         }
 
-        float2 pushDir = math.normalizesafe(pos.xz - skill.Position, new float2(0f, 1f));
+        float2 centerPos = skill.EffectKnockbackCenter == 1 ? PlayerPos : skill.Position;
+        float2 pushDir = math.normalizesafe(pos.xz - centerPos, new float2(0f, 1f));
         if ((tags & SkillHitEffectTag.Knockback) != 0)
         {
             float knockbackForce = skill.EffectKnockbackForce == 0f ? 35f : skill.EffectKnockbackForce;

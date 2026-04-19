@@ -53,7 +53,7 @@ Shader "Rouge/VFXInstanced"
                 float4 posData = _PositionScaleBuffer[input.instanceID];
                 float4 state = _StateBuffer[input.instanceID];
                 
-                float3 scale = state.xyz * _ScaleMultiplier;
+                float3 scale = max(state.xyz * _ScaleMultiplier, 0.0);
                 
                 float3 positionWS = float3(
                     posData.x + input.positionOS.x * scale.x,
@@ -77,7 +77,7 @@ Shader "Rouge/VFXInstanced"
                 
                 half3 col = _BaseColor.rgb * shade;
                 // Fade out over progress
-                float alpha = _BaseColor.a * (1.0 - input.progress);
+                float alpha = _BaseColor.a * saturate(1.0 - input.progress);
                 
                 return half4(col, alpha);
             }

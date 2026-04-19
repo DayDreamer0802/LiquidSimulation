@@ -20,7 +20,7 @@ public class PlayerBase : MonoBehaviour
     {
         if (aimCamera == null)
         {
-            aimCamera = Camera.main;
+            aimCamera = RougeCameraFollow.ResolveCamera();
         }
     }
 
@@ -57,7 +57,7 @@ public class PlayerBase : MonoBehaviour
     {
         if (aimCamera == null)
         {
-            aimCamera = Camera.main;
+            aimCamera = RougeCameraFollow.ResolveCamera();
             if (aimCamera == null)
             {
                 return;

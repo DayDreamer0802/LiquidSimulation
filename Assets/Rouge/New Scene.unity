@@ -358,6 +358,7 @@ GameObject:
   m_Component:
   - component: {fileID: 288212303}
   - component: {fileID: 288212302}
+  - component: {fileID: 288212304}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -445,6 +446,29 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+--- !u!114 &288212304
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 288212301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Version: 3
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_LightLayerMask: 1
+  m_RenderingLayers: 1
+  m_CustomShadowLayers: 0
+  m_ShadowLayerMask: 1
+  m_ShadowRenderingLayers: 1
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
 --- !u!21 &377116817
 Material:
   serializedVersion: 8
@@ -692,7 +716,7 @@ Transform:
   m_GameObject: {fileID: 771872831}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: 0}
+  m_LocalPosition: {x: 0, y: 1.5, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -713,7 +737,7 @@ MonoBehaviour:
   moveSpeed: 18
   acceleration: 90
   braking: 14
-  aimPlaneHeight: 0
+  aimPlaneHeight: 1.5
   aimCamera: {fileID: 0}
 --- !u!23 &771872834
 MeshRenderer:
@@ -967,7 +991,7 @@ MonoBehaviour:
   player: {fileID: 0}
   enemyMesh: {fileID: 0}
   enemyMaterial: {fileID: 0}
-  enemyCount: 100000
+  enemyCount: 198979
   enemyMaxHealth: 24
   enemyRadius: 0.35
   enemyMaxSpeed: 7
@@ -990,16 +1014,18 @@ MonoBehaviour:
     m_Bits: 4294967295
   skillConfig:
     AutoShoot:
-      MaxLevel: 60
+      MaxLevel: 99
       Presentation:
         DisplayName: Auto Shoot
         TriggerLabel: AUTO SHOOT
-        IsPassive: 1
+        Enabled: 0
+        IsPassive: 0
         ActivationKey: 0
-        ExecutionType: 2
+        ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 0
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1072,17 +1098,105 @@ MonoBehaviour:
         x: 4
         y: 4
         z: 0
+    PlayerContact:
+      MaxLevel: 60
+      Presentation:
+        DisplayName: Player Contact
+        TriggerLabel: PASSIVE
+        Enabled: 0
+        IsPassive: 1
+        ActivationKey: 0
+        ExecutionType: 2
+        SustainPriority: 0
+      Effects:
+        Tags: 0
+        KnockbackCenter: 0
+        KnockbackForce:
+          x: 0
+          y: 0
+          z: 0
+        LaunchHeight:
+          x: 0
+          y: 0
+          z: 0
+        LaunchLandingRadius:
+          x: 0
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
+          x: 0
+          y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      PlayerDamage:
+        x: 8
+        y: 8
+        z: 0
+      InvincibilityDuration:
+        x: 0.33
+        y: 0.33
+        z: 0
+      ContactPadding:
+        x: 0.22
+        y: 0.22
+        z: 0
+      RepulseRadius:
+        x: 8
+        y: 8
+        z: 0
+      RepulseForce:
+        x: 220
+        y: 220
+        z: 0
+      RepulseLift:
+        x: 18
+        y: 18
+        z: 0
+      RepulseDamage:
+        x: 0
+        y: 0
+        z: 0
+      RingDuration:
+        x: 0.22
+        y: 0.22
+        z: 0
+      DefeatEnemyOnContact: 1
     LeapSmash:
       MaxLevel: 60
       Presentation:
         DisplayName: Leap Smash
         TriggerLabel: SPACE
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 32
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 3
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1147,14 +1261,6 @@ MonoBehaviour:
         x: 1500
         y: 1500
         z: 0
-      LandingPullForce:
-        x: -300
-        y: -300
-        z: 0
-      LandingVerticalForce:
-        x: 60
-        y: 60
-        z: 0
       LandingInvincibility:
         x: 0.5
         y: 0.5
@@ -1164,12 +1270,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Light Pillar Strike
         TriggerLabel: Q
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 113
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 0
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1234,14 +1342,6 @@ MonoBehaviour:
         x: 400
         y: 2800
         z: 2
-      PullForce:
-        x: -120
-        y: -120
-        z: 0
-      VerticalForce:
-        x: 70
-        y: 70
-        z: 0
       StrikeInterval:
         x: 0.15
         y: 0.15
@@ -1259,12 +1359,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Bomb Throw
         TriggerLabel: E
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 101
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 1
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1349,14 +1451,6 @@ MonoBehaviour:
         x: 60
         y: 240
         z: 2
-      PullForce:
-        x: -150
-        y: -150
-        z: 0
-      VerticalForce:
-        x: 50
-        y: 50
-        z: 0
       MaxBounceCount:
         x: 4
         y: 6
@@ -1406,12 +1500,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Laser Beam
         TriggerLabel: R
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 114
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 0
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1472,10 +1568,6 @@ MonoBehaviour:
         x: 400
         y: 2000
         z: 2
-      PullForce:
-        x: 50
-        y: 75
-        z: 2
       BeamCount:
         x: 1
         y: 7
@@ -1497,12 +1589,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Melee Slash
         TriggerLabel: MOUSE L-CLICK
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 0
         ExecutionType: 1
         SustainPriority: 1000
       Effects:
         Tags: 0
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1712,12 +1806,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Shockwave
         TriggerLabel: V
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 118
         ExecutionType: 1
         SustainPriority: 99999
       Effects:
         Tags: 0
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1822,14 +1918,6 @@ MonoBehaviour:
         x: 2400
         y: 5200
         z: 2
-      PullForce:
-        x: -240
-        y: -300
-        z: 2
-      VerticalForce:
-        x: 125
-        y: 170
-        z: 2
       CameraLift:
         x: 1.35
         y: 1.35
@@ -1847,12 +1935,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Meteor Rain
         TriggerLabel: T
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 116
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 33
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -1945,14 +2035,6 @@ MonoBehaviour:
         x: 900
         y: 2600
         z: 2
-      PullForce:
-        x: -220
-        y: -260
-        z: 2
-      VerticalForce:
-        x: 55
-        y: 80
-        z: 2
       RingDuration:
         x: 0.45
         y: 0.45
@@ -1962,12 +2044,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Ice Zone
         TriggerLabel: C
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 99
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 8
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -2024,10 +2108,6 @@ MonoBehaviour:
         x: 80
         y: 240
         z: 2
-      TickPullForce:
-        x: 30
-        y: 45
-        z: 2
       BurstRadiusBonus:
         x: 5
         y: 8
@@ -2035,14 +2115,6 @@ MonoBehaviour:
       BurstDamage:
         x: 800
         y: 2600
-        z: 2
-      BurstPullForce:
-        x: -250
-        y: -320
-        z: 2
-      BurstVerticalForce:
-        x: 40
-        y: 65
         z: 2
       RingDuration:
         x: 0.6
@@ -2065,12 +2137,14 @@ MonoBehaviour:
       Presentation:
         DisplayName: Poison Bottle
         TriggerLabel: X
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 120
         ExecutionType: 0
         SustainPriority: 0
       Effects:
         Tags: 4
+        KnockbackCenter: 0
         KnockbackForce:
           x: 0
           y: 0
@@ -2192,23 +2266,25 @@ MonoBehaviour:
       Presentation:
         DisplayName: Whirlwind
         TriggerLabel: L-SHIFT
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 304
         ExecutionType: 1
         SustainPriority: 2000
       Effects:
         Tags: 3
+        KnockbackCenter: 0
         KnockbackForce:
-          x: 0
-          y: 0
+          x: 20
+          y: 30
           z: 0
         LaunchHeight:
-          x: 0
-          y: 0
+          x: 25
+          y: 30
           z: 0
         LaunchLandingRadius:
-          x: 0
-          y: 0
+          x: 2
+          y: 3
           z: 0
         PoisonSpreadRadius:
           x: 0
@@ -2286,32 +2362,26 @@ MonoBehaviour:
         x: 260
         y: 900
         z: 2
-      PullForce:
-        x: 320
-        y: 420
-        z: 2
-      VerticalForce:
-        x: 90
-        y: 130
-        z: 2
       RingDuration:
         x: 0.5
         y: 0.5
         z: 0
     OrbitBall:
-      MaxLevel: 60
+      MaxLevel: 8
       Presentation:
         DisplayName: Orbit Ball
         TriggerLabel: PASSIVE
+        Enabled: 0
         IsPassive: 1
         ActivationKey: 0
         ExecutionType: 2
         SustainPriority: 0
       Effects:
         Tags: 1
+        KnockbackCenter: 0
         KnockbackForce:
-          x: 0
-          y: 0
+          x: 2
+          y: 4
           z: 0
         LaunchHeight:
           x: 0
@@ -2350,20 +2420,20 @@ MonoBehaviour:
           y: 0
           z: 0
       MaxBalls:
-        x: 8
-        y: 12
-        z: 2
+        x: 1
+        y: 8
+        z: 0
       OrbitSpeed:
         x: 2.5
-        y: 3.2
+        y: 3
         z: 2
       FirstRingRadius:
         x: 6
-        y: 7
+        y: 8
         z: 2
       SecondRingRadius:
-        x: 10
-        y: 12
+        x: 12
+        y: 16
         z: 2
       FirstRingSpeedMultiplier:
         x: 1
@@ -2382,22 +2452,14 @@ MonoBehaviour:
         y: 3
         z: 2
       Damage:
-        x: 45
-        y: 180
-        z: 2
-      PullForce:
-        x: 15
-        y: 28
-        z: 2
-      VerticalForce:
-        x: 3
-        y: 8
+        x: 20
+        y: 30
         z: 2
   tornadoMesh: {fileID: 2534964839176971238, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
   sortBatchSize: 2048
   simulationBatchSize: 256
   fixedSimulationDt: 1
-  playerMaxHealth: 100
+  playerMaxHealth: 9999999
   playerContactDamage: 8
   playerHitInvincibilityDuration: 0.33
   playerContactPadding: 0.22
@@ -2640,98 +2702,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &2010631538
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2010631541}
-  - component: {fileID: 2010631540}
-  - component: {fileID: 2010631539}
-  m_Layer: 0
-  m_Name: Main Camera
-  m_TagString: MainCamera
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!81 &2010631539
-AudioListener:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2010631538}
-  m_Enabled: 1
---- !u!20 &2010631540
-Camera:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2010631538}
-  m_Enabled: 1
-  serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
-  m_projectionMatrixMode: 1
-  m_GateFitMode: 2
-  m_FOVAxisMode: 0
-  m_Iso: 200
-  m_ShutterSpeed: 0.005
-  m_Aperture: 16
-  m_FocusDistance: 10
-  m_FocalLength: 50
-  m_BladeCount: 5
-  m_Curvature: {x: 2, y: 11}
-  m_BarrelClipping: 0.25
-  m_Anamorphism: 0
-  m_SensorSize: {x: 36, y: 24}
-  m_LensShift: {x: 0, y: 0}
-  m_NormalizedViewPortRect:
-    serializedVersion: 2
-    x: 0
-    y: 0
-    width: 1
-    height: 1
-  near clip plane: 0.3
-  far clip plane: 1000
-  field of view: 60
-  orthographic: 0
-  orthographic size: 5
-  m_Depth: -1
-  m_CullingMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_RenderingPath: -1
-  m_TargetTexture: {fileID: 0}
-  m_TargetDisplay: 0
-  m_TargetEye: 3
-  m_HDR: 1
-  m_AllowMSAA: 1
-  m_AllowDynamicResolution: 0
-  m_ForceIntoRT: 0
-  m_OcclusionCulling: 1
-  m_StereoConvergence: 10
-  m_StereoSeparation: 0.022
---- !u!4 &2010631541
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2010631538}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2130041843
 GameObject:
   m_ObjectHideFlags: 0
@@ -2780,7 +2750,6 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 2010631541}
   - {fileID: 288212303}
   - {fileID: 636509858}
   - {fileID: 1770265883}

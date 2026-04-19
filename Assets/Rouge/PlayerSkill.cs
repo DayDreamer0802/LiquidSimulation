@@ -37,17 +37,23 @@ public enum SkillHitEffectTag
     Burn = 1 << 5
 }
 
-public enum SkillExecutionType
-{
+public enum SkillExecutionType{
     Instant,
     Sustained,
     Passive
+}
+
+public enum SkillKnockbackCenter
+{
+    SkillPosition,
+    CasterPosition
 }
 
 [Serializable]
 public struct ResolvedSkillHitEffectConfig
 {
     public SkillHitEffectTag Tags;
+    public SkillKnockbackCenter KnockbackCenter;
     public float KnockbackForce;
     public float LaunchHeight;
     public float LaunchLandingRadius;
@@ -127,6 +133,7 @@ public static class PlayerSkillScaling
 public struct SkillHitEffectConfig
 {
     public SkillHitEffectTag Tags;
+    public SkillKnockbackCenter KnockbackCenter;
     public float3 KnockbackForce;
     public float3 LaunchHeight;
     public float3 LaunchLandingRadius;
@@ -143,6 +150,7 @@ public struct SkillHitEffectConfig
         return new ResolvedSkillHitEffectConfig
         {
             Tags = Tags,
+            KnockbackCenter = KnockbackCenter,
             KnockbackForce = LevelScaledSkillConfig.GetSkillValue(KnockbackForce, level, maxLevel),
             LaunchHeight = LevelScaledSkillConfig.GetSkillValue(LaunchHeight, level, maxLevel),
             LaunchLandingRadius = LevelScaledSkillConfig.GetSkillValue(LaunchLandingRadius, level, maxLevel),
@@ -221,6 +229,7 @@ public class SkillPresentationConfig
 {
     public string DisplayName = "Skill";
     public string TriggerLabel = "UNBOUND";
+    public bool Enabled = true;
     public bool IsPassive;
     public KeyCode ActivationKey = KeyCode.None;
     public SkillExecutionType ExecutionType = SkillExecutionType.Instant;
@@ -234,6 +243,7 @@ public class SkillPresentationConfig
     {
         DisplayName = displayName;
         TriggerLabel = triggerLabel;
+        Enabled = true;
         IsPassive = isPassive;
         ActivationKey = activationKey;
         ExecutionType = isPassive ? SkillExecutionType.Passive : SkillExecutionType.Instant;
@@ -292,6 +302,22 @@ public class AutoShootSkillConfig : LevelScaledSkillConfig
 }
 
 [Serializable]
+public class PlayerContactSkillConfig : LevelScaledSkillConfig
+{
+    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Player Contact", "PASSIVE", true);
+    public SkillHitEffectConfig Effects;
+    public float3 PlayerDamage = new float3(8f, 8f, 0f);
+    public float3 InvincibilityDuration = new float3(0.33f, 0.33f, 0f);
+    public float3 ContactPadding = new float3(0.22f, 0.22f, 0f);
+    public float3 RepulseRadius = new float3(8f, 8f, 0f);
+    public float3 RepulseForce = new float3(220f, 220f, 0f);
+    public float3 RepulseLift = new float3(18f, 18f, 0f);
+    public float3 RepulseDamage = new float3(0f, 0f, 0f);
+    public float3 RingDuration = new float3(0.22f, 0.22f, 0f);
+    public bool DefeatEnemyOnContact = true;
+}
+
+[Serializable]
 public class LeapSmashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Leap Smash", "SPACE", false, KeyCode.Space);
@@ -301,10 +327,7 @@ public class LeapSmashSkillConfig : LevelScaledSkillConfig
     public float3 MaxDistance = new float3(20f, 20f, 0f);
     public float3 ArcHeight = new float3(8f, 8f, 0f);
     public float3 LandingRadius = new float3(18f, 18f, 0f);
-    public float3 LandingDamage = new float3(1500f, 1500f, 0f);
-    public float3 LandingPullForce = new float3(-300f, -300f, 0f);
-    public float3 LandingVerticalForce = new float3(60f, 60f, 0f);
-    public float3 LandingInvincibility = new float3(0.5f, 0.5f, 0f);
+    public float3 LandingDamage = new float3(1500f, 1500f, 0f);    public float3 LandingInvincibility = new float3(0.5f, 0.5f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -322,10 +345,7 @@ public class LightPillarSkillConfig : LevelScaledSkillConfig
     public float3 StartDistance = new float3(6f, 6f, 0f);
     public float3 DistanceStep = new float3(14f, 14f, 0f);
     public float3 Radius = new float3(10f, 25f, 1f);
-    public float3 Damage = new float3(400f, 2800f, 2f);
-    public float3 PullForce = new float3(-120f, -120f, 0f);
-    public float3 VerticalForce = new float3(70f, 70f, 0f);
-    public float3 StrikeInterval = new float3(0.15f, 0.15f, 0f);
+    public float3 Damage = new float3(400f, 2800f, 2f);    public float3 StrikeInterval = new float3(0.15f, 0.15f, 0f);
     public float3 VisualDuration = new float3(0.5f, 0.5f, 0f);
     public float3 RingDuration = new float3(0.4f, 0.4f, 0f);
 
@@ -350,10 +370,7 @@ public class BombThrowSkillConfig : LevelScaledSkillConfig
     public float3 RadiusLossPerBounce = new float3(2.5f, 1.25f, 3f);
     public float3 BaseDamage = new float3(350f, 1800f, 2f);
     public float3 DamageFalloff = new float3(0.65f, 0.85f, 2f);
-    public float3 MinDamage = new float3(60f, 240f, 2f);
-    public float3 PullForce = new float3(-150f, -150f, 0f);
-    public float3 VerticalForce = new float3(50f, 50f, 0f);
-    public float3 MaxBounceCount = new float3(4f, 6f, 3f);
+    public float3 MinDamage = new float3(60f, 240f, 2f);    public float3 MaxBounceCount = new float3(4f, 6f, 3f);
     public float3 StopHorizontalVelocitySq = new float3(4f, 4f, 0f);
     public float3 BounceHorizontalRetention = new float3(0.75f, 0.82f, 3f);
     public float3 BounceVerticalRetention = new float3(0.85f, 0.92f, 3f);
@@ -380,9 +397,7 @@ public class LaserBeamSkillConfig : LevelScaledSkillConfig
     public float3 Duration = new float3(0.5f, 3.5f, 2f);
     public float3 MaxLength = new float3(150f, 150f, 0f);
     public float3 MaxWidth = new float3(14f, 18f, 2f);
-    public float3 Damage = new float3(400f, 2000f, 2f);
-    public float3 PullForce = new float3(50f, 75f, 2f);
-    public float3 BeamCount = new float3(1f, 7f, 2f);
+    public float3 Damage = new float3(400f, 2000f, 2f);    public float3 BeamCount = new float3(1f, 7f, 2f);
     public float3 ScatterAngle = new float3(20f, 26f, 2f);
     public float3 SubBeamRadiusMultiplier = new float3(0.5f, 0.7f, 3f);
     public float3 SubBeamDamageMultiplier = new float3(0.5f, 0.8f, 2f);
@@ -466,10 +481,7 @@ public class ShockwaveSkillConfig : LevelScaledSkillConfig
     public float3 RingRadiusOffset = new float3(0f, 0f, 0f);
     public float3 RingLiftHeight = new float3(4f, 6f, 2f);
     public float3 RingLiftFalloff = new float3(0.5f, 0.35f, 3f);
-    public float3 ImpactDamage = new float3(2400f, 5200f, 2f);
-    public float3 PullForce = new float3(-240f, -300f, 2f);
-    public float3 VerticalForce = new float3(125f, 170f, 2f);
-    public float3 CameraLift = new float3(1.35f, 1.35f, 0f);
+    public float3 ImpactDamage = new float3(2400f, 5200f, 2f);    public float3 CameraLift = new float3(1.35f, 1.35f, 0f);
     public float3 CameraFovKick = new float3(8f, 8f, 0f);
     public float3 LandingShake = new float3(0.26f, 0.26f, 0f);
 
@@ -496,10 +508,7 @@ public class MeteorRainSkillConfig : LevelScaledSkillConfig
     public float3 StartScale = new float3(6f, 7f, 2f);
     public float3 EndScale = new float3(3f, 4f, 2f);
     public float3 ImpactRadius = new float3(15f, 22f, 2f);
-    public float3 ImpactDamage = new float3(900f, 2600f, 2f);
-    public float3 PullForce = new float3(-220f, -260f, 2f);
-    public float3 VerticalForce = new float3(55f, 80f, 2f);
-    public float3 RingDuration = new float3(0.45f, 0.45f, 0f);
+    public float3 ImpactDamage = new float3(900f, 2600f, 2f);    public float3 RingDuration = new float3(0.45f, 0.45f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -515,13 +524,8 @@ public class IceZoneSkillConfig : LevelScaledSkillConfig
     public float3 Cooldown = new float3(10f, 10f, 0f);
     public float3 Duration = new float3(4f, 6f, 2f);
     public float3 Radius = new float3(8f, 25f, 2f);
-    public float3 TickDamage = new float3(80f, 240f, 2f);
-    public float3 TickPullForce = new float3(30f, 45f, 2f);
-    public float3 BurstRadiusBonus = new float3(5f, 8f, 2f);
-    public float3 BurstDamage = new float3(800f, 2600f, 2f);
-    public float3 BurstPullForce = new float3(-250f, -320f, 2f);
-    public float3 BurstVerticalForce = new float3(40f, 65f, 2f);
-    public float3 RingDuration = new float3(0.6f, 0.6f, 0f);
+    public float3 TickDamage = new float3(80f, 240f, 2f);    public float3 BurstRadiusBonus = new float3(5f, 8f, 2f);
+    public float3 BurstDamage = new float3(800f, 2600f, 2f);    public float3 RingDuration = new float3(0.6f, 0.6f, 0f);
     public float3 PulseBaseAlpha = new float3(0.3f, 0.3f, 0f);
     public float3 PulseAmplitude = new float3(0.1f, 0.1f, 0f);
     public float3 PulseSpeed = new float3(6f, 6f, 0f);
@@ -583,10 +587,7 @@ public class DashSkillConfig : LevelScaledSkillConfig
     public float3 BladeThickness = new float3(0.75f, 1f, 2f);
     public float3 MaxSpinRate = new float3(3000f, 3600f, 2f);
     public float3 ImpactRadius = new float3(10f, 16f, 2f);
-    public float3 ImpactDamage = new float3(260f, 900f, 2f);
-    public float3 PullForce = new float3(320f, 420f, 2f);
-    public float3 VerticalForce = new float3(90f, 130f, 2f);
-    public float3 RingDuration = new float3(0.5f, 0.5f, 0f);
+    public float3 ImpactDamage = new float3(260f, 900f, 2f);    public float3 RingDuration = new float3(0.5f, 0.5f, 0f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -608,9 +609,6 @@ public class OrbitBallSkillConfig : LevelScaledSkillConfig
     public float3 VisualScale = new float3(3f, 3.8f, 2f);
     public float3 DamageRadius = new float3(2f, 3f, 2f);
     public float3 Damage = new float3(45f, 180f, 2f);
-    public float3 PullForce = new float3(15f, 28f, 2f);
-    public float3 VerticalForce = new float3(3f, 8f, 2f);
-
     public PlayerSkillDefinition ToDefinition()
     {
         return Presentation.ToDefinition(PlayerSkillType.OrbitBall);
@@ -621,6 +619,7 @@ public class OrbitBallSkillConfig : LevelScaledSkillConfig
 public class PlayerSkillConfigSet
 {
     public AutoShootSkillConfig AutoShoot = new AutoShootSkillConfig();
+    public PlayerContactSkillConfig PlayerContact = new PlayerContactSkillConfig();
     public LeapSmashSkillConfig LeapSmash = new LeapSmashSkillConfig();
     public LightPillarSkillConfig LightPillar = new LightPillarSkillConfig();
     public BombThrowSkillConfig BombThrow = new BombThrowSkillConfig();
@@ -641,6 +640,7 @@ public class PlayerSkillConfigSet
     public void EnsureInitialized()
     {
         if (AutoShoot == null) AutoShoot = new AutoShootSkillConfig();
+        if (PlayerContact == null) PlayerContact = new PlayerContactSkillConfig();
         if (LeapSmash == null) LeapSmash = new LeapSmashSkillConfig();
         if (LightPillar == null) LightPillar = new LightPillarSkillConfig();
         if (BombThrow == null) BombThrow = new BombThrowSkillConfig();
@@ -654,6 +654,7 @@ public class PlayerSkillConfigSet
         if (OrbitBall == null) OrbitBall = new OrbitBallSkillConfig();
 
         AutoShoot.Presentation.NormalizeExecutionType();
+    PlayerContact.Presentation.NormalizeExecutionType();
         LeapSmash.Presentation.NormalizeExecutionType();
         LightPillar.Presentation.NormalizeExecutionType();
         BombThrow.Presentation.NormalizeExecutionType();
@@ -795,3 +796,5 @@ public static class PlayerSkillMath
         return new Vector3(planarPosition.x, y, planarPosition.y);
     }
 }
+
+

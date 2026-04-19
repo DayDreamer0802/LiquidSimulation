@@ -8,7 +8,16 @@ public class RougeGameManagerEditor : Editor
     {
         serializedObject.Update();
 
-        DrawPropertiesExcluding(serializedObject, "m_Script", "skillConfig");
+        DrawPropertiesExcluding(
+            serializedObject,
+            "m_Script",
+            "skillConfig",
+            "playerContactDamage",
+            "playerHitInvincibilityDuration",
+            "playerContactPadding",
+            "playerHitRepulseRadius",
+            "playerHitRepulseForce",
+            "playerHitRepulseLift");
         EditorGUILayout.Space(8f);
 
         SerializedProperty skillConfigProperty = serializedObject.FindProperty("skillConfig");
@@ -16,6 +25,7 @@ public class RougeGameManagerEditor : Editor
         {
             EditorGUILayout.LabelField("Skill Config", EditorStyles.boldLabel);
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("AutoShoot"), "Auto Shoot");
+            DrawSkillConfig(skillConfigProperty.FindPropertyRelative("PlayerContact"), "Player Contact");
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("LeapSmash"), "Leap Smash");
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("LightPillar"), "Light Pillar Strike");
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("BombThrow"), "Bomb Throw");
@@ -75,6 +85,7 @@ public class RougeGameManagerEditor : Editor
     {
         SerializedProperty displayName = presentationProperty.FindPropertyRelative("DisplayName");
         SerializedProperty triggerLabel = presentationProperty.FindPropertyRelative("TriggerLabel");
+        SerializedProperty enabledProperty = presentationProperty.FindPropertyRelative("Enabled");
         SerializedProperty activationKey = presentationProperty.FindPropertyRelative("ActivationKey");
         SerializedProperty executionType = presentationProperty.FindPropertyRelative("ExecutionType");
         SerializedProperty sustainPriority = presentationProperty.FindPropertyRelative("SustainPriority");
@@ -83,6 +94,11 @@ public class RougeGameManagerEditor : Editor
         if (isPassive != null && isPassive.boolValue && executionType.enumValueIndex != (int)SkillExecutionType.Passive)
         {
             executionType.enumValueIndex = (int)SkillExecutionType.Passive;
+        }
+
+        if (enabledProperty != null)
+        {
+            EditorGUILayout.PropertyField(enabledProperty, new GUIContent("Enabled"));
         }
 
         EditorGUILayout.PropertyField(displayName);

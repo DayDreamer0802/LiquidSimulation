@@ -46,9 +46,37 @@ public partial class RougeGameManager
         Vector3 aim = player != null ? player.AimDirection : Vector3.forward;
         float2 aimDir = math.normalizesafe(new float2(aim.x, aim.z), new float2(0f, 1f));
         Vector2 pointerPosition = RougeInputManager.Instance.ReadPointerPosition();
-        bool hasMouseGroundPoint = PlayerSkillMath.TryGetMouseGroundPoint(Camera.main, new Vector3(pointerPosition.x, pointerPosition.y, 0f), renderHeight, out Vector3 mouseGroundPoint);
+        Camera gameplayCamera = RougeCameraFollow.ResolveCamera();
+        bool hasMouseGroundPoint = PlayerSkillMath.TryGetMouseGroundPoint(gameplayCamera, new Vector3(pointerPosition.x, pointerPosition.y, 0f), renderHeight, out Vector3 mouseGroundPoint);
 
         return new SkillUpdateContext(dt, playerPos, aimDir, hasMouseGroundPoint, mouseGroundPoint, renderHeight, arenaHalfExtent);
+    }
+
+    private bool IsSkillEnabled(PlayerSkillType type)
+    {
+        SkillPresentationConfig presentation = GetPresentationConfig(type);
+        return presentation == null || presentation.Enabled;
+    }
+
+    private bool IsPlayerContactEnabled()
+    {
+        PlayerContactSkillConfig playerContact = skillConfig != null ? skillConfig.PlayerContact : null;
+        return playerContact == null || playerContact.Presentation == null || playerContact.Presentation.Enabled;
+    }
+
+    private void ApplyPlayerContactSkillConfigValues()
+    {
+        PlayerContactSkillConfig playerContact = skillConfig.PlayerContact;
+        playerContactDamage = Mathf.Max(0f, playerContact.GetValue(playerContact.PlayerDamage, currentLevel));
+        playerHitInvincibilityDuration = Mathf.Max(0f, playerContact.GetValue(playerContact.InvincibilityDuration, currentLevel));
+        playerContactPadding = Mathf.Max(0f, playerContact.GetValue(playerContact.ContactPadding, currentLevel));
+        playerHitRepulseRadius = Mathf.Max(0f, playerContact.GetValue(playerContact.RepulseRadius, currentLevel));
+        playerHitRepulseForce = playerContact.GetValue(playerContact.RepulseForce, currentLevel);
+        playerHitRepulseLift = playerContact.GetValue(playerContact.RepulseLift, currentLevel);
+        _playerContactRepulseDamage = Mathf.Max(0f, playerContact.GetValue(playerContact.RepulseDamage, currentLevel));
+        _playerContactRingDuration = Mathf.Max(0f, playerContact.GetValue(playerContact.RingDuration, currentLevel));
+        _playerContactDefeatEnemyOnContact = playerContact.DefeatEnemyOnContact;
+        _playerContactEffects = playerContact.Effects.Resolve(currentLevel, playerContact.MaxLevel);
     }
 
     private bool TryAddSkillArea(RougeSkillArea area)
@@ -87,6 +115,7 @@ public partial class RougeGameManager
     private void ApplySkillEffects(ref RougeSkillArea area, ResolvedSkillHitEffectConfig effects)
     {
         area.EffectFlags = (int)effects.Tags;
+        area.EffectKnockbackCenter = (int)effects.KnockbackCenter;
         area.EffectKnockbackForce = effects.KnockbackForce;
         area.EffectLaunchHeight = effects.LaunchHeight;
         area.EffectLaunchLandingRadius = effects.LaunchLandingRadius;
@@ -97,6 +126,48 @@ public partial class RougeGameManager
         area.EffectCurseExplosionRadius = effects.CurseExplosionRadius;
         area.EffectBurnDamage = effects.BurnDamage;
         area.EffectBurnDuration = effects.BurnDuration;
+    }
+
+    private void ApplyPendingPlayerContactSkill()
+    {
+        if (!_pendingPlayerHitRepulse)
+        {
+            return;
+        }
+
+        _pendingPlayerHitRepulse = false;
+        if (!IsPlayerContactEnabled())
+        {
+            return;
+        }
+
+        bool hasContactArea = playerHitRepulseRadius > 0f &&
+            (_playerContactRepulseDamage > 0f ||
+            Mathf.Abs(playerHitRepulseForce) > 0.0001f ||
+            Mathf.Abs(playerHitRepulseLift) > 0.0001f ||
+            _playerContactEffects.Tags != SkillHitEffectTag.None);
+        if (!hasContactArea)
+        {
+            return;
+        }
+
+        if (TryAddCircularSkillArea(
+            _pendingPlayerHitRepulsePosition,
+            playerHitRepulseRadius,
+            _playerContactRepulseDamage,
+            playerHitRepulseForce,
+            playerHitRepulseLift,
+            _playerContactEffects))
+        {
+            if (_playerContactRingDuration > 0f)
+            {
+                SpawnAOERing(
+                    new Vector3(_pendingPlayerHitRepulsePosition.x, renderHeight + 0.06f, _pendingPlayerHitRepulsePosition.y),
+                    playerHitRepulseRadius,
+                    _playerContactRingDuration,
+                    new Color(1f, 0.92f, 0.55f, 1f));
+            }
+        }
     }
 
     private void RefreshActiveSustainedSkill()
@@ -122,6 +193,11 @@ public partial class RougeGameManager
 
     private bool TryStartSkillActivation(PlayerSkillType type)
     {
+        if (!IsSkillEnabled(type))
+        {
+            return false;
+        }
+
         SkillPresentationConfig presentation = GetPresentationConfig(type);
         if (presentation == null)
         {
@@ -384,8 +460,8 @@ public partial class RougeGameManager
         float leapInvincibility = leap.GetValue(leap.LandingInvincibility, leapLevel);
         float leapLandingRadius = leap.GetValue(leap.LandingRadius, leapLevel);
         float leapLandingDamage = leap.GetValue(leap.LandingDamage, leapLevel);
-        float leapLandingPullForce = leap.GetValue(leap.LandingPullForce, leapLevel);
-        float leapLandingVerticalForce = leap.GetValue(leap.LandingVerticalForce, leapLevel);
+        float leapLandingPullForce = 0f;
+        float leapLandingVerticalForce = 0f;
         float leapArcHeight = leap.GetValue(leap.ArcHeight, leapLevel);
 
         if (_jumpState == 0 && CanStartMovementSkill(PlayerSkillType.LeapSmash) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.LeapSmash) && _jumpCooldownTimer <= 0f && player != null && TryStartSkillActivation(PlayerSkillType.LeapSmash))
@@ -441,8 +517,8 @@ public partial class RougeGameManager
         float lightPillarDistanceStep = lightPillar.GetValue(lightPillar.DistanceStep, lightPillarLevel);
         float lightPillarRadius = lightPillar.GetValue(lightPillar.Radius, lightPillarLevel);
         float lightPillarDamage = lightPillar.GetValue(lightPillar.Damage, lightPillarLevel);
-        float lightPillarPullForce = lightPillar.GetValue(lightPillar.PullForce, lightPillarLevel);
-        float lightPillarVerticalForce = lightPillar.GetValue(lightPillar.VerticalForce, lightPillarLevel);
+        float lightPillarPullForce = 0f;
+        float lightPillarVerticalForce = 0f;
         float lightPillarVisualDuration = lightPillar.GetValue(lightPillar.VisualDuration, lightPillarLevel);
         float lightPillarStrikeInterval = lightPillar.GetValue(lightPillar.StrikeInterval, lightPillarLevel);
         float lightPillarRingDuration = lightPillar.GetValue(lightPillar.RingDuration, lightPillarLevel);
@@ -512,8 +588,8 @@ public partial class RougeGameManager
         float bombBaseDamage = bomb.GetValue(bomb.BaseDamage, bombLevel);
         float bombDamageFalloff = bomb.GetValue(bomb.DamageFalloff, bombLevel);
         float bombMinDamage = bomb.GetValue(bomb.MinDamage, bombLevel);
-        float bombPullForce = bomb.GetValue(bomb.PullForce, bombLevel);
-        float bombVerticalForce = bomb.GetValue(bomb.VerticalForce, bombLevel);
+        float bombPullForce = 0f;
+        float bombVerticalForce = 0f;
         int bombMaxBounceCount = math.max(1, bomb.GetIntValue(bomb.MaxBounceCount, bombLevel));
         float bombStopHorizontalVelocitySq = bomb.GetValue(bomb.StopHorizontalVelocitySq, bombLevel);
         float bombBounceHorizontalRetention = bomb.GetValue(bomb.BounceHorizontalRetention, bombLevel);
@@ -671,7 +747,7 @@ public partial class RougeGameManager
         float laserLengthMax = laser.GetValue(laser.MaxLength, laserBeamLevel);
         float laserWidthMax = laser.GetValue(laser.MaxWidth, laserBeamLevel);
         float laserDamage = laser.GetValue(laser.Damage, laserBeamLevel);
-        float laserPullForce = laser.GetValue(laser.PullForce, laserBeamLevel);
+        float laserPullForce = 0f;
         int beamCount = math.max(1, laser.GetIntValue(laser.BeamCount, laserBeamLevel));
         float laserScatterAngle = laser.GetValue(laser.ScatterAngle, laserBeamLevel);
         float laserSubBeamRadiusMultiplier = laser.GetValue(laser.SubBeamRadiusMultiplier, laserBeamLevel);
@@ -1064,6 +1140,12 @@ public partial class RougeGameManager
 
     private void UpdateOrbitSkill(SkillUpdateContext context)
     {
+        if (!IsSkillEnabled(PlayerSkillType.OrbitBall))
+        {
+            ClearOrbitVisuals();
+            return;
+        }
+
         OrbitBallSkillConfig orbit = skillConfig.OrbitBall;
         int orbitCountLevel = _skillLevels[4];
         int orbitDamageLevel = currentLevel;
@@ -1071,12 +1153,7 @@ public partial class RougeGameManager
         int numBalls = math.max(0, orbit.GetIntValue(orbit.MaxBalls, orbitCountLevel));
         if (numBalls <= 0)
         {
-            for (int i = _orbitVisuals.Count - 1; i >= 0; i--)
-            {
-                Destroy(_orbitVisuals[i]);
-                _orbitVisuals.RemoveAt(i);
-            }
-
+            ClearOrbitVisuals();
             return;
         }
 
@@ -1086,8 +1163,8 @@ public partial class RougeGameManager
         float orbitVisualScale = orbit.GetValue(orbit.VisualScale, orbitDamageLevel);
         float orbitDamageRadius = orbit.GetValue(orbit.DamageRadius, orbitDamageLevel);
         float orbitDamage = orbit.GetValue(orbit.Damage, orbitDamageLevel);
-        float orbitPullForce = orbit.GetValue(orbit.PullForce, orbitDamageLevel);
-        float orbitVerticalForce = orbit.GetValue(orbit.VerticalForce, orbitDamageLevel);
+        float orbitPullForce = 0f;
+        float orbitVerticalForce = 0f;
 
         while (_orbitVisuals.Count < numBalls)
         {
@@ -1132,6 +1209,15 @@ public partial class RougeGameManager
         }
     }
 
+    private void ClearOrbitVisuals()
+    {
+        for (int i = _orbitVisuals.Count - 1; i >= 0; i--)
+        {
+            Destroy(_orbitVisuals[i]);
+            _orbitVisuals.RemoveAt(i);
+        }
+    }
+
     private void UpdateShockwaveSkill(SkillUpdateContext context)
     {
         ShockwaveSkillConfig shockwave = skillConfig.Shockwave;
@@ -1147,8 +1233,8 @@ public partial class RougeGameManager
         int shockwaveImpactRingCount = math.max(1, shockwave.GetIntValue(shockwave.ImpactRingCount, shockwaveLevel));
         float shockwaveRingThickness = shockwave.GetValue(shockwave.RingThickness, shockwaveLevel);
         float shockwaveImpactDamage = shockwave.GetValue(shockwave.ImpactDamage, shockwaveLevel);
-        float shockwavePullForce = shockwave.GetValue(shockwave.PullForce, shockwaveLevel);
-        float shockwaveVerticalForce = shockwave.GetValue(shockwave.VerticalForce, shockwaveLevel);
+        float shockwavePullForce = 0f;
+        float shockwaveVerticalForce = 0f;
         float shockwaveCameraLift = shockwave.GetValue(shockwave.CameraLift, shockwaveLevel);
         float shockwaveCameraFovKick = shockwave.GetValue(shockwave.CameraFovKick, shockwaveLevel);
         float shockwaveLandingShake = shockwave.GetValue(shockwave.LandingShake, shockwaveLevel);
@@ -1248,8 +1334,8 @@ public partial class RougeGameManager
         float meteorEndScale = meteor.GetValue(meteor.EndScale, meteorLevel);
         float meteorImpactRadius = meteor.GetValue(meteor.ImpactRadius, meteorLevel);
         float meteorImpactDamage = meteor.GetValue(meteor.ImpactDamage, meteorLevel);
-        float meteorPullForce = meteor.GetValue(meteor.PullForce, meteorLevel);
-        float meteorVerticalForce = meteor.GetValue(meteor.VerticalForce, meteorLevel);
+        float meteorPullForce = 0f;
+        float meteorVerticalForce = 0f;
         float meteorRingDuration = meteor.GetValue(meteor.RingDuration, meteorLevel);
 
         if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.MeteorRain) && _meteorCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.MeteorRain))
@@ -1337,11 +1423,11 @@ public partial class RougeGameManager
         float iceZoneDuration = iceZone.GetValue(iceZone.Duration, iceZoneLevel);
         float iceRadius = iceZone.GetValue(iceZone.Radius, iceZoneLevel);
         float iceTickDamage = iceZone.GetValue(iceZone.TickDamage, iceZoneLevel);
-        float iceTickPullForce = iceZone.GetValue(iceZone.TickPullForce, iceZoneLevel);
+        float iceTickPullForce = 0f;
         float iceBurstRadiusBonus = iceZone.GetValue(iceZone.BurstRadiusBonus, iceZoneLevel);
         float iceBurstDamage = iceZone.GetValue(iceZone.BurstDamage, iceZoneLevel);
-        float iceBurstPullForce = iceZone.GetValue(iceZone.BurstPullForce, iceZoneLevel);
-        float iceBurstVerticalForce = iceZone.GetValue(iceZone.BurstVerticalForce, iceZoneLevel);
+        float iceBurstPullForce = 0f;
+        float iceBurstVerticalForce = 0f;
         float iceRingDuration = iceZone.GetValue(iceZone.RingDuration, iceZoneLevel);
         float icePulseBaseAlpha = iceZone.GetValue(iceZone.PulseBaseAlpha, iceZoneLevel);
         float icePulseAmplitude = iceZone.GetValue(iceZone.PulseAmplitude, iceZoneLevel);
@@ -1542,7 +1628,6 @@ public partial class RougeGameManager
                 Length = _activePoisonZones[i].Radius * math.clamp(poisonZoneCoreRatio, 0.2f, 0.95f),
                 Damage = 0f,
                 PullForce = 0f,
-                SpinForce = 0f,
                 VerticalForce = 0f,
                 AuxA = poisonZoneIrregularity,
                 AuxB = 0f,
@@ -1612,8 +1697,8 @@ public partial class RougeGameManager
         float dashMaxSpinRate = dash.GetValue(dash.MaxSpinRate, dashLevel);
         float dashImpactRadius = dash.GetValue(dash.ImpactRadius, dashLevel);
         float dashImpactDamage = dash.GetValue(dash.ImpactDamage, dashLevel);
-        float dashPullForce = dash.GetValue(dash.PullForce, dashLevel);
-        float dashVerticalForce = dash.GetValue(dash.VerticalForce, dashLevel);
+        float dashPullForce = 0f;
+        float dashVerticalForce = 0f;
         float dashRingDuration = dash.GetValue(dash.RingDuration, dashLevel);
 
         if (_dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Dash) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
