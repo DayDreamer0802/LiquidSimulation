@@ -306,6 +306,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     public float VelocityDamping;
     public float SeparationRadius;
     public float SeparationStrength;
+    public float CrowdReliefRadius;
+    public float CrowdReliefStrength;
+    public float CrowdOrbitStrength;
+    public float DenseSeparationBoost;
+    public int DenseNeighborThreshold;
     public float ObstacleLookAhead;
     public float ObstacleRepulsion;
     public float ObstacleOrbitStrength;
@@ -355,6 +360,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         int* neighborStart = stackalloc int[9];
         int* neighborEnd = stackalloc int[9];
         float separationRadiusSq = SeparationRadius * SeparationRadius;
+        float crowdReliefRadiusSq = CrowdReliefRadius * CrowdReliefRadius;
 
         for (int i = startIndex; i < endIndex; i++)
         {
@@ -457,15 +463,26 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             }
 
             float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
-            float2 desired = math.normalizesafe(PlayerPos - pos.xz);
+            float2 toPlayer = PlayerPos - pos.xz;
+            float distToPlayerSq = math.lengthsq(toPlayer);
+            float2 desired = math.normalizesafe(toPlayer);
             bool isAirborne = pos.y > RenderHeight + 0.5f;
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
-                acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor);
+                float chaseWeight = 1f;
+                if (CrowdReliefRadius > 0f && distToPlayerSq > 0.0001f && distToPlayerSq < crowdReliefRadiusSq)
+                {
+                    float distToPlayer = math.sqrt(distToPlayerSq);
+                    float centerWeight = 1f - math.saturate(distToPlayer / math.max(CrowdReliefRadius, 0.001f));
+                    chaseWeight = math.lerp(1f, 0.35f, centerWeight);
+                }
+
+                acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor * chaseWeight);
             }
 
             float2 separation = float2.zero;
+            int crowdedNeighbors = 0;
             for (int n = 0; n < 9; n++)
             {
                 for (int k = neighborStart[n]; k < neighborEnd[n]; k++)
@@ -476,6 +493,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     float distSq = math.lengthsq(diff);
                     if (distSq < separationRadiusSq && distSq > 0.0001f)
                     {
+                        crowdedNeighbors++;
                         float dist = math.sqrt(distSq);
                         float weight = 1f - math.saturate(dist / SeparationRadius);
                         separation += (diff / dist) * (weight * SeparationStrength);
@@ -491,7 +509,29 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
             if (!isAirborne)
             {
-                acceleration.xz += separation;
+                float crowdPressure = 0f;
+                if (DenseNeighborThreshold > 0)
+                {
+                    crowdPressure = math.saturate((crowdedNeighbors - DenseNeighborThreshold) / math.max(1f, DenseNeighborThreshold * 1.5f));
+                }
+
+                acceleration.xz += separation * (1f + crowdPressure * DenseSeparationBoost);
+
+                if (crowdPressure > 0f && CrowdReliefRadius > 0f && distToPlayerSq > 0.0001f && distToPlayerSq < crowdReliefRadiusSq)
+                {
+                    float distToPlayer = math.sqrt(distToPlayerSq);
+                    float playerWeight = 1f - math.saturate(distToPlayer / math.max(CrowdReliefRadius, 0.001f));
+                    float reliefWeight = crowdPressure * playerWeight;
+                    float2 awayFromPlayer = -desired;
+                    float2 tangent = new float2(-awayFromPlayer.y, awayFromPlayer.x);
+                    if ((sourceIndex & 1) == 0)
+                    {
+                        tangent = -tangent;
+                    }
+
+                    acceleration.xz += awayFromPlayer * (CrowdReliefStrength * reliefWeight);
+                    acceleration.xz += tangent * (CrowdOrbitStrength * reliefWeight);
+                }
             }
 
             for (int obstacleIndex = 0; obstacleIndex < ObstacleCount; obstacleIndex++)
@@ -700,7 +740,6 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             }
 
             bool hitPlayer = false;
-            float distToPlayerSq = math.lengthsq(pos.xz - PlayerPos);
             if (PlayerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
             {
                 System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);

@@ -43,6 +43,11 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float velocityDamping = 0.96f;
     [SerializeField] private float separationRadius = 1.3f;
     [SerializeField] private float separationStrength = 10f;
+    [SerializeField] private float crowdReliefRadius = 10f;
+    [SerializeField] private float crowdReliefStrength = 16f;
+    [SerializeField] private float crowdOrbitStrength = 8f;
+    [SerializeField, Range(0f, 4f)] private float denseSeparationBoost = 1.25f;
+    [SerializeField, Range(1, 32)] private int denseNeighborThreshold = 6;
     [SerializeField] private float obstaclePadding = 1.5f;
     [SerializeField] private float obstacleLookAhead = 3f;
     [SerializeField] private float obstacleRepulsion = 30f;
@@ -1720,6 +1725,11 @@ public partial class RougeGameManager : MonoBehaviour
             VelocityDamping = velocityDamping,
             SeparationRadius = separationRadius,
             SeparationStrength = separationStrength,
+            CrowdReliefRadius = crowdReliefRadius,
+            CrowdReliefStrength = crowdReliefStrength,
+            CrowdOrbitStrength = crowdOrbitStrength,
+            DenseSeparationBoost = denseSeparationBoost,
+            DenseNeighborThreshold = denseNeighborThreshold,
             ObstacleLookAhead = obstacleLookAhead,
             ObstacleRepulsion = obstacleRepulsion,
             ObstacleOrbitStrength = obstacleOrbitStrength,
