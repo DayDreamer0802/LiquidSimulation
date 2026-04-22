@@ -621,10 +621,13 @@ public class SkateboardSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Skateboard Slam", "R-CLICK", false, KeyCode.Mouse1);
     public SkillHitEffectConfig Effects;
+    public SkillHitEffectConfig RideEffects;
     public float3 Cooldown          = new float3(18f, 12f, 2f);
     public float3 RideDuration      = new float3(7f,  12f, 1f);
-    public float3 RideSpeed         = new float3(16f, 24f, 1f);
-    public float3 RideAcceleration  = new float3(7f,  11f, 1f);
+    public float3 RideSpeed         = new float3(24f, 34f, 1f);
+    public float3 RideAcceleration  = new float3(48f, 84f, 2f);
+    public float3 RideContactRadius = new float3(2.4f, 3.2f, 1f);
+    public float3 RideContactDamagePerSecond = new float3(180f, 520f, 2f);
     public float3 SlamRadius        = new float3(14f, 22f, 2f);
     public float3 SlamDamage        = new float3(500f, 2800f, 2f);
     public float3 SlamVerticalForce = new float3(38f, 58f,  1f);

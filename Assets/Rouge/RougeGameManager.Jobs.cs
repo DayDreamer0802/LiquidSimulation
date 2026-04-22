@@ -260,6 +260,56 @@ public unsafe struct ReorderEnemiesJob : IJobParallelForBatch
 }
 
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct BuildBulletGridJob : IJob
+{
+    [ReadOnly] public NativeArray<RougeBullet> Bullets;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellHeads;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellEntries;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellNext;
+    public int BulletCount;
+    public int EntryCapacity;
+    public float InvCellSize;
+    public int HashMask;
+
+    public void Execute()
+    {
+        int* headPtr = (int*)CellHeads.GetUnsafePtr();
+        UnsafeUtility.MemSet(headPtr, 0xFF, CellHeads.Length * sizeof(int));
+
+        RougeBullet* bulletPtr = (RougeBullet*)Bullets.GetUnsafeReadOnlyPtr();
+        int* entryPtr = (int*)CellEntries.GetUnsafePtr();
+        int* nextPtr = (int*)CellNext.GetUnsafePtr();
+        int entryIndex = 0;
+
+        for (int bulletIndex = 0; bulletIndex < BulletCount; bulletIndex++)
+        {
+            RougeBullet bullet = bulletPtr[bulletIndex];
+            float2 min = math.min(bullet.Previous, bullet.Current) - bullet.Radius;
+            float2 max = math.max(bullet.Previous, bullet.Current) + bullet.Radius;
+            int2 minCell = (int2)math.floor(min * InvCellSize);
+            int2 maxCell = (int2)math.floor(max * InvCellSize);
+
+            for (int cellY = minCell.y; cellY <= maxCell.y; cellY++)
+            {
+                for (int cellX = minCell.x; cellX <= maxCell.x; cellX++)
+                {
+                    if (entryIndex >= EntryCapacity)
+                    {
+                        return;
+                    }
+
+                    int hash = ((cellX * 73856093) ^ (cellY * 19349663)) & HashMask;
+                    entryPtr[entryIndex] = bulletIndex;
+                    nextPtr[entryIndex] = headPtr[hash];
+                    headPtr[hash] = entryIndex;
+                    entryIndex++;
+                }
+            }
+        }
+    }
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 {
     private const float VisualStateFlagStep = 10f;
@@ -274,6 +324,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     private const float BurnPatchReapplyCooldown = 0.85f;
     private const float BurnPatchDurationMultiplier = 0.45f;
     private const float BurnPatchDamageMultiplier = 0.55f;
+    private const int BulletVisitedBitsetBytes = 256;
 
     [ReadOnly] public NativeArray<ulong> SortedKeys;
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
@@ -284,6 +335,9 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<int> CellCounts;
     [ReadOnly] public NativeArray<int2> NeighborOffsets;
     [ReadOnly] public NativeArray<RougeBullet> Bullets;
+    [ReadOnly] public NativeArray<int> BulletCellHeads;
+    [ReadOnly] public NativeArray<int> BulletCellEntries;
+    [ReadOnly] public NativeArray<int> BulletCellNext;
     [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
     [NativeDisableParallelForRestriction] public NativeArray<int> PlayerDamageCount;
     [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
@@ -352,6 +406,9 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         int* countsPtr = (int*)CellCounts.GetUnsafeReadOnlyPtr();
         int2* neighborOffsetsPtr = (int2*)NeighborOffsets.GetUnsafeReadOnlyPtr();
         RougeBullet* bulletPtr = (RougeBullet*)Bullets.GetUnsafeReadOnlyPtr();
+        int* bulletHeadPtr = (int*)BulletCellHeads.GetUnsafeReadOnlyPtr();
+        int* bulletEntryPtr = (int*)BulletCellEntries.GetUnsafeReadOnlyPtr();
+        int* bulletNextPtr = (int*)BulletCellNext.GetUnsafeReadOnlyPtr();
         RougeObstacle* obstaclePtr = (RougeObstacle*)Obstacles.GetUnsafeReadOnlyPtr();
 
         int endIndex = startIndex + count;
@@ -485,8 +542,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float2 separation = float2.zero;
             int crowdedNeighbors = 0;
             // 空中敌人不参与分离计算，大量被击飞时节省内层循环开销
-            if (!isAirborne)
-            {
+          if(!isAirborne)
                 for (int n = 0; n < 9; n++)
                 {
                     for (int k = neighborStart[n]; k < neighborEnd[n]; k++)
@@ -507,7 +563,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                         }
                     }
                 }
-            }
+            
 
             float sepLen = math.length(separation);
             if (sepLen > SeparationStrength * 3f)
@@ -618,6 +674,10 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             for (int s = 0; s < SkillAreaCount; s++)
             {
                 RougeSkillArea skill = SkillAreas[s];
+                // AABB 初筛：保守包围盒 = Radius + Length（覆盖激光等线形技能）+ 敌人半径，避免无意义的函数调用
+                float2 skillDelta = pos.xz - skill.Position;
+                float skillPreR = skill.Radius + math.max(0f, skill.Length) + radius;
+                if (math.abs(skillDelta.x) > skillPreR || math.abs(skillDelta.y) > skillPreR) continue;
                 switch (skill.Type)
                 {
                     case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
@@ -698,25 +758,43 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.BurnReapplyCooldown = 0f;
             }
 
-            if (BulletCount > 0 && pos.x >= BulletMin.x && pos.x <= BulletMax.x && pos.z >= BulletMin.y && pos.z <= BulletMax.y && !isAirborne)
+            if (BulletCount > 0 && !isAirborne)
             {
-                for (int bulletIndex = 0; bulletIndex < BulletCount; bulletIndex++)
+                byte* visitedBulletBits = stackalloc byte[BulletVisitedBitsetBytes];
+                UnsafeUtility.MemClear(visitedBulletBits, BulletVisitedBitsetBytes);
+                bool stopBulletChecks = false;
+
+                for (int n = 0; n < 9; n++)
                 {
-                    RougeBullet bullet = bulletPtr[bulletIndex];
-                    if (bullet.Life <= 0f) continue;
-                    float r = radius + bullet.Radius;
-
-                    float minX = math.min(bullet.Previous.x, bullet.Current.x) - r;
-                    float maxX = math.max(bullet.Previous.x, bullet.Current.x) + r;
-                    if (pos.x < minX || pos.x > maxX) continue;
-
-                    float minY = math.min(bullet.Previous.y, bullet.Current.y) - r;
-                    float maxY = math.max(bullet.Previous.y, bullet.Current.y) + r;
-                    if (pos.z < minY || pos.z > maxY) continue;
-
-                    float distSq = DistanceSqPointSegment(pos.xz, bullet.Previous, bullet.Current);
-                    if (distSq <= r * r)
+                    int2 offset = neighborOffsetsPtr[n];
+                    int bulletHash = ((hashX + offset.x) ^ (hashY + offset.y)) & HashMask;
+                    for (int entryIndex = bulletHeadPtr[bulletHash]; entryIndex >= 0; entryIndex = bulletNextPtr[entryIndex])
                     {
+                        int bulletIndex = bulletEntryPtr[entryIndex];
+                        int byteIndex = bulletIndex >> 3;
+                        byte bitMask = (byte)(1 << (bulletIndex & 7));
+                        if ((visitedBulletBits[byteIndex] & bitMask) != 0)
+                        {
+                            continue;
+                        }
+
+                        visitedBulletBits[byteIndex] |= bitMask;
+
+                        RougeBullet bullet = bulletPtr[bulletIndex];
+                        float r = radius + bullet.Radius;
+                        float2 bulletMin = math.min(bullet.Previous, bullet.Current) - r;
+                        float2 bulletMax = math.max(bullet.Previous, bullet.Current) + r;
+                        if (pos.x < bulletMin.x || pos.x > bulletMax.x || pos.z < bulletMin.y || pos.z > bulletMax.y)
+                        {
+                            continue;
+                        }
+
+                        float distSq = DistanceSqPointSegment(pos.xz, bullet.Previous, bullet.Current);
+                        if (distSq > r * r)
+                        {
+                            continue;
+                        }
+
                         float prevH = health;
                         health -= bullet.Damage * BulletDmgMult;
                         flashTimer = 1f;
@@ -743,6 +821,17 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                             EffectBurnDuration = bullet.EffectBurnDuration
                         };
                         ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, mockSkill);
+
+                        if (health <= 0f)
+                        {
+                            stopBulletChecks = true;
+                            break;
+                        }
+                    }
+
+                    if (stopBulletChecks)
+                    {
+                        break;
                     }
                 }
             }

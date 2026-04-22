@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -118,6 +119,9 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _histograms;
     private NativeArray<int> _binTotals;
     private NativeArray<RougeBullet> _bullets;
+    private NativeArray<int> _bulletCellHeads;
+    private NativeArray<int> _bulletCellEntries;
+    private NativeArray<int> _bulletCellNext;
     private NativeArray<RougeObstacle> _obstacles;
     private NativeArray<int> _playerDamageCount;
     private NativeArray<int> _enemyKillCount;
@@ -309,7 +313,10 @@ public partial class RougeGameManager : MonoBehaviour
     private float _skateBoardRotYaw;
     private Vector3 _skateOriginPos;
     private Vector3 _skateTrickOrigin;
+    private Vector3 _skateTrickEnd;
     private float2  _skateBoardPos;
+    private float2 _skateMoveDirection;
+    private float2 _skateActionDirection;
     private bool  _skatePendingEnd;
     private bool  _skateSlamFired;
     private Vector3 _skateFinaleStart;
@@ -499,10 +506,7 @@ public partial class RougeGameManager : MonoBehaviour
                     if (currentLevel % 5 == 0)
                     {
                         maxBullets = Mathf.Min(maxBullets + 64, 2048);
-                        NativeArray<RougeBullet> oldBullets = _bullets;
-                        _bullets = new NativeArray<RougeBullet>(maxBullets, Allocator.Persistent);
-                        for(int i = 0; i < _activeBulletCount; i++) _bullets[i] = oldBullets[i];
-                        ReleaseNative(ref oldBullets);
+                        ResizeBulletStorage(maxBullets);
                     }
                 }
             }
@@ -824,10 +828,11 @@ public partial class RougeGameManager : MonoBehaviour
         _tempEnemyKeys = new NativeArray<ulong>(enemyCount, Allocator.Persistent);
         _cellOffsets = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _cellCounts = new NativeArray<int>(_hashSize, Allocator.Persistent);
+        _bulletCellHeads = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _neighborOffsets = new NativeArray<int2>(9, Allocator.Persistent);
         _histograms = new NativeArray<int>(math.max(_chunkCount * 256, 256), Allocator.Persistent);
         _binTotals = new NativeArray<int>(256, Allocator.Persistent);
-        _bullets = new NativeArray<RougeBullet>(maxBullets, Allocator.Persistent);
+        ResizeBulletStorage(maxBullets);
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
         _explosionQueue = new NativeQueue<float2>(Allocator.Persistent);
@@ -1437,6 +1442,28 @@ public partial class RougeGameManager : MonoBehaviour
         }
     }
 
+    private void ResizeBulletStorage(int bulletCapacity)
+    {
+        NativeArray<RougeBullet> previousBullets = _bullets;
+        _bullets = new NativeArray<RougeBullet>(bulletCapacity, Allocator.Persistent);
+        if (previousBullets.IsCreated)
+        {
+            int copyCount = math.min(_activeBulletCount, previousBullets.Length);
+            if (copyCount > 0)
+            {
+                NativeArray<RougeBullet>.Copy(previousBullets, _bullets, copyCount);
+            }
+
+            ReleaseNative(ref previousBullets);
+        }
+
+        int entryCapacity = math.max(bulletCapacity * 32, 256);
+        ReleaseNative(ref _bulletCellEntries);
+        ReleaseNative(ref _bulletCellNext);
+        _bulletCellEntries = new NativeArray<int>(entryCapacity, Allocator.Persistent);
+        _bulletCellNext = new NativeArray<int>(entryCapacity, Allocator.Persistent);
+    }
+
     private void UpdateBullets(float dt)
     {
         if (!IsSkillEnabled(PlayerSkillType.AutoShoot))
@@ -1458,9 +1485,6 @@ public partial class RougeGameManager : MonoBehaviour
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         float maxDistanceSq = (arenaHalfExtent + 40f) * (arenaHalfExtent + 40f);
 
-        float2 minB = new float2(float.MaxValue, float.MaxValue);
-        float2 maxB = new float2(float.MinValue, float.MinValue);
-
         for (int i = 0; i < _activeBulletCount;)
         {
             RougeBullet bullet = _bullets[i];
@@ -1479,15 +1503,15 @@ public partial class RougeGameManager : MonoBehaviour
                 continue;
             }
 
-            minB = math.min(minB, math.min(bullet.Previous, bullet.Current));
-            maxB = math.max(maxB, math.max(bullet.Previous, bullet.Current));
-
             _bullets[i] = bullet;
             i++;
         }
 
-        _bulletMin = minB - new float2(bulletRadius + 2f, bulletRadius + 2f);
-        _bulletMax = maxB + new float2(bulletRadius + 2f, bulletRadius + 2f);
+        if (_activeBulletCount <= 0)
+        {
+            _bulletMin = float2.zero;
+            _bulletMax = float2.zero;
+        }
     }
 
     private void RenderBullets()
@@ -1706,6 +1730,18 @@ public partial class RougeGameManager : MonoBehaviour
             EffectStateOut = _effectStateB
         }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
 
+        handle = new BuildBulletGridJob
+        {
+            Bullets = _bullets,
+            BulletCount = _activeBulletCount,
+            CellHeads = _bulletCellHeads,
+            CellEntries = _bulletCellEntries,
+            CellNext = _bulletCellNext,
+            EntryCapacity = _bulletCellEntries.Length,
+            InvCellSize = invCellSize,
+            HashMask = _hashMask
+        }.Schedule(handle);
+
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         handle = new SimulateEnemiesJob
         {
@@ -1722,6 +1758,9 @@ public partial class RougeGameManager : MonoBehaviour
             CellCounts = _cellCounts,
             NeighborOffsets = _neighborOffsets,
             Bullets = _bullets,
+            BulletCellHeads = _bulletCellHeads,
+            BulletCellEntries = _bulletCellEntries,
+            BulletCellNext = _bulletCellNext,
             BulletCount = _activeBulletCount,
             Obstacles = _obstacles,
             ObstacleCount = _obstacleCount,
@@ -2137,6 +2176,9 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _tempEnemyKeys);
         ReleaseNative(ref _cellOffsets);
         ReleaseNative(ref _cellCounts);
+        ReleaseNative(ref _bulletCellHeads);
+        ReleaseNative(ref _bulletCellEntries);
+        ReleaseNative(ref _bulletCellNext);
         ReleaseNative(ref _neighborOffsets);
         ReleaseNative(ref _histograms);
         ReleaseNative(ref _binTotals);
@@ -2416,6 +2458,17 @@ public struct RougeBullet
     public float EffectCurseExplosionRadius;
     public float EffectBurnDamage;
     public float EffectBurnDuration;
+}
+
+// 子弹按左端 X 升序排列，配合 Job 内二分查找初筛
+struct BulletMinXComparer : IComparer<RougeBullet>
+{
+    public int Compare(RougeBullet a, RougeBullet b)
+    {
+        float keyA = Unity.Mathematics.math.min(a.Previous.x, a.Current.x) - a.Radius;
+        float keyB = Unity.Mathematics.math.min(b.Previous.x, b.Current.x) - b.Radius;
+        return keyA.CompareTo(keyB);
+    }
 }
 
 
