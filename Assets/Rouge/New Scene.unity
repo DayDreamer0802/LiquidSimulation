@@ -991,7 +991,7 @@ MonoBehaviour:
   player: {fileID: 0}
   enemyMesh: {fileID: 0}
   enemyMaterial: {fileID: 0}
-  enemyCount: 150000
+  enemyCount: 100000
   enemyMaxHealth: 24
   enemyRadius: 0.3
   enemyMaxSpeed: 7
@@ -1023,7 +1023,7 @@ MonoBehaviour:
       Presentation:
         DisplayName: Auto Shoot
         TriggerLabel: AUTO SHOOT
-        Enabled: 0
+        Enabled: 1
         IsPassive: 0
         ActivationKey: 0
         ExecutionType: 0
@@ -1108,25 +1108,25 @@ MonoBehaviour:
       Presentation:
         DisplayName: Player Contact
         TriggerLabel: PASSIVE
-        Enabled: 0
+        Enabled: 1
         IsPassive: 1
         ActivationKey: 0
         ExecutionType: 2
         SustainPriority: 0
       Effects:
-        Tags: 0
+        Tags: 3
         KnockbackCenter: 0
         KnockbackForce:
-          x: 0
-          y: 0
+          x: 15
+          y: 15
           z: 0
         LaunchHeight:
-          x: 0
-          y: 0
+          x: 12
+          y: 12
           z: 0
         LaunchLandingRadius:
-          x: 0
-          y: 0
+          x: 2
+          y: 2
           z: 0
         PoisonSpreadRadius:
           x: 0
@@ -1169,8 +1169,8 @@ MonoBehaviour:
         y: 0.22
         z: 0
       RepulseRadius:
-        x: 8
-        y: 8
+        x: 15
+        y: 15
         z: 0
       RepulseForce:
         x: 220
@@ -2468,7 +2468,7 @@ MonoBehaviour:
   playerContactDamage: 8
   playerHitInvincibilityDuration: 0.33
   playerContactPadding: 0.22
-  playerHitRepulseRadius: 8
+  playerHitRepulseRadius: 15
   playerHitRepulseForce: 220
   playerHitRepulseLift: 18
   totalKills: 0

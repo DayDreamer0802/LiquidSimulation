@@ -23,6 +23,7 @@ public partial class RougeGameManager
         UpdateIceZoneSkill(context);
         UpdatePoisonBottleSkill(context);
         UpdateDashSkill(context);
+        UpdateSkateboardSkill(context);
         RefreshActiveSustainedSkill();
     }
 
@@ -38,6 +39,7 @@ public partial class RougeGameManager
         PlayerSkillMath.StepCooldown(ref _iceZoneCooldownTimer, dt);
         PlayerSkillMath.StepCooldown(ref _poisonCooldownTimer, dt);
         PlayerSkillMath.StepCooldown(ref _dashCooldownTimer, dt);
+        PlayerSkillMath.StepCooldown(ref _skateCooldownTimer, dt);
     }
 
     private SkillUpdateContext CreateSkillContext(float dt)
@@ -256,14 +258,10 @@ public partial class RougeGameManager
                 return _meleeTimer > 0f || _meleeFinisherSlamTimer > 0f || _spikeStartupTimer > 0f || _spikeTimer > 0f;
             case PlayerSkillType.Shockwave:
                 return _shockwaveState != 0;
-            case PlayerSkillType.MeteorRain:
-                return _meteorTimer > 0f;
-            case PlayerSkillType.IceZone:
-                return _iceZoneTimer > 0f;
-            case PlayerSkillType.PoisonBottle:
-                return HasActivePoisonState();
             case PlayerSkillType.Dash:
                 return _dashSpinTimer > 0f;
+            case PlayerSkillType.Skateboard:
+                return _skatePhase != 0;
             default:
                 return false;
         }
@@ -352,50 +350,22 @@ public partial class RougeGameManager
                     player.transform.position = position;
                 }
                 break;
-            case PlayerSkillType.MeteorRain:
-                _meteorTimer = 0f;
-                _meteorWaveTimer = 0f;
-                _meteorWaveIndex = 0;
-                for (int i = 0; i < MeteorVisualMax; i++)
-                {
-                    _meteorVisualTimers[i] = 0f;
-                    if (_meteorVisuals[i] != null)
-                    {
-                        _meteorVisuals[i].SetActive(false);
-                    }
-                }
-                break;
-            case PlayerSkillType.IceZone:
-                _iceZoneTimer = 0f;
-                if (_iceZoneVisual != null)
-                {
-                    _iceZoneVisual.SetActive(false);
-                }
-                break;
-            case PlayerSkillType.PoisonBottle:
-                for (int i = 0; i < MaxPoisonBottles; i++)
-                {
-                    _activePoisonBottles[i].Active = false;
-                    if (_poisonBottleVisuals[i] != null)
-                    {
-                        _poisonBottleVisuals[i].SetActive(false);
-                    }
-                }
-                for (int i = 0; i < MaxPoisonZones; i++)
-                {
-                    _activePoisonZones[i].Active = false;
-                    if (_poisonZoneVisuals[i] != null)
-                    {
-                        _poisonZoneVisuals[i].SetActive(false);
-                    }
-                }
-                break;
+            // case PlayerSkillType.MeteorRain: ...
+            // case PlayerSkillType.IceZone: ...
+            // case PlayerSkillType.PoisonBottle: (cleanup handled by regular update loops)
             case PlayerSkillType.Dash:
                 _dashSpinTimer = 0f;
                 if (_dashVisual != null)
                 {
                     _dashVisual.SetActive(false);
                 }
+                break;
+            case PlayerSkillType.Skateboard:
+                _skatePhase      = 0;
+                _skatePhaseTimer = 0f;
+                _skateRideTimer  = 0f;
+                if (_skateBoardVisual != null) _skateBoardVisual.SetActive(false);
+                if (player != null) player.SuppressMovement = false;
                 break;
         }
     }
@@ -407,7 +377,7 @@ public partial class RougeGameManager
             return false;
         }
 
-        return _dashSpinTimer > 0f || _jumpState == 1 || _shockwaveState != 0;
+        return _dashSpinTimer > 0f || _jumpState == 1 || _shockwaveState != 0 || _skatePhase != 0;
     }
 
     private bool CanStartMovementSkill(PlayerSkillType skillType)
@@ -1822,5 +1792,274 @@ public partial class RougeGameManager
 
         float q = (t - 0.82f) / 0.18f;
         return math.lerp(0.95f, 0.28f, q * q * (3f - 2f * q));
+    }
+
+    // =====================================================================
+    //  SKATEBOARD SKILL  (Right Mouse Button)
+    //
+    //  Phase 0 = idle
+    //  Phase 1 = initJump   玩家原地起跳，同时滑板在脚下生成并旋转
+    //  Phase 2 = land       玩家落地踩上滑板，滑板停止旋转
+    //  Phase 3 = riding     持续骑行；朝鼠标方向走，有惯性；再次按键触发 trick
+    //  Phase 4 = trick      玩家跳起带着滑板做旋转；骑行时间到也先等 trick 完成
+    //  Phase 5 = finale     玩家前跳，滑板被翘飞变竖，画弧拍地 AOE
+    // =====================================================================
+
+    private void EnsureSkateboardVisual()
+    {
+        if (_skateBoardVisual != null) return;
+        _skateBoardVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        _skateBoardVisual.name = "SkateboardVisual";
+        _skateBoardVisual.GetComponent<Collider>().enabled = false;
+        _skateBoardMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        _skateBoardMat.SetColor("_BaseColor", new Color(0.2f, 0.55f, 1f, 1f));
+        _skateBoardVisual.GetComponent<Renderer>().sharedMaterial = _skateBoardMat;
+        _skateBoardVisual.SetActive(false);
+    }
+
+    private void UpdateSkateboardSkill(SkillUpdateContext context)
+    {
+        EnsureSkillConfigInitialized();
+        EnsureSkateboardVisual();
+
+        SkateboardSkillConfig cfg        = skillConfig.Skateboard;
+        int   lvl                        = currentLevel;
+        float cooldown    = cfg.GetValue(cfg.Cooldown,         lvl);
+        float rideDuration= cfg.GetValue(cfg.RideDuration,     lvl);
+        float rideSpeed   = cfg.GetValue(cfg.RideSpeed,        lvl);
+        float rideAccel   = cfg.GetValue(cfg.RideAcceleration, lvl);
+        float slamRadius  = cfg.GetValue(cfg.SlamRadius,       lvl);
+        float slamDamage  = cfg.GetValue(cfg.SlamDamage,       lvl);
+        float slamVForce  = cfg.GetValue(cfg.SlamVerticalForce,lvl);
+        float slamPull    = cfg.GetValue(cfg.SlamPullForce,    lvl);
+        float initJumpDur = cfg.GetValue(cfg.InitJumpDuration, lvl);
+        float landDur     = cfg.GetValue(cfg.LandDuration,     lvl);
+        float trickDur    = cfg.GetValue(cfg.TrickDuration,    lvl);
+        float finaleDur   = cfg.GetValue(cfg.FinaleDuration,   lvl);
+        float jumpH       = cfg.GetValue(cfg.JumpHeight,       lvl);
+        ResolvedSkillHitEffectConfig slamFx = cfg.Effects.Resolve(lvl, cfg.MaxLevel);
+
+        float dt = context.DeltaTime;
+
+        // ── 触发 ──────────────────────────────────────────────────────────
+        bool pressed = RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Skateboard);
+        if (_skatePhase == 0 && pressed && _skateCooldownTimer <= 0f && player != null
+            && CanStartMovementSkill(PlayerSkillType.Skateboard)
+            && TryStartSkillActivation(PlayerSkillType.Skateboard))
+        {
+            _skateCooldownTimer = cooldown;
+            _skatePhase         = 1;
+            _skatePhaseTimer    = initJumpDur;
+            _skateRideTimer     = rideDuration;
+            _skatePendingEnd    = false;
+            _skateSlamFired     = false;
+            _skateOriginPos     = player.transform.position;
+            _skateBoardPos      = context.PlayerPosition;
+            _skateBoardVelocity = Vector2.zero;
+            _skateBoardRotYaw   = 0f;
+            _invincibilityTimer = math.max(_invincibilityTimer, initJumpDur + landDur + 0.1f);
+        }
+
+        if (_skatePhase == 0) return;
+
+        _skatePhaseTimer -= dt;
+
+        // ── Phase 1: 初始起跳 ─────────────────────────────────────────────
+        if (_skatePhase == 1)
+        {
+            float t  = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, initJumpDur));
+            float yh = math.sin(t * math.PI) * jumpH;
+            Vector3 pos  = _skateOriginPos;
+            pos.y = renderHeight + yh;
+            player.transform.position = pos;
+            player.SuppressMovement   = true;
+            _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
+
+            // 滑板在玩家脚下旋转
+            _skateBoardRotYaw += 360f * dt * 2.5f;
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position   = new Vector3(_skateOriginPos.x, renderHeight + 0.12f, _skateOriginPos.z);
+            _skateBoardVisual.transform.rotation   = Quaternion.Euler(0f, _skateBoardRotYaw, 0f);
+            _skateBoardVisual.transform.localScale  = new Vector3(1f, 0.15f, 2.4f);
+
+            if (_skatePhaseTimer <= 0f)
+            {
+                _skatePhase      = 2;
+                _skatePhaseTimer = landDur;
+                SpawnExplosionVFX(new Vector3(_skateOriginPos.x, renderHeight + 0.5f, _skateOriginPos.z), 2f);
+                SpawnAOERing(new Vector3(_skateOriginPos.x, renderHeight, _skateOriginPos.z), 3f, 0.25f, new Color(0.3f, 0.7f, 1f));
+            }
+            return;
+        }
+
+        // ── Phase 2: 落地踩板 ─────────────────────────────────────────────
+        if (_skatePhase == 2)
+        {
+            player.transform.position = new Vector3(_skateOriginPos.x, renderHeight, _skateOriginPos.z);
+            player.SuppressMovement   = true;
+            _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
+
+            // 滑板旋转减速停止
+            float stopT          = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, landDur));
+            float spinRate       = math.lerp(360f * 2.5f, 0f, stopT * stopT);
+            _skateBoardRotYaw   += spinRate * dt;
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position   = new Vector3(_skateOriginPos.x, renderHeight + 0.12f, _skateOriginPos.z);
+            _skateBoardVisual.transform.rotation   = Quaternion.Euler(0f, _skateBoardRotYaw, 0f);
+            _skateBoardVisual.transform.localScale  = new Vector3(1f, 0.15f, 2.4f);
+
+            if (_skatePhaseTimer <= 0f)
+            {
+                _skatePhase      = 3;
+                _skatePhaseTimer = 0f;
+            }
+            return;
+        }
+
+        // ── Phase 3: 骑行 ─────────────────────────────────────────────────
+        if (_skatePhase == 3)
+        {
+            _skateRideTimer -= dt;
+
+            // 再次按键 → trick
+            if (pressed && _skatePhase == 3)
+            {
+                _skatePhase      = 4;
+                _skatePhaseTimer = trickDur;
+                _skateTrickOrigin = player.transform.position;
+                _invincibilityTimer = math.max(_invincibilityTimer, trickDur + 0.1f);
+                return;
+            }
+
+            // 骑行时间到 → 先检查是否要 trick，时间结束直接 finale
+            if (_skateRideTimer <= 0f)
+            {
+                _skatePendingEnd = true;
+                _skatePhase      = 5;
+                _skatePhaseTimer = finaleDur;
+                _skateFinaleStart= player.transform.position;
+                Vector3 finDir   = new Vector3(context.AimDirection.x, 0f, context.AimDirection.y);
+                _skateFinaleEnd  = _skateFinaleStart + finDir * 6f;
+                _skateFinaleEnd.y = renderHeight;
+                _skateSlamFired  = false;
+                return;
+            }
+
+            // 朝鼠标方向惯性移动
+            float2 desiredDir  = math.normalizesafe(context.AimDirection);
+            float2 desiredVel  = desiredDir * rideSpeed;
+            _skateBoardVelocity = Vector2.MoveTowards(_skateBoardVelocity, desiredVel, rideAccel * dt);
+
+            Vector3 playerPos  = player.transform.position;
+            playerPos.x       += _skateBoardVelocity.x * dt;
+            playerPos.z       += _skateBoardVelocity.y * dt;
+            playerPos.y        = renderHeight;
+            // clamp arena
+            playerPos.x = Mathf.Clamp(playerPos.x, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            playerPos.z = Mathf.Clamp(playerPos.z, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            player.transform.position = playerPos;
+            player.SuppressMovement   = true;
+
+            // 滑板朝移动方向
+            if (_skateBoardVelocity.sqrMagnitude > 0.01f)
+            {
+                _skateBoardRotYaw = Mathf.Atan2(_skateBoardVelocity.x, _skateBoardVelocity.y) * Mathf.Rad2Deg;
+            }
+            _skateBoardPos = new float2(playerPos.x, playerPos.z);
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position   = new Vector3(playerPos.x, renderHeight + 0.12f, playerPos.z);
+            _skateBoardVisual.transform.rotation   = Quaternion.Euler(0f, _skateBoardRotYaw, 0f);
+            _skateBoardVisual.transform.localScale  = new Vector3(1f, 0.15f, 2.4f);
+            return;
+        }
+
+        // ── Phase 4: 空中 Trick ──────────────────────────────────────────
+        if (_skatePhase == 4)
+        {
+            float t    = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, trickDur));
+            float yh   = math.sin(t * math.PI) * jumpH * 0.8f;
+            Vector3 pos= _skateTrickOrigin;
+            pos.y      = renderHeight + yh;
+            player.transform.position = pos;
+            player.SuppressMovement   = true;
+            _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
+
+            // 滑板在玩家下方整体旋转
+            _skateBoardRotYaw += 360f * dt * 2f;
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position  = new Vector3(pos.x, renderHeight + 0.12f + yh * 0.5f, pos.z);
+            _skateBoardVisual.transform.rotation  = Quaternion.Euler(0f, _skateBoardRotYaw, 45f * math.sin(t * math.PI));
+            _skateBoardVisual.transform.localScale = new Vector3(1f, 0.15f, 2.4f);
+
+            if (_skatePhaseTimer <= 0f)
+            {
+                // trick 完成 → 进 finale
+                _skatePhase      = 5;
+                _skatePhaseTimer = finaleDur;
+                _skateFinaleStart= player.transform.position;
+                Vector3 finDir   = new Vector3(context.AimDirection.x, 0f, context.AimDirection.y);
+                _skateFinaleEnd  = _skateFinaleStart + finDir * 6f;
+                _skateFinaleEnd.y = renderHeight;
+                _skateSlamFired  = false;
+            }
+            return;
+        }
+
+        // ── Phase 5: Finale —— 前跳+滑板弧线拍地 ─────────────────────────
+        if (_skatePhase == 5)
+        {
+            float t = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, finaleDur));
+
+            // 玩家沿弧线前跳
+            float jumpArc = math.sin(t * math.PI) * jumpH * 1.2f;
+            Vector3 playerP = Vector3.Lerp(_skateFinaleStart, _skateFinaleEnd, t);
+            playerP.y = renderHeight + jumpArc;
+            player.transform.position = playerP;
+            player.SuppressMovement   = true;
+            _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
+
+            // 滑板翘飞变竖，从后往前画弧
+            float boardArcAngle = t * 220f;  // 0→220度弧
+            float boardRadius   = 4.5f;
+            Vector3 boardCenter = _skateFinaleEnd;
+            // 板从 finaleStart 后上方弧线扫到 finaleEnd 地面
+            Vector3 back        = (_skateFinaleStart - _skateFinaleEnd).normalized;
+            Vector3 up          = Vector3.up;
+            float   arcRad      = boardArcAngle * Mathf.Deg2Rad;
+            Vector3 boardPos    = boardCenter
+                + (back * Mathf.Cos(arcRad) + up * Mathf.Sin(arcRad)) * boardRadius;
+            // 板立起来
+            Vector3 boardFwd    = (_skateFinaleEnd - _skateFinaleStart).normalized;
+            Quaternion boardRot = Quaternion.LookRotation(boardFwd) * Quaternion.Euler(90f - boardArcAngle * 0.8f, 0f, 0f);
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position   = boardPos;
+            _skateBoardVisual.transform.rotation   = boardRot;
+            _skateBoardVisual.transform.localScale  = new Vector3(1f, 0.15f, 2.4f);
+
+            // t > 0.7 时板到地面，触发 AOE（只触发一次）
+            if (!_skateSlamFired && t >= 0.7f)
+            {
+                _skateSlamFired = true;
+                float2 slamPos  = new float2(_skateFinaleEnd.x, _skateFinaleEnd.z);
+                TryAddCircularSkillArea(slamPos, slamRadius, slamDamage, math.abs(slamPull), slamVForce, slamFx);
+                SpawnImpact(slamPos, slamRadius * 0.55f, slamRadius, 0.6f, new Color(0.3f, 0.7f, 1f));
+                _meleeHitShake = 0.3f;
+            }
+
+            if (_skatePhaseTimer <= 0f)
+            {
+                // 技能结束
+                _skatePhase   = 0;
+                _skatePendingEnd = false;
+                if (_skateBoardVisual != null) _skateBoardVisual.SetActive(false);
+                if (player != null)
+                {
+                    Vector3 endPos  = _skateFinaleEnd;
+                    endPos.y        = renderHeight;
+                    player.transform.position = endPos;
+                    player.SuppressMovement   = false;
+                }
+            }
+        }
     }
 }

@@ -18,7 +18,8 @@ public enum RougeInputBinding
     MeteorRain,
     IceZone,
     PoisonBottle,
-    Dash
+    Dash,
+    Skateboard
 }
 
 [DefaultExecutionOrder(-1000)]
@@ -94,6 +95,9 @@ public sealed class RougeInputManager : MonoBehaviour
                 return true;
             case PlayerSkillType.Dash:
                 binding = RougeInputBinding.Dash;
+                return true;
+            case PlayerSkillType.Skateboard:
+                binding = RougeInputBinding.Skateboard;
                 return true;
             default:
                 binding = default;
@@ -232,6 +236,7 @@ public sealed class RougeInputManager : MonoBehaviour
         ApplyDefaultBinding(RougeInputBinding.IceZone, skillConfig.IceZone.Presentation.ActivationKey);
         ApplyDefaultBinding(RougeInputBinding.PoisonBottle, skillConfig.PoisonBottle.Presentation.ActivationKey);
         ApplyDefaultBinding(RougeInputBinding.Dash, skillConfig.Dash.Presentation.ActivationKey);
+        ApplyDefaultBinding(RougeInputBinding.Skateboard, skillConfig.Skateboard.Presentation.ActivationKey);
     }
 
     private static void EnsureInstance()
@@ -307,16 +312,17 @@ public sealed class RougeInputManager : MonoBehaviour
 
         _pointerAction = _gameplayMap.AddAction("PointerPosition", InputActionType.PassThrough, "<Pointer>/position");
 
-        AddButtonAction(RougeInputBinding.PrimaryAttack, "PrimaryAttack", "<Mouse>/leftButton");
-        AddButtonAction(RougeInputBinding.LeapSmash, "LeapSmash", "<Keyboard>/space");
-        AddButtonAction(RougeInputBinding.LightPillarStrike, "LightPillarStrike", "<Keyboard>/q");
-        AddButtonAction(RougeInputBinding.BombThrow, "BombThrow", "<Keyboard>/e");
-        AddButtonAction(RougeInputBinding.LaserBeam, "LaserBeam", "<Keyboard>/r");
-        AddButtonAction(RougeInputBinding.Shockwave, "Shockwave", "<Keyboard>/v");
-        AddButtonAction(RougeInputBinding.MeteorRain, "MeteorRain", "<Keyboard>/t");
-        AddButtonAction(RougeInputBinding.IceZone, "IceZone", "<Keyboard>/c");
-        AddButtonAction(RougeInputBinding.PoisonBottle, "PoisonBottle", "<Keyboard>/x");
-        AddButtonAction(RougeInputBinding.Dash, "Dash", "<Keyboard>/leftShift");
+        AddButtonAction(RougeInputBinding.PrimaryAttack,      "PrimaryAttack",      "<Mouse>/leftButton");
+        AddButtonAction(RougeInputBinding.LeapSmash,           "LeapSmash",           "<Keyboard>/space");
+        AddButtonAction(RougeInputBinding.LightPillarStrike,   "LightPillarStrike",   "<Keyboard>/q");
+        AddButtonAction(RougeInputBinding.BombThrow,           "BombThrow",           "<Keyboard>/b");
+        AddButtonAction(RougeInputBinding.LaserBeam,           "LaserBeam",           "<Keyboard>/e");
+        AddButtonAction(RougeInputBinding.Shockwave,           "Shockwave",           "<Keyboard>/r");
+        AddButtonAction(RougeInputBinding.MeteorRain,          "MeteorRain",          "<Keyboard>/t");
+        AddButtonAction(RougeInputBinding.IceZone,             "IceZone",             "<Keyboard>/c");
+        AddButtonAction(RougeInputBinding.PoisonBottle,        "PoisonBottle",        "<Keyboard>/x");
+        AddButtonAction(RougeInputBinding.Dash,                "Dash",                "<Keyboard>/leftShift");
+        AddButtonAction(RougeInputBinding.Skateboard,          "Skateboard",          "<Mouse>/rightButton");
 
         RegisterBinding(RougeInputBinding.MoveUp, _moveAction, FindBindingIndex(_moveAction, "Up"));
         RegisterBinding(RougeInputBinding.MoveDown, _moveAction, FindBindingIndex(_moveAction, "Down"));

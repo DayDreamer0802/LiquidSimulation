@@ -77,7 +77,8 @@
                 
                 half3 col = _BaseColor.rgb * shade;
                 col = lerp(col, half3(0.03, 0.03, 0.03), input.curse);
-                col = lerp(col, half3(1.0, 1.0, 1.0), saturate(input.flash));
+                // 柔和暖色闪烁：最大亮度55%，偏暖色防止大范围AOE命中时整屏泛白
+                col = lerp(col, half3(1.0, 0.82, 0.65), saturate(input.flash) * 0.55);
                 
                 return half4(col, _BaseColor.a);
             }

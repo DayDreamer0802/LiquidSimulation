@@ -16,6 +16,9 @@ public class PlayerBase : MonoBehaviour
     public Vector3 AimDirection => _aimDirection;
     public Vector2 PlanarPosition => new Vector2(transform.position.x, transform.position.z);
 
+    /// <summary>外部技能可在每帧 Update 前置为 true，PlayerBase 将跳过 WASD 移动并清零速度</summary>
+    public bool SuppressMovement { get; set; }
+
     private void Awake()
     {
         if (aimCamera == null)
@@ -33,6 +36,13 @@ public class PlayerBase : MonoBehaviour
 
     private void UpdateMovement(float dt)
     {
+        if (SuppressMovement)
+        {
+            _velocity = Vector3.zero;
+            // 位置由外部（技能系统）设置，不在此处叠加移动
+            return;
+        }
+
         Vector2 moveInput = RougeInputManager.Instance.ReadMoveVector();
         Vector3 input = new Vector3(moveInput.x, 0f, moveInput.y);
         if (input.sqrMagnitude > 1f)

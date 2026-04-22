@@ -156,6 +156,17 @@ public partial class RougeGameManager
                 }
 
                 break;
+            case PlayerSkillType.Skateboard:
+                switch (_skatePhase)
+                {
+                    case 1: return "JUMP";
+                    case 2: return "LANDING";
+                    case 3: return $"RIDING {Mathf.Max(0f, _skateRideTimer):F1}s";
+                    case 4: return "TRICK";
+                    case 5: return "SLAM";
+                }
+
+                break;
         }
 
         return cooldown <= 0.05f ? "READY" : $"CD: {cooldown:F1}s";
@@ -234,6 +245,8 @@ public partial class RougeGameManager
                 return skillConfig.PoisonBottle.Presentation;
             case PlayerSkillType.Dash:
                 return skillConfig.Dash.Presentation;
+            case PlayerSkillType.Skateboard:
+                return skillConfig.Skateboard.Presentation;
             case PlayerSkillType.OrbitBall:
                 return skillConfig.OrbitBall.Presentation;
             default:
@@ -284,6 +297,8 @@ public partial class RougeGameManager
                 return _poisonCooldownTimer;
             case PlayerSkillType.Dash:
                 return _dashCooldownTimer;
+            case PlayerSkillType.Skateboard:
+                return _skateCooldownTimer;
             default:
                 return 0f;
         }

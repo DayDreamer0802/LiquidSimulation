@@ -299,6 +299,23 @@ public partial class RougeGameManager : MonoBehaviour
     private float2 _pendingPlayerHitRepulsePosition;
     private GameObject _dashVisual;
     private Material _dashMat;
+
+    // --- Skateboard skill state ---
+    private float _skateCooldownTimer;
+    private int   _skatePhase;       // 0=idle 1=initJump 2=land 3=riding 4=trick 5=finale
+    private float _skatePhaseTimer;
+    private float _skateRideTimer;
+    private Vector2 _skateBoardVelocity;
+    private float _skateBoardRotYaw;
+    private Vector3 _skateOriginPos;
+    private Vector3 _skateTrickOrigin;
+    private float2  _skateBoardPos;
+    private bool  _skatePendingEnd;
+    private bool  _skateSlamFired;
+    private Vector3 _skateFinaleStart;
+    private Vector3 _skateFinaleEnd;
+    private GameObject _skateBoardVisual;
+    private Material   _skateBoardMat;
     private bool _hasActiveSustainedSkill;
     private PlayerSkillType _activeSustainedSkillType;
     private int _activeSustainedSkillPriority;
@@ -1759,9 +1776,12 @@ public partial class RougeGameManager : MonoBehaviour
 
     private JobHandle ScheduleRadixSort(JobHandle dependency, int activeEnemyCount, int activeChunkCount)
     {
+        // 只排序hashSize实际用到的位数：对10w-30w敌人hashSize最大2^20，只需3趟而非固定4趟
+      //  int numPasses = Mathf.Max(1, Mathf.CeilToInt(Mathf.Log(_hashSize, 2) / 8f));
         JobHandle handle = dependency;
-        for (int shift = 32; shift < 64; shift += 8)
+        for (int pass = 0; pass < 3; pass++)
         {
+            int shift = 32 + pass * 8;
             handle = new LocalHistogramJob
             {
                 Keys = _enemyKeys,

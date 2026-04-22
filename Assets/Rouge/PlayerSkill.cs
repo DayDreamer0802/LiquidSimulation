@@ -15,7 +15,8 @@ public enum PlayerSkillType
     IceZone,
     PoisonBottle,
     Dash,
-    OrbitBall
+    OrbitBall,
+    Skateboard
 }
 
 [Flags]
@@ -391,7 +392,7 @@ public class BombThrowSkillConfig : LevelScaledSkillConfig
 [Serializable]
 public class LaserBeamSkillConfig : LevelScaledSkillConfig
 {
-    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Laser Beam", "R", false, KeyCode.R);
+    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Laser Beam", "E", false, KeyCode.E);
     public SkillHitEffectConfig Effects;
     public float3 Cooldown = new float3(6f, 6f, 0f);
     public float3 Duration = new float3(0.5f, 3.5f, 2f);
@@ -464,7 +465,7 @@ public class MeleeSlashSkillConfig : LevelScaledSkillConfig
 [Serializable]
 public class ShockwaveSkillConfig : LevelScaledSkillConfig
 {
-    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Shockwave", "V", false, KeyCode.V);
+    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Shockwave", "R", false, KeyCode.R);
     public SkillHitEffectConfig Effects;
     public float3 Cooldown = new float3(30f, 30f, 0f);
     public float3 Duration = new float3(0.6f, 0.6f, 0f);
@@ -616,6 +617,31 @@ public class OrbitBallSkillConfig : LevelScaledSkillConfig
 }
 
 [Serializable]
+public class SkateboardSkillConfig : LevelScaledSkillConfig
+{
+    public SkillPresentationConfig Presentation = new SkillPresentationConfig("Skateboard Slam", "R-CLICK", false, KeyCode.Mouse1);
+    public SkillHitEffectConfig Effects;
+    public float3 Cooldown          = new float3(18f, 12f, 2f);
+    public float3 RideDuration      = new float3(7f,  12f, 1f);
+    public float3 RideSpeed         = new float3(16f, 24f, 1f);
+    public float3 RideAcceleration  = new float3(7f,  11f, 1f);
+    public float3 SlamRadius        = new float3(14f, 22f, 2f);
+    public float3 SlamDamage        = new float3(500f, 2800f, 2f);
+    public float3 SlamVerticalForce = new float3(38f, 58f,  1f);
+    public float3 SlamPullForce     = new float3(-180f, -300f, 1f);
+    public float3 InitJumpDuration  = new float3(0.38f, 0.38f, 0f);
+    public float3 LandDuration      = new float3(0.18f, 0.18f, 0f);
+    public float3 TrickDuration     = new float3(0.65f, 0.65f, 0f);
+    public float3 FinaleDuration    = new float3(0.95f, 0.95f, 0f);
+    public float3 JumpHeight        = new float3(3.5f, 4.5f, 1f);
+
+    public PlayerSkillDefinition ToDefinition()
+    {
+        return Presentation.ToDefinition(PlayerSkillType.Skateboard);
+    }
+}
+
+[Serializable]
 public class PlayerSkillConfigSet
 {
     public AutoShootSkillConfig AutoShoot = new AutoShootSkillConfig();
@@ -631,6 +657,7 @@ public class PlayerSkillConfigSet
     public PoisonBottleSkillConfig PoisonBottle = new PoisonBottleSkillConfig();
     public DashSkillConfig Dash = new DashSkillConfig();
     public OrbitBallSkillConfig OrbitBall = new OrbitBallSkillConfig();
+    public SkateboardSkillConfig Skateboard = new SkateboardSkillConfig();
 
     public static PlayerSkillConfigSet CreateDefault()
     {
@@ -652,6 +679,7 @@ public class PlayerSkillConfigSet
         if (PoisonBottle == null) PoisonBottle = new PoisonBottleSkillConfig();
         if (Dash == null) Dash = new DashSkillConfig();
         if (OrbitBall == null) OrbitBall = new OrbitBallSkillConfig();
+        if (Skateboard == null) Skateboard = new SkateboardSkillConfig();
 
         AutoShoot.Presentation.NormalizeExecutionType();
     PlayerContact.Presentation.NormalizeExecutionType();
@@ -666,6 +694,7 @@ public class PlayerSkillConfigSet
         PoisonBottle.Presentation.NormalizeExecutionType();
         Dash.Presentation.NormalizeExecutionType();
         OrbitBall.Presentation.NormalizeExecutionType();
+        Skateboard.Presentation.NormalizeExecutionType();
     }
 
     public PlayerSkillDefinition GetDefinition(PlayerSkillType type)
@@ -698,6 +727,8 @@ public class PlayerSkillConfigSet
                 return Dash.ToDefinition();
             case PlayerSkillType.OrbitBall:
                 return OrbitBall.ToDefinition();
+            case PlayerSkillType.Skateboard:
+                return Skateboard.ToDefinition();
             default:
                 return new PlayerSkillDefinition(type, type.ToString(), "UNKNOWN");
         }
@@ -706,7 +737,19 @@ public class PlayerSkillConfigSet
 
 public static class PlayerSkillCatalog
 {
-    public static readonly PlayerSkillType[] DisplayOrder = (PlayerSkillType[])Enum.GetValues(typeof(PlayerSkillType));
+    // 当前激活技能：LShift(大风车)/Space(跳)/Q(光柱)/E(激光)/R(冲击波)/LClick(近战)/RClick(滑板) + 被动
+    public static readonly PlayerSkillType[] DisplayOrder =
+    {
+        PlayerSkillType.Dash,
+        PlayerSkillType.LeapSmash,
+        PlayerSkillType.LightPillarStrike,
+        PlayerSkillType.LaserBeam,
+        PlayerSkillType.Shockwave,
+        PlayerSkillType.MeleeSlash,
+        PlayerSkillType.Skateboard,
+        PlayerSkillType.AutoShoot,
+        PlayerSkillType.OrbitBall
+    };
 
     public static readonly PlayerSkillProgressBinding[] ProgressionBindings =
     {
@@ -725,6 +768,7 @@ public static class PlayerSkillCatalog
             case PlayerSkillType.LeapSmash:
             case PlayerSkillType.Shockwave:
             case PlayerSkillType.Dash:
+            case PlayerSkillType.Skateboard:
                 return PlayerSkillTag.Movement;
             default:
                 return PlayerSkillTag.None;

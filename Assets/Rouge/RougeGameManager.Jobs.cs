@@ -361,6 +361,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         int* neighborEnd = stackalloc int[9];
         float separationRadiusSq = SeparationRadius * SeparationRadius;
         float crowdReliefRadiusSq = CrowdReliefRadius * CrowdReliefRadius;
+        float invSepRadius = 1f / math.max(SeparationRadius, 0.0001f);
 
         for (int i = startIndex; i < endIndex; i++)
         {
@@ -483,20 +484,27 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
             float2 separation = float2.zero;
             int crowdedNeighbors = 0;
-            for (int n = 0; n < 9; n++)
+            // 空中敌人不参与分离计算，大量被击飞时节省内层循环开销
+            if (!isAirborne)
             {
-                for (int k = neighborStart[n]; k < neighborEnd[n]; k++)
+                for (int n = 0; n < 9; n++)
                 {
-                    if (k == i) continue;
-                    float2 other = posInPtr[k].xz;
-                    float2 diff = pos.xz - other;
-                    float distSq = math.lengthsq(diff);
-                    if (distSq < separationRadiusSq && distSq > 0.0001f)
+                    for (int k = neighborStart[n]; k < neighborEnd[n]; k++)
                     {
-                        crowdedNeighbors++;
-                        float dist = math.sqrt(distSq);
-                        float weight = 1f - math.saturate(dist / SeparationRadius);
-                        separation += (diff / dist) * (weight * SeparationStrength);
+                        if (k == i) continue;
+                        float2 other = posInPtr[k].xz;
+                        float2 diff = pos.xz - other;
+                        // AABB廉价剔除，跳过明显超出分离半径的邻居
+                        if (math.abs(diff.x) >= SeparationRadius || math.abs(diff.y) >= SeparationRadius) continue;
+                        float distSq = math.lengthsq(diff);
+                        if (distSq < separationRadiusSq && distSq > 0.0001f)
+                        {
+                            crowdedNeighbors++;
+                            float invDist = math.rsqrt(distSq);
+                            float dist = distSq * invDist;
+                            float weight = 1f - math.saturate(dist * invSepRadius);
+                            separation += (diff * invDist) * (weight * SeparationStrength);
+                        }
                     }
                 }
             }
