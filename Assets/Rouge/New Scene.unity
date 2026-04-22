@@ -991,9 +991,9 @@ MonoBehaviour:
   player: {fileID: 0}
   enemyMesh: {fileID: 0}
   enemyMaterial: {fileID: 0}
-  enemyCount: 198979
+  enemyCount: 150000
   enemyMaxHealth: 24
-  enemyRadius: 0.35
+  enemyRadius: 0.3
   enemyMaxSpeed: 7
   enemyVisualScale: 1.35
   arenaHalfExtent: 220
@@ -1005,6 +1005,11 @@ MonoBehaviour:
   velocityDamping: 0.96
   separationRadius: 1.3
   separationStrength: 10
+  crowdReliefRadius: 10
+  crowdReliefStrength: 20
+  crowdOrbitStrength: 10
+  denseSeparationBoost: 1.25
+  denseNeighborThreshold: 10
   obstaclePadding: 1.5
   obstacleLookAhead: 3
   obstacleRepulsion: 30
@@ -1188,7 +1193,7 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Leap Smash
-        TriggerLabel: SPACE
+        TriggerLabel: SP
         Enabled: 1
         IsPassive: 0
         ActivationKey: 32
@@ -1268,7 +1273,7 @@ MonoBehaviour:
     LightPillar:
       MaxLevel: 60
       Presentation:
-        DisplayName: Light Pillar Strike
+        DisplayName: Light Pillar
         TriggerLabel: Q
         Enabled: 1
         IsPassive: 0
@@ -1358,10 +1363,10 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Bomb Throw
-        TriggerLabel: E
-        Enabled: 1
+        TriggerLabel: REWORK
+        Enabled: 0
         IsPassive: 0
-        ActivationKey: 101
+        ActivationKey: 0
         ExecutionType: 0
         SustainPriority: 0
       Effects:
@@ -1498,11 +1503,11 @@ MonoBehaviour:
     LaserBeam:
       MaxLevel: 60
       Presentation:
-        DisplayName: Laser Beam
-        TriggerLabel: R
+        DisplayName: Laser
+        TriggerLabel: E
         Enabled: 1
         IsPassive: 0
-        ActivationKey: 114
+        ActivationKey: 101
         ExecutionType: 0
         SustainPriority: 0
       Effects:
@@ -1587,11 +1592,11 @@ MonoBehaviour:
     MeleeSlash:
       MaxLevel: 60
       Presentation:
-        DisplayName: Melee Slash
-        TriggerLabel: MOUSE L-CLICK
+        DisplayName: Melee Combo
+        TriggerLabel: LC
         Enabled: 1
         IsPassive: 0
-        ActivationKey: 0
+        ActivationKey: 323
         ExecutionType: 1
         SustainPriority: 1000
       Effects:
@@ -1805,10 +1810,10 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Shockwave
-        TriggerLabel: V
+        TriggerLabel: R
         Enabled: 1
         IsPassive: 0
-        ActivationKey: 118
+        ActivationKey: 114
         ExecutionType: 1
         SustainPriority: 99999
       Effects:
@@ -1934,10 +1939,10 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Meteor Rain
-        TriggerLabel: T
-        Enabled: 1
+        TriggerLabel: REWORK
+        Enabled: 0
         IsPassive: 0
-        ActivationKey: 116
+        ActivationKey: 0
         ExecutionType: 0
         SustainPriority: 0
       Effects:
@@ -2043,10 +2048,10 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Ice Zone
-        TriggerLabel: C
-        Enabled: 1
+        TriggerLabel: REWORK
+        Enabled: 0
         IsPassive: 0
-        ActivationKey: 99
+        ActivationKey: 0
         ExecutionType: 0
         SustainPriority: 0
       Effects:
@@ -2136,10 +2141,10 @@ MonoBehaviour:
       MaxLevel: 60
       Presentation:
         DisplayName: Poison Bottle
-        TriggerLabel: X
-        Enabled: 1
+        TriggerLabel: REWORK
+        Enabled: 0
         IsPassive: 0
-        ActivationKey: 120
+        ActivationKey: 0
         ExecutionType: 0
         SustainPriority: 0
       Effects:
@@ -2264,8 +2269,8 @@ MonoBehaviour:
     Dash:
       MaxLevel: 60
       Presentation:
-        DisplayName: Whirlwind
-        TriggerLabel: L-SHIFT
+        DisplayName: Dash
+        TriggerLabel: LS
         Enabled: 1
         IsPassive: 0
         ActivationKey: 304
