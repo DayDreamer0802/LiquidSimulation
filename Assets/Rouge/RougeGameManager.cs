@@ -21,6 +21,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private PlayerBase player;
     [SerializeField] private Mesh enemyMesh;
     [SerializeField] private Material enemyMaterial;
+    [SerializeField] private Material laserBeamMaterial;
 
     private Mesh _bulletMesh;
     private Material _bulletMaterial;
@@ -189,9 +190,11 @@ public partial class RougeGameManager : MonoBehaviour
     private RougeBomb[] _activeBombs = new RougeBomb[MaxBombs];
     private GameObject[] _bombVisuals = new GameObject[MaxBombs];
     private GameObject _laserVisual;
+    private GameObject _laserMuzzleVisual;
     private const int MaxLaserSubBeams = 6;
     private GameObject[] _laserExtraVisuals = new GameObject[MaxLaserSubBeams];
     private Material _laserMat;
+    private bool _ownsLaserMat;
     private float _laserTimer;
     private float2 _laserPos;
     private float2 _laserDir;
@@ -1031,13 +1034,55 @@ public partial class RougeGameManager : MonoBehaviour
             _laserVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             Destroy(_laserVisual.GetComponent<Collider>());
             _laserVisual.name = "Laser Visual";
-            _laserMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _laserMat.color = new Color(0.1f, 1f, 1f, 0.9f);
-            _laserMat.SetFloat("_Surface", 1f); // Transparent
-            _laserMat.SetFloat("_Blend", 0f); // Alpha blend
-            _laserMat.SetColor("_EmissionColor", new Color(0.2f, 0.8f, 1f, 1f) * 4f); // Brighter
-            _laserVisual.GetComponent<MeshRenderer>().material = _laserMat;
+
+            Shader laserShader = Shader.Find("Rouge/LaserBeam");
+            if (laserBeamMaterial != null)
+            {
+                _laserMat = laserBeamMaterial;
+                _ownsLaserMat = false;
+            }
+            else if (laserShader != null)
+            {
+                _laserMat = new Material(laserShader);
+                _ownsLaserMat = true;
+                _laserMat.SetColor("_BeamColor", new Color(0.095f, 0.78f, 1f, 1f));
+                _laserMat.SetColor("_EdgeColor", new Color(0.02f, 0.21f, 0.95f, 1f));
+                _laserMat.SetFloat("_CoreRadius", 0.145f);
+                _laserMat.SetFloat("_EdgeSoftness", 0.215f);
+                _laserMat.SetFloat("_PulseSpeed", 7.2f);
+                _laserMat.SetFloat("_ScrollSpeed", 18.5f);
+                _laserMat.SetFloat("_NoiseStrength", 0.22f);
+                _laserMat.SetFloat("_HelixTightness", 34f);
+                _laserMat.SetFloat("_HelixWidth", 0.075f);
+                _laserMat.SetFloat("_HelixIntensity", 1.9f);
+                _laserMat.SetFloat("_HelixSpinSpeed", 18f);
+                _laserMat.SetFloat("_HelixSecondaryOffset", 1.5708f);
+                _laserMat.SetFloat("_HelixCutout", 0.86f);
+                _laserMat.SetFloat("_FresnelPower", 2.2f);
+                _laserMat.SetFloat("_FresnelStrength", 1.45f);
+                _laserMat.SetFloat("_Alpha", 1f);
+            }
+            else
+            {
+                _laserMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _ownsLaserMat = true;
+                _laserMat.color = new Color(0.1f, 1f, 1f, 0.9f);
+                _laserMat.SetFloat("_Surface", 1f);
+                _laserMat.SetFloat("_Blend", 0f);
+                _laserMat.SetColor("_EmissionColor", new Color(0.2f, 0.8f, 1f, 1f) * 4f);
+            }
+
+            _laserVisual.GetComponent<MeshRenderer>().sharedMaterial = _laserMat;
             _laserVisual.SetActive(false);
+        }
+
+        if (_laserMuzzleVisual == null)
+        {
+            _laserMuzzleVisual = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Destroy(_laserMuzzleVisual.GetComponent<Collider>());
+            _laserMuzzleVisual.name = "Laser Muzzle";
+            _laserMuzzleVisual.GetComponent<MeshRenderer>().sharedMaterial = _laserMat;
+            _laserMuzzleVisual.SetActive(false);
         }
 
         for (int li = 0; li < MaxLaserSubBeams; li++)
@@ -1047,7 +1092,7 @@ public partial class RougeGameManager : MonoBehaviour
                 _laserExtraVisuals[li] = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 Destroy(_laserExtraVisuals[li].GetComponent<Collider>());
                 _laserExtraVisuals[li].name = "Laser Extra " + li;
-                _laserExtraVisuals[li].GetComponent<MeshRenderer>().material = _laserMat;
+                _laserExtraVisuals[li].GetComponent<MeshRenderer>().sharedMaterial = _laserMat;
                 _laserExtraVisuals[li].SetActive(false);
             }
         }
@@ -1770,7 +1815,7 @@ public partial class RougeGameManager : MonoBehaviour
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
             EnemyMaxHealth = enemyMaxHealth * (1f + currentLevel * 0.15f),
-            EnemyRadius = UnityEngine.Random.Range(0.8f, 1.2f) * enemyRadius,
+            EnemyRadius = Mathf.Min(enemyRadius*2f, enemyRadius * (0.8f+ currentLevel * 0.0001f)),
             EnemyMaxSpeed = enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
             ArenaHalfExtent = arenaHalfExtent,
             SpawnRadiusMin = spawnRadiusMin,
@@ -2102,11 +2147,12 @@ public partial class RougeGameManager : MonoBehaviour
         if (_bombVisuals != null)
             for (int i=0; i<MaxBombs; i++) if (_bombVisuals[i]) { Destroy(_bombVisuals[i]); _bombVisuals[i] = null; }
         if (_laserVisual) Destroy(_laserVisual);
+        if (_laserMuzzleVisual) Destroy(_laserMuzzleVisual);
         if (_laserExtraVisuals != null)
             for (int li = 0; li < _laserExtraVisuals.Length; li++)
                 if (_laserExtraVisuals[li] != null) { Destroy(_laserExtraVisuals[li]); _laserExtraVisuals[li] = null; }
         if (_tornadoMat) Destroy(_tornadoMat);
-        if (_laserMat) Destroy(_laserMat);
+        if (_laserMat && _ownsLaserMat) Destroy(_laserMat);
         if (_meleeMat) Destroy(_meleeMat);
         if (_meleeVisual) Destroy(_meleeVisual);
         if (_meleeFinisherMat) Destroy(_meleeFinisherMat);

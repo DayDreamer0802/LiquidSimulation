@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Rouge_LaserBeam
+  m_Shader: {fileID: 4800000, guid: e021425b141e2b74c9ac24c0919cd339, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _Alpha: 0.695
+    - _CoreRadius: 0.22
+    - _EdgeSoftness: 0.261
+    - _FresnelPower: 1.92
+    - _FresnelStrength: 0.59
+    - _HelixIntensity: 1.24
+    - _HelixSecondaryOffset: 1.29
+    - _HelixSpinSpeed: 14.1
+    - _HelixTightness: 48.8
+    - _HelixWidth: 0.223
+    - _NoiseStrength: 0.531
+    - _PulseSpeed: 2.4
+    - _ScrollSpeed: 24
+    m_Colors:
+    - _BeamColor: {r: 0.4716978, g: 0.74041027, b: 2, a: 1}
+    - _EdgeColor: {r: 0.04504699, g: 0.20546795, b: 1.1486983, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

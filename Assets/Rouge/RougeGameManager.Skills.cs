@@ -305,6 +305,10 @@ public partial class RougeGameManager
                 {
                     _laserVisual.SetActive(false);
                 }
+                if (_laserMuzzleVisual != null)
+                {
+                    _laserMuzzleVisual.SetActive(false);
+                }
                 for (int i = 0; i < MaxLaserSubBeams; i++)
                 {
                     if (_laserExtraVisuals[i] != null)
@@ -734,6 +738,7 @@ public partial class RougeGameManager
         if (_laserTimer <= 0f)
         {
             if (_laserVisual) _laserVisual.SetActive(false);
+            if (_laserMuzzleVisual) _laserMuzzleVisual.SetActive(false);
             for (int i = 0; i < MaxLaserSubBeams; i++)
             {
                 if (_laserExtraVisuals[i] != null)
@@ -757,6 +762,13 @@ public partial class RougeGameManager
             _laserVisual.transform.position = new Vector3(_laserPos.x + _laserDir.x * (length * 0.5f), renderHeight + 1f, _laserPos.y + _laserDir.y * (length * 0.5f));
             _laserVisual.transform.rotation = Quaternion.LookRotation(new Vector3(_laserDir.x, 0f, _laserDir.y)) * Quaternion.Euler(90f, 0f, 0f);
             _laserVisual.transform.localScale = new Vector3(width, length * 0.5f, width * 0.4f);
+        }
+
+        if (_laserMuzzleVisual)
+        {
+            _laserMuzzleVisual.SetActive(true);
+            _laserMuzzleVisual.transform.position = new Vector3(_laserPos.x + _laserDir.x * math.max(width * 0.15f, 0.08f), renderHeight + 1f, _laserPos.y + _laserDir.y * math.max(width * 0.15f, 0.08f));
+            _laserMuzzleVisual.transform.localScale = Vector3.one * math.max(width * 1.55f, 0.35f);
         }
 
         TryAddSkillArea(new RougeSkillArea

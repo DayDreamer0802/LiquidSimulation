@@ -1021,6 +1021,7 @@ MonoBehaviour:
   player: {fileID: 0}
   enemyMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   enemyMaterial: {fileID: 2100000, guid: 3ec7e767beccce043be7c3d1d3dda5ec, type: 2}
+  laserBeamMaterial: {fileID: 2100000, guid: 6104fed70fe0b2247b5a136b93c7b514, type: 2}
   enemyCount: 100000
   enemyMaxHealth: 24
   enemyRadius: 1
