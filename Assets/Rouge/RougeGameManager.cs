@@ -1606,8 +1606,8 @@ public partial class RougeGameManager : MonoBehaviour
             _expArgsBuffer,
             0,
             null,
-            ShadowCastingMode.Off,
-            false,
+            ShadowCastingMode.On,
+            true,
             gameObject.layer);
     }
 
@@ -1658,7 +1658,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         enemyMaterial.SetBuffer(PositionScaleBufferId, _positionBuffer);
         enemyMaterial.SetBuffer("_StateBuffer", _stateBuffer);
-        enemyMaterial.SetColor(BaseColorId, new Color(0.88f, 0.18f, 0.18f, 1f));
+       // enemyMaterial.SetColor(BaseColorId, new Color(0.88f, 0.18f, 0.18f, 1f));
         enemyMaterial.SetFloat(ScaleMultiplierId, enemyVisualScale);
 
         Vector3 center = player != null ? player.transform.position : transform.position;
@@ -1770,7 +1770,7 @@ public partial class RougeGameManager : MonoBehaviour
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
             EnemyMaxHealth = enemyMaxHealth * (1f + currentLevel * 0.15f),
-            EnemyRadius = math.min(enemyRadius * (1f + currentLevel * 0.05f), enemyRadius * 2.5f),
+            EnemyRadius = UnityEngine.Random.Range(0.8f, 1.2f) * enemyRadius,
             EnemyMaxSpeed = enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
             ArenaHalfExtent = arenaHalfExtent,
             SpawnRadiusMin = spawnRadiusMin,

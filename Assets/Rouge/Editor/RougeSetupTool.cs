@@ -18,8 +18,12 @@ public class RougeSetupTool
         floor.name = "Floor";
         floor.transform.localScale = new Vector3(50f, 1f, 50f);
         
-        var floorMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        floorMat.color = new Color(0.2f, 0.2f, 0.2f);
+        Shader floorShader = Shader.Find("Rouge/CosmicFloor");
+        var floorMat = new Material(floorShader != null ? floorShader : Shader.Find("Universal Render Pipeline/Lit"));
+        if (floorShader == null)
+        {
+            floorMat.color = new Color(0.2f, 0.2f, 0.2f);
+        }
         floor.GetComponent<MeshRenderer>().material = floorMat;
 
         // Setup Player
