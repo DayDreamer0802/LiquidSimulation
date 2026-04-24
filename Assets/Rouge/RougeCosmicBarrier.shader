@@ -122,22 +122,22 @@ Shader "Rouge/CosmicBarrier"
                 float time = _Time.y * _FlowSpeed;
                 float nebula = TriplanarField(input.positionWS, input.normalWS, _NoiseScale, time);
                 float nebula2 = TriplanarField(input.positionWS.zxy + 13.7, input.normalWS, _NoiseScale * 1.9, -time * 0.6);
-                float nebulaMask = saturate((nebula * 0.85 + nebula2 * 0.45 - 0.38) * 1.9 + 0.2);
+                float nebulaMask = smoothstep(0.56, 0.9, nebula * 0.72 + nebula2 * 0.28);
 
-                float stripe = 1.0 - smoothstep(0.16, 0.5, abs(frac(input.positionWS.y * _StripeScale + nebula * 0.45 + time * 0.4) - 0.5) / max(fwidth(input.positionWS.y * _StripeScale), 1e-4));
-                float crossX = 1.0 - smoothstep(0.22, 0.95, abs(frac(input.positionWS.x * 0.55 + nebula2 * 0.2) - 0.5) / max(fwidth(input.positionWS.x * 0.55), 1e-4));
-                float crossZ = 1.0 - smoothstep(0.22, 0.95, abs(frac(input.positionWS.z * 0.55 - nebula * 0.2) - 0.5) / max(fwidth(input.positionWS.z * 0.55), 1e-4));
-                float gridGlow = max(crossX, crossZ) * _IntersectionGlow;
+                float stripe = 1.0 - smoothstep(0.22, 0.56, abs(frac(input.positionWS.y * _StripeScale + nebula * 0.22 + time * 0.22) - 0.5) / max(fwidth(input.positionWS.y * _StripeScale), 1e-4));
+                float crossX = 1.0 - smoothstep(0.28, 1.0, abs(frac(input.positionWS.x * 0.48 + nebula2 * 0.08) - 0.5) / max(fwidth(input.positionWS.x * 0.48), 1e-4));
+                float crossZ = 1.0 - smoothstep(0.28, 1.0, abs(frac(input.positionWS.z * 0.48 - nebula * 0.08) - 0.5) / max(fwidth(input.positionWS.z * 0.48), 1e-4));
+                float gridGlow = max(crossX, crossZ) * _IntersectionGlow * 0.72;
 
                 float fresnel = pow(1.0 - saturate(dot(normalize(input.normalWS), normalize(input.viewDirWS))), _RimPower);
                 float3 nebulaColor = lerp(_NebulaColorA.rgb, _NebulaColorB.rgb, saturate(nebula2 * 1.15));
 
                 float3 color = _BaseColor.rgb;
-                color += nebulaColor * nebulaMask * 0.95;
-                color += _LineColor.rgb * (stripe * _StripeStrength + gridGlow);
-                color += _RimColor.rgb * (fresnel * 1.35 + nebulaMask * 0.14);
+                color += nebulaColor * nebulaMask * 0.52;
+                color += _LineColor.rgb * (stripe * _StripeStrength * 0.4 + gridGlow * 0.75);
+                color += _RimColor.rgb * (fresnel * 1.15 + nebulaMask * 0.08);
 
-                float alpha = saturate(_Opacity * (0.48 + fresnel * 0.52 + stripe * 0.18 + nebulaMask * 0.16));
+                float alpha = saturate(_Opacity * (0.42 + fresnel * 0.5 + stripe * 0.1 + nebulaMask * 0.08));
                 return half4(color, alpha);
             }
             ENDHLSL

@@ -517,6 +517,9 @@ public partial class RougeGameManager
         float lightPillarVisualDuration = lightPillar.GetValue(lightPillar.VisualDuration, lightPillarLevel);
         float lightPillarStrikeInterval = lightPillar.GetValue(lightPillar.StrikeInterval, lightPillarLevel);
         float lightPillarRingDuration = lightPillar.GetValue(lightPillar.RingDuration, lightPillarLevel);
+        float lightPillarPreImpactDuration = math.min(0.12f, math.max(0.06f, lightPillarVisualDuration * 0.3f));
+        float lightPillarBeamDuration = math.max(lightPillarVisualDuration, lightPillarPreImpactDuration + lightPillarRingDuration);
+        float lightPillarImpactProgress = lightPillarPreImpactDuration / math.max(0.01f, lightPillarBeamDuration);
 
         if (RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.LightPillarStrike) && _tornadoCooldownTimer <= 0f && TryStartSkillActivation(PlayerSkillType.LightPillarStrike))
         {
@@ -551,20 +554,23 @@ public partial class RougeGameManager
                 continue;
             }
 
-            float pillarHeightScale = math.max(42f, strikeRadius * 3.35f);
-            float pillarRadius = math.max(0.9f, strikeRadius * 0.36f);
-            _tornadoPosData[i] = new float4(strikePos.x, renderHeight + pillarHeightScale * 0.5f, strikePos.y, pillarRadius);
-            _tornadoStateData[i] = new float4(pillarRadius * 2f, pillarHeightScale, pillarRadius * 1.15f, 1f);
-            _tornadoLifeTimers[i] = lightPillarVisualDuration;
-            _tornadoMaxTimes[i] = lightPillarVisualDuration;
-            _tornadoRadiusMultipliers[i] = 0.96f + ((_pillarStrikesDone + i) % 3) * 0.035f;
+            float beamMaxRadius = math.max(0.24f, strikeRadius * 0.25f);
+            _tornadoPosData[i] = new float4(strikePos.x, renderHeight, strikePos.y, beamMaxRadius);
+            _tornadoStateData[i] = new float4(beamMaxRadius * 0.32f, math.max(28f, strikeRadius * 3.2f), beamMaxRadius * 0.28f, 1f);
+            _tornadoLifeTimers[i] = lightPillarBeamDuration;
+            _tornadoMaxTimes[i] = lightPillarBeamDuration;
+            _tornadoRadiusMultipliers[i] = 1f;
+            _tornadoImpactTriggered[i] = false;
+            _tornadoImpactProgress[i] = lightPillarImpactProgress;
+            _tornadoImpactPositions[i] = strikePos;
+            _tornadoImpactRadii[i] = strikeRadius;
+            _tornadoImpactDamages[i] = lightPillarDamage;
+            _tornadoImpactPullForces[i] = lightPillarPullForce;
+            _tornadoImpactVerticalForces[i] = lightPillarVerticalForce;
+            _tornadoImpactRingDurations[i] = lightPillarBeamDuration - lightPillarPreImpactDuration;
+            _tornadoImpactRingColors[i] = new Color(1f, 0.95f, 0.78f, 0.92f);
+            _tornadoImpactEffects[i] = lightPillarEffects;
             break;
-        }
-
-        if (TryAddCircularSkillArea(strikePos, strikeRadius, lightPillarDamage, lightPillarPullForce, lightPillarVerticalForce, lightPillarEffects))
-        {
-            SpawnImpact(strikePos, strikeRadius, strikeRadius, lightPillarRingDuration, new Color(1f, 0.9f, 0.2f, 1f));
-            SpawnAOERing(new Vector3(strikePos.x, renderHeight + 0.05f, strikePos.y), strikeRadius * 0.58f, lightPillarRingDuration * 0.68f, new Color(1f, 0.97f, 0.78f, 0.95f));
         }
 
         _pillarStrikesDone++;

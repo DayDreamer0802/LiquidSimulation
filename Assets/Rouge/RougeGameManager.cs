@@ -170,6 +170,16 @@ public partial class RougeGameManager : MonoBehaviour
     private float[] _tornadoLifeTimers = new float[MaxTornados];
     private float[] _tornadoMaxTimes = new float[MaxTornados];
     private float[] _tornadoRadiusMultipliers = new float[MaxTornados];
+    private bool[] _tornadoImpactTriggered = new bool[MaxTornados];
+    private float[] _tornadoImpactProgress = new float[MaxTornados];
+    private float2[] _tornadoImpactPositions = new float2[MaxTornados];
+    private float[] _tornadoImpactRadii = new float[MaxTornados];
+    private float[] _tornadoImpactDamages = new float[MaxTornados];
+    private float[] _tornadoImpactPullForces = new float[MaxTornados];
+    private float[] _tornadoImpactVerticalForces = new float[MaxTornados];
+    private float[] _tornadoImpactRingDurations = new float[MaxTornados];
+    private Color[] _tornadoImpactRingColors = new Color[MaxTornados];
+    private ResolvedSkillHitEffectConfig[] _tornadoImpactEffects = new ResolvedSkillHitEffectConfig[MaxTornados];
     private GraphicsBuffer _tornadoPosBuffer;
     private GraphicsBuffer _tornadoStateBuffer;
     private GraphicsBuffer _tornadoArgsBuffer;
@@ -935,7 +945,7 @@ public partial class RougeGameManager : MonoBehaviour
         {
             Shader tsh = Shader.Find("Rouge/VFXInstanced");
             _tornadoMat = new Material(tsh);
-            _tornadoMat.SetColor("_BaseColor", new Color(1f, 0.9f, 0.2f, 0.8f)); // glowing golden-yellow
+            _tornadoMat.SetColor("_BaseColor", new Color(1f, 0.98f, 0.86f, 0.82f));
             _tornadoMat.enableInstancing = true;
         }
 
@@ -1473,11 +1483,13 @@ public partial class RougeGameManager : MonoBehaviour
     private void SeedEnemies()
     {
         float2 center = player != null ? player.PlanarPosition : float2.zero;
+        float safeSpawnRadiusMax = math.max(spawnRadiusMin, math.min(spawnRadiusMax, math.max(8f, GetSafeSpawnRadius(center))));
+        float safeSpawnRadiusMin = math.min(spawnRadiusMin, safeSpawnRadiusMax * 0.78f);
         for (int i = 0; i < enemyCount; i++)
         {
             uint hash = math.hash(new uint2((uint)i + 1u, 0x9E3779B9u));
             float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
-            float distance = math.lerp(spawnRadiusMin, spawnRadiusMax, ((hash >> 16) & 0xFFFFu) / 65535f);
+            float distance = math.lerp(safeSpawnRadiusMin, safeSpawnRadiusMax, ((hash >> 16) & 0xFFFFu) / 65535f);
             float speedScale = math.lerp(0.9f, 1.15f, ((hash >> 8) & 0xFFu) / 255f);
             float2 pos = center + new float2(math.cos(angle), math.sin(angle)) * distance;
             pos.x = math.clamp(pos.x, -arenaHalfExtent + 2f, arenaHalfExtent - 2f);
@@ -1487,6 +1499,13 @@ public partial class RougeGameManager : MonoBehaviour
             _stateA[i] = new float4(enemyMaxHealth, enemyRadius, enemyMaxSpeed * speedScale, 0f);
             _effectStateA[i] = default;
         }
+    }
+
+    private float GetSafeSpawnRadius(float2 center)
+    {
+        float marginX = arenaHalfExtent - math.abs(center.x) - 2f;
+        float marginY = arenaHalfExtent - math.abs(center.y) - 2f;
+        return math.max(0f, math.min(marginX, marginY));
     }
 
     private void ResizeBulletStorage(int bulletCapacity)
@@ -2055,15 +2074,16 @@ public partial class RougeGameManager : MonoBehaviour
             }
 
             float progress = 1f - math.max(0f, _aoeRingTimers[i] / math.max(0.01f, _aoeRingMaxTimes[i]));
-            float currentRadius = _aoeRingMaxRadius[i] * math.sqrt(progress);
-            float ringHeight = 0.18f + math.sin(progress * math.PI) * 0.4f;
-            float alpha = math.sin(progress * math.PI);
+            float travel = progress * progress * (3f - 2f * progress);
+            float currentRadius = _aoeRingMaxRadius[i] * math.lerp(0.12f, 1f, travel);
+            float ringHeight = math.lerp(0.1f, 0.28f, math.sin(progress * math.PI * 0.5f));
+            float alpha = math.saturate(1f - progress * progress * 0.92f);
             Vector3 center = _aoeRingPositions[i];
             center.y = math.max(center.y, renderHeight + 0.045f);
             Matrix4x4 matrix = Matrix4x4.TRS(center, Quaternion.identity, new Vector3(currentRadius * 2f, ringHeight, currentRadius * 2f));
 
             _aoeRingPropertyBlock.Clear();
-            _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.68f, 0.92f, progress));
+            _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.82f, 0.94f, progress));
             Color color = _aoeRingColors[i];
             color.a *= alpha;
             _aoeRingPropertyBlock.SetColor("_Color", color);
@@ -2085,16 +2105,40 @@ public partial class RougeGameManager : MonoBehaviour
             {
                 _tornadoLifeTimers[i] -= dt;
                 float progress = 1f - math.max(0f, _tornadoLifeTimers[i] / _tornadoMaxTimes[i]);
-                float maxRadius = _tornadoPosData[i].w;
-                float radiusMultiplier = _tornadoRadiusMultipliers[i] > 0f ? _tornadoRadiusMultipliers[i] : 1f;
-                float appear = math.saturate(progress / 0.08f);
-                float fade = 1f - math.saturate((progress - 0.72f) / 0.28f);
-                float alpha = appear * fade;
-                float currentRadius = math.max(0.16f, maxRadius * radiusMultiplier * math.lerp(1.18f, 0.82f, progress));
-                float heightScale = math.max(40f, math.max(maxRadius * 6.5f, 48f) * math.lerp(1.08f, 0.94f, progress));
+                float beamMaxRadius = math.max(0.12f, _tornadoPosData[i].w);
+                float impactProgress = math.clamp(_tornadoImpactProgress[i], 0.08f, 0.6f);
+                float preImpact = math.saturate(progress / impactProgress);
+                float postImpact = math.saturate((progress - impactProgress) / math.max(0.001f, 1f - impactProgress));
+                float beamHeight = math.max(28f, math.max(_tornadoImpactRadii[i] * 3.2f, 34f));
+                float beamStartOffset = math.max(14f, beamHeight * 0.88f);
+                float bottomOffset = math.lerp(beamStartOffset, 0f, preImpact * preImpact * (3f - 2f * preImpact));
+                float thinRadius = math.max(0.08f, beamMaxRadius * 0.16f);
+                float currentRadius = postImpact > 0f
+                    ? math.lerp(thinRadius, beamMaxRadius, postImpact * postImpact)
+                    : thinRadius;
+                float desiredAlpha = postImpact > 0f
+                    ? math.lerp(0.98f, 0f, postImpact * postImpact)
+                    : math.lerp(0.18f, 0.98f, preImpact);
 
-                _tornadoPosData[i] = new float4(_tornadoPosData[i].x, renderHeight + heightScale * 0.5f, _tornadoPosData[i].z, maxRadius);
-                _tornadoStateData[i] = new float4(currentRadius * 2f, heightScale, currentRadius * 2f * 0.94f, alpha);
+                _tornadoPosData[i] = new float4(_tornadoPosData[i].x, renderHeight + bottomOffset + beamHeight * 0.5f, _tornadoPosData[i].z, beamMaxRadius);
+                _tornadoStateData[i] = new float4(currentRadius * 2f, beamHeight, currentRadius * 2f * 0.94f, 1f - desiredAlpha);
+
+                if (!_tornadoImpactTriggered[i] && progress >= impactProgress)
+                {
+                    _tornadoImpactTriggered[i] = true;
+                    if (TryAddCircularSkillArea(
+                        _tornadoImpactPositions[i],
+                        _tornadoImpactRadii[i],
+                        _tornadoImpactDamages[i],
+                        _tornadoImpactPullForces[i],
+                        _tornadoImpactVerticalForces[i],
+                        _tornadoImpactEffects[i]))
+                    {
+                        Vector3 impactCenter = new Vector3(_tornadoImpactPositions[i].x, renderHeight + 0.04f, _tornadoImpactPositions[i].y);
+                        SpawnAOERing(impactCenter, _tornadoImpactRadii[i], _tornadoImpactRingDurations[i], _tornadoImpactRingColors[i]);
+                        SpawnExplosionVFX(impactCenter + Vector3.up * 0.3f, math.max(0.8f, _tornadoImpactRadii[i] * 0.22f));
+                    }
+                }
                 
                 if (_activeTornadoCount != i)
                 {
@@ -2103,8 +2147,20 @@ public partial class RougeGameManager : MonoBehaviour
                     _tornadoLifeTimers[_activeTornadoCount] = _tornadoLifeTimers[i];
                     _tornadoMaxTimes[_activeTornadoCount] = _tornadoMaxTimes[i];
                     _tornadoRadiusMultipliers[_activeTornadoCount] = _tornadoRadiusMultipliers[i];
+                    _tornadoImpactTriggered[_activeTornadoCount] = _tornadoImpactTriggered[i];
+                    _tornadoImpactProgress[_activeTornadoCount] = _tornadoImpactProgress[i];
+                    _tornadoImpactPositions[_activeTornadoCount] = _tornadoImpactPositions[i];
+                    _tornadoImpactRadii[_activeTornadoCount] = _tornadoImpactRadii[i];
+                    _tornadoImpactDamages[_activeTornadoCount] = _tornadoImpactDamages[i];
+                    _tornadoImpactPullForces[_activeTornadoCount] = _tornadoImpactPullForces[i];
+                    _tornadoImpactVerticalForces[_activeTornadoCount] = _tornadoImpactVerticalForces[i];
+                    _tornadoImpactRingDurations[_activeTornadoCount] = _tornadoImpactRingDurations[i];
+                    _tornadoImpactRingColors[_activeTornadoCount] = _tornadoImpactRingColors[i];
+                    _tornadoImpactEffects[_activeTornadoCount] = _tornadoImpactEffects[i];
                     _tornadoLifeTimers[i] = 0f;
                     _tornadoRadiusMultipliers[i] = 0f;
+                    _tornadoImpactTriggered[i] = false;
+                    _tornadoImpactProgress[i] = 0f;
                 }
                 _activeTornadoCount++;
             }
@@ -2115,6 +2171,8 @@ public partial class RougeGameManager : MonoBehaviour
             _tornadoPosData[ti] = new float4(99999f, -999f, 99999f, 0f);
             _tornadoStateData[ti] = float4.zero;
             _tornadoRadiusMultipliers[ti] = 0f;
+            _tornadoImpactTriggered[ti] = false;
+            _tornadoImpactProgress[ti] = 0f;
         }
 
         _tornadoPosBuffer.SetData(_tornadoPosData);

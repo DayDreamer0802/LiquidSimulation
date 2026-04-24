@@ -55,29 +55,23 @@ Shader "Rouge/AOERing"
 
             half4 Frag(Varyings input) : SV_Target
             {
-                // Unity cylinder: radius 0.5 in XZ, height -1 to +1 in Y
                 float distFromAxis = length(input.localPos.xz);
                 float normalizedDist = distFromAxis / 0.5;
 
-                // Discard inner hollow part to create ring
                 if (normalizedDist < _InnerRadiusRatio)
                     discard;
 
-                // Ring edge glow: brighter near inner edge
                 float ringCenter = (_InnerRadiusRatio + 1.0) * 0.5;
                 float ringHalfWidth = (1.0 - _InnerRadiusRatio) * 0.5;
                 float edgeFactor = 1.0 - abs(normalizedDist - ringCenter) / max(ringHalfWidth, 0.001);
                 edgeFactor = saturate(edgeFactor);
 
-                // Height fade: bright at base, fade at top
-                float heightFactor = 1.0 - saturate(input.localPos.y * 0.8 + 0.3);
+                float heightFactor = 1.0 - saturate((input.localPos.y + 1.0) * 0.42);
+                float rim = pow(saturate(1.0 - abs(dot(normalize(input.normalWS), float3(0.0, 1.0, 0.0)))), 1.2);
+                float glow = lerp(0.72, 1.0 + _GlowIntensity * 0.24, pow(edgeFactor, 1.6));
 
-                // Animated energy lines on the ring surface
-                float energy = sin(normalizedDist * 40.0 + _Time.y * 8.0) * 0.3 + 0.7;
-                float verticalWaves = sin(input.localPos.y * 12.0 - _Time.y * 6.0) * 0.2 + 0.8;
-
-                half3 col = _Color.rgb * (1.0 + edgeFactor * _GlowIntensity) * energy * verticalWaves;
-                float alpha = _Color.a * heightFactor * pow(edgeFactor, 0.5);
+                half3 col = _Color.rgb * glow * (0.88 + rim * 0.12);
+                float alpha = _Color.a * heightFactor * pow(edgeFactor, 1.45);
 
                 return half4(col, alpha);
             }

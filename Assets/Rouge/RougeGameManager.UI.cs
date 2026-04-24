@@ -85,92 +85,97 @@ public partial class RougeGameManager
             case PlayerSkillType.LeapSmash:
                 if (_jumpState == 1)
                 {
-                    return "AIRBORNE";
+                    return FormatActiveSkillStatus("AIRBORNE", cooldown);
                 }
 
                 break;
             case PlayerSkillType.LightPillarStrike:
                 if (_pillarStrikesDone < _pillarStrikesTotal)
                 {
-                    return $"CASTING {_pillarStrikesTotal - _pillarStrikesDone}X";
+                    return FormatActiveSkillStatus($"CASTING {_pillarStrikesTotal - _pillarStrikesDone}X", cooldown);
                 }
 
                 break;
             case PlayerSkillType.BombThrow:
                 if (HasActiveBomb())
                 {
-                    return "DEPLOYED";
+                    return FormatActiveSkillStatus("DEPLOYED", cooldown);
                 }
 
                 break;
             case PlayerSkillType.LaserBeam:
                 if (_laserTimer > 0f)
                 {
-                    return $"CHANNEL {Mathf.Max(0f, _laserTimer):F1}s";
+                    return FormatActiveSkillStatus($"CHANNEL {Mathf.Max(0f, _laserTimer):F1}s", cooldown);
                 }
 
                 break;
             case PlayerSkillType.MeleeSlash:
                 if (_meleeTimer > 0f || _meleeFinisherSlamTimer > 0f || _spikeStartupTimer > 0f || _spikeTimer > 0f)
                 {
-                    return "ATTACKING";
+                    return FormatActiveSkillStatus("ATTACKING", cooldown);
                 }
 
                 break;
             case PlayerSkillType.Shockwave:
                 if (_shockwaveState == 1)
                 {
-                    return "ASCENDING";
+                    return FormatActiveSkillStatus("ASCENDING", cooldown);
                 }
 
                 if (_shockwaveState == 2)
                 {
-                    return "SLAMMING";
+                    return FormatActiveSkillStatus("SLAMMING", cooldown);
                 }
 
                 break;
             case PlayerSkillType.MeteorRain:
                 if (_meteorTimer > 0f)
                 {
-                    return $"RAINING {Mathf.Max(0f, _meteorTimer):F1}s";
+                    return FormatActiveSkillStatus($"RAINING {Mathf.Max(0f, _meteorTimer):F1}s", cooldown);
                 }
 
                 break;
             case PlayerSkillType.IceZone:
                 if (_iceZoneTimer > 0f)
                 {
-                    return $"ACTIVE {Mathf.Max(0f, _iceZoneTimer):F1}s";
+                    return FormatActiveSkillStatus($"ACTIVE {Mathf.Max(0f, _iceZoneTimer):F1}s", cooldown);
                 }
 
                 break;
             case PlayerSkillType.PoisonBottle:
                 if (HasActivePoisonState())
                 {
-                    return "ACTIVE";
+                    return FormatActiveSkillStatus("ACTIVE", cooldown);
                 }
 
                 break;
             case PlayerSkillType.Dash:
                 if (_dashSpinTimer > 0f)
                 {
-                    return $"SPINNING {Mathf.Max(0f, _dashSpinTimer):F1}s";
+                    return FormatActiveSkillStatus($"SPINNING {Mathf.Max(0f, _dashSpinTimer):F1}s", cooldown);
                 }
 
                 break;
             case PlayerSkillType.Skateboard:
                 switch (_skatePhase)
                 {
-                    case 1: return "JUMP";
-                    case 2: return "LANDING";
-                    case 3: return $"RIDING {Mathf.Max(0f, _skateRideTimer):F1}s";
-                    case 4: return "TRICK";
-                    case 5: return "SLAM";
+                    case 1: return FormatActiveSkillStatus("JUMP", cooldown);
+                    case 2: return FormatActiveSkillStatus("LANDING", cooldown);
+                    case 3: return FormatActiveSkillStatus($"RIDING {Mathf.Max(0f, _skateRideTimer):F1}s", cooldown);
+                    case 4: return FormatActiveSkillStatus("TRICK", cooldown);
+                    case 5: return FormatActiveSkillStatus("SLAM", cooldown);
                 }
 
                 break;
         }
 
         return cooldown <= 0.05f ? "READY" : $"CD: {cooldown:F1}s";
+    }
+
+    private static string FormatActiveSkillStatus(string activeStatus, float cooldown)
+    {
+        return cooldown <= 0.05f ? activeStatus : $"{activeStatus} | CD {cooldown:F1}s";
     }
 
     private bool HasActivePoisonState()

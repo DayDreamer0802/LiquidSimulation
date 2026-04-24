@@ -157,32 +157,24 @@ Shader "Rouge/CosmicFloor"
                 float2 nebulaUvB = input.positionWS.zx * (_NebulaScale * 1.7) + float2(-time * _NebulaSpeed * 0.5, time * _NebulaSpeed * 0.22);
                 float nebulaA = Fbm(nebulaUvA);
                 float nebulaB = Fbm(nebulaUvB);
-                float nebulaField = saturate((nebulaA * 0.75 + nebulaB * 0.45 - 0.42) * 1.9 + 0.5);
-                float nebulaVein = saturate((nebulaA - nebulaB) * 0.65 + 0.45);
-                float nebulaMask = saturate(pow(nebulaField, 2.6) * 0.8 + pow(nebulaVein, 4.0) * 0.12);
+                float nebulaField = saturate((nebulaA * 0.7 + nebulaB * 0.38 - 0.48) * 1.25 + 0.42);
+                float nebulaVein = saturate((nebulaA - nebulaB) * 0.28 + 0.5);
+                float nebulaMask = smoothstep(0.58, 0.9, nebulaField) * 0.52 + smoothstep(0.82, 0.97, nebulaVein) * 0.06;
 
                 float minorGrid = GridLine(worldXZ, _LineWidth);
                 float2 majorUv = worldXZ / max(_MajorGridEvery, 1.0);
                 float majorGrid = GridLine(majorUv, _MajorLineWidth);
-                float macroGrid = GridLine(input.positionWS.xz * 0.055, 0.045);
+                float macroGrid = GridLine(input.positionWS.xz * 0.05, 0.04);
 
                 float stars = StarField(input.positionWS.xz * 0.22 + float2(time * 0.01, 0.0));
-                stars += StarField(input.positionWS.xz * 0.37 - float2(time * 0.015, time * 0.01)) * 0.65;
-                stars *= 0.45 + smoothstep(25.0, 90.0, length(input.positionWS.xz));
+                stars *= 0.38 + smoothstep(25.0, 90.0, length(input.positionWS.xz)) * 0.32;
 
                 float radial = length(input.positionWS.xz);
-                float centerDisc = exp(-radial * 0.18) * _CenterGlow;
-                float centerRing = Ring(radial, 6.0, 0.18) * 0.45 * _CenterGlow;
-                float outerRing = Ring(radial, 10.5, 0.22) * 0.22 * _CenterGlow;
-                float axisX = 1.0 - smoothstep(0.015, 0.09, abs(input.positionWS.x));
-                float axisZ = 1.0 - smoothstep(0.015, 0.09, abs(input.positionWS.z));
-                float angle = atan2(input.positionWS.z, input.positionWS.x);
-                float spokeMask = pow(saturate(cos(angle * 4.0) * 0.5 + 0.5), 18.0);
-                float spokes = spokeMask * smoothstep(1.4, 3.5, radial) * (1.0 - smoothstep(9.5, 12.0, radial)) * 0.22;
-
-                float beamX = pow(saturate(sin(input.positionWS.x * 0.085 + time * 0.22) * 0.5 + 0.5), 14.0);
-                float beamZ = pow(saturate(cos(input.positionWS.z * 0.075 - time * 0.18) * 0.5 + 0.5), 16.0);
-                float beams = (beamX * 0.16 + beamZ * 0.12) * _ScanStrength;
+                float centerDisc = exp(-radial * 0.18) * _CenterGlow * 0.72;
+                float centerRing = Ring(radial, 6.0, 0.16) * 0.34 * _CenterGlow;
+                float outerRing = Ring(radial, 10.5, 0.2) * 0.14 * _CenterGlow;
+                float axisX = 1.0 - smoothstep(0.018, 0.08, abs(input.positionWS.x));
+                float axisZ = 1.0 - smoothstep(0.018, 0.08, abs(input.positionWS.z));
 
                 float fresnel = pow(1.0 - saturate(dot(normalize(input.normalWS), normalize(input.viewDirWS))), 2.8);
                 float vignette = saturate(1.0 - radial * 0.009 * _VignetteStrength);
@@ -190,8 +182,8 @@ Shader "Rouge/CosmicFloor"
                 float3 nebulaColor = lerp(_NebulaColorA.rgb, _NebulaColorB.rgb, saturate(nebulaB * 1.2));
                 float3 color = _BaseColor.rgb;
                 color += nebulaColor * nebulaMask * _NebulaStrength;
-                color += _GridColor.rgb * (minorGrid * 0.42 + majorGrid * 1.25 + macroGrid * 0.1);
-                color += _AccentColor.rgb * (stars * _StarBrightness + centerDisc + centerRing + outerRing + (axisX + axisZ) * 0.18 + spokes + beams + fresnel * 0.16);
+                color += _GridColor.rgb * (minorGrid * 0.34 + majorGrid * 1.05 + macroGrid * 0.04);
+                color += _AccentColor.rgb * (stars * _StarBrightness + centerDisc + centerRing + outerRing + (axisX + axisZ) * 0.16 + fresnel * 0.12);
                 color *= vignette;
 
                 return half4(color, 1.0);

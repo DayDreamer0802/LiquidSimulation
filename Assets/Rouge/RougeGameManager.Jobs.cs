@@ -1350,7 +1350,9 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     {
         uint hash = math.hash(new uint2((uint)index + FrameSeed, FrameSeed ^ 0xA511E9B3u));
         float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
-        float distance = math.lerp(SpawnRadiusMin, SpawnRadiusMax, ((hash >> 16) & 0xFFFFu) / 65535f);
+        float safeSpawnRadius = math.max(SpawnRadiusMin, math.min(SpawnRadiusMax, math.max(8f, math.min(ArenaHalfExtent - math.abs(PlayerPos.x) - 2f, ArenaHalfExtent - math.abs(PlayerPos.y) - 2f))));
+        float safeSpawnRadiusMin = math.min(SpawnRadiusMin, safeSpawnRadius * 0.78f);
+        float distance = math.lerp(safeSpawnRadiusMin, safeSpawnRadius, ((hash >> 16) & 0xFFFFu) / 65535f);
         float speedScale = math.lerp(0.9f, 1.15f, ((hash >> 8) & 0xFFu) / 255f);
         float2 spawn = PlayerPos + new float2(math.cos(angle), math.sin(angle)) * distance;
         spawn.x = math.clamp(spawn.x, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
