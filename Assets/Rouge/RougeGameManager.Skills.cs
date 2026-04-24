@@ -1909,6 +1909,77 @@ public partial class RougeGameManager
         return invT * invT * a + 2f * invT * t * b + t * t * c;
     }
 
+    private void EvaluateSkateboardTrickPose(
+        int variant,
+        float normalizedTime,
+        float jumpHeight,
+        Vector3 boardScale,
+        out Vector3 playerPos,
+        out Vector3 playerForward,
+        out Vector3 boardPos,
+        out Quaternion boardRotation)
+    {
+        float t = math.saturate(normalizedTime);
+        float moveT = t * t * (3f - 2f * t);
+        Vector3 forward = new Vector3(_skateActionDirection.x, 0f, _skateActionDirection.y);
+        Vector3 right = new Vector3(forward.z, 0f, -forward.x);
+        float jumpArc = math.sin(t * math.PI) * jumpHeight * 0.8f;
+        float yaw = GetSkateboardYaw(_skateActionDirection);
+
+        playerPos = Vector3.Lerp(_skateTrickOrigin, _skateTrickEnd, moveT);
+        playerPos.y = renderHeight + jumpArc;
+        playerForward = forward;
+        boardPos = playerPos;
+        boardRotation = Quaternion.Euler(0f, yaw, 0f);
+
+        switch (variant)
+        {
+            case 1:
+            {
+                float sideArc = math.sin(t * math.PI);
+                float weave = math.sin(t * math.PI * 2f);
+                playerPos += right * (sideArc * 1.35f);
+                playerForward = Vector3.Slerp(forward, (forward + right * 0.6f).normalized, sideArc * 0.65f);
+                boardPos = playerPos - forward * 0.3f + right * (weave * 0.65f);
+                boardPos.y = renderHeight + 0.18f + jumpArc * 0.72f + sideArc * 0.25f;
+                boardRotation = Quaternion.Euler(-15f + sideArc * 85f, yaw + t * 900f, -105f * sideArc);
+                break;
+            }
+            case 2:
+            {
+                float bodySpin = math.sin(t * math.PI) * 0.9f;
+                float weave = math.sin(t * math.PI * 2f);
+                playerPos += right * (weave * 0.9f);
+                playerForward = (Quaternion.Euler(0f, weave * 32f, 0f) * forward).normalized;
+                boardPos = playerPos + forward * 0.4f + right * (weave * 0.55f);
+                boardPos.y = renderHeight + 0.16f + jumpArc * 0.52f + bodySpin * 0.24f;
+                boardRotation = Quaternion.Euler(22f * bodySpin, yaw + t * 1080f, 28f * weave);
+                break;
+            }
+            default:
+            {
+                boardPos = playerPos - forward * 0.85f;
+                boardPos.y = renderHeight + 0.14f + jumpArc * 0.55f;
+                boardRotation = Quaternion.Euler(0f, yaw + t * 540f, 55f * math.sin(t * math.PI));
+                break;
+            }
+        }
+
+        boardPos = ClampSkateboardWorldPosition(boardPos);
+        boardPos.y = Mathf.Max(boardPos.y, renderHeight + boardScale.y * 0.35f);
+        playerForward = playerForward.sqrMagnitude > 0.001f ? playerForward.normalized : forward;
+    }
+
+    private static Quaternion EvaluateSkateboardFinaleRotation(Vector3 finaleForward, float normalizedTime)
+    {
+        float t = math.saturate(normalizedTime);
+        Vector3 liftedForward = (finaleForward + Vector3.up * 0.72f).normalized;
+        Vector3 slamForward = (finaleForward - Vector3.up).normalized;
+        Vector3 lookDirection = Vector3.Slerp(liftedForward, slamForward, t * t * (3f - 2f * t));
+        float roll = Mathf.Lerp(26f, -6f, t);
+        return Quaternion.LookRotation(lookDirection, Vector3.up) * Quaternion.Euler(0f, 0f, roll);
+    }
+
     // =====================================================================
     //  SKATEBOARD SKILL  (Right Mouse Button)
     //
@@ -1957,6 +2028,7 @@ public partial class RougeGameManager
         ResolvedSkillHitEffectConfig rideFx = cfg.RideEffects.Resolve(lvl, cfg.MaxLevel);
         Vector3 boardScale = GetSkateboardVisualScale();
         float rideTurnRate = 220f;
+        float launchForwardDistance = math.max(rideSpeed * math.max(initJumpDur, 0.08f) * 0.45f, 1.25f);
         float trickForwardDistance = math.max(rideSpeed * trickDur * 0.75f, 3.25f);
         float finaleForwardDistance = math.max(rideSpeed * finaleDur * 0.8f, 5.75f);
         float finaleBoardForwardOffset = math.max(boardScale.z * 0.42f, 1.6f);
@@ -1979,10 +2051,14 @@ public partial class RougeGameManager
             _skateBoardPos      = context.PlayerPosition;
             _skateMoveDirection = ResolveSkateboardDirection(context);
             _skateActionDirection = _skateMoveDirection;
+            Vector3 launchForward = new Vector3(_skateMoveDirection.x, 0f, _skateMoveDirection.y);
+            _skateLaunchEnd     = ClampSkateboardWorldPosition(_skateOriginPos + launchForward * launchForwardDistance);
+            _skateLaunchEnd.y   = renderHeight;
             _skateBoardVelocity = (Vector2)_skateMoveDirection * (rideSpeed * 0.35f);
             _skateBoardRotYaw   = GetSkateboardYaw(_skateMoveDirection);
             _skateTrickOrigin   = _skateOriginPos;
             _skateTrickEnd      = _skateOriginPos;
+            _skateTrickVariant  = 2;
             _invincibilityTimer = math.max(_invincibilityTimer, initJumpDur + landDur + 0.1f);
         }
 
@@ -1994,17 +2070,19 @@ public partial class RougeGameManager
         if (_skatePhase == 1)
         {
             float t  = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, initJumpDur));
+            float moveT = t * t * (3f - 2f * t);
             float yh = math.sin(t * math.PI) * jumpH;
-            Vector3 pos  = _skateOriginPos;
+            Vector3 pos  = Vector3.Lerp(_skateOriginPos, _skateLaunchEnd, moveT);
             pos.y = renderHeight + yh;
             player.transform.position = pos;
             player.SuppressMovement   = true;
+            player.transform.forward = new Vector3(_skateMoveDirection.x, 0f, _skateMoveDirection.y);
             _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
 
             // 滑板在玩家脚下旋转
             _skateBoardRotYaw += 360f * dt * 2.5f;
             _skateBoardVisual.SetActive(true);
-            _skateBoardVisual.transform.position   = new Vector3(_skateOriginPos.x, renderHeight + 0.12f, _skateOriginPos.z);
+            _skateBoardVisual.transform.position   = new Vector3(pos.x, renderHeight + 0.12f + yh * 0.18f, pos.z);
             _skateBoardVisual.transform.rotation   = Quaternion.Euler(0f, _skateBoardRotYaw, 0f);
             _skateBoardVisual.transform.localScale  = boardScale;
 
@@ -2021,8 +2099,9 @@ public partial class RougeGameManager
         // ── Phase 2: 落地踩板 ─────────────────────────────────────────────
         if (_skatePhase == 2)
         {
-            player.transform.position = new Vector3(_skateOriginPos.x, renderHeight, _skateOriginPos.z);
+            player.transform.position = new Vector3(_skateLaunchEnd.x, renderHeight, _skateLaunchEnd.z);
             player.SuppressMovement   = true;
+            player.transform.forward = new Vector3(_skateMoveDirection.x, 0f, _skateMoveDirection.y);
             _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
 
             // 滑板旋转减速停止
@@ -2030,7 +2109,7 @@ public partial class RougeGameManager
             float spinRate       = math.lerp(360f * 2.5f, 0f, stopT * stopT);
             _skateBoardRotYaw   += spinRate * dt;
             _skateBoardVisual.SetActive(true);
-            _skateBoardVisual.transform.position   = new Vector3(_skateOriginPos.x, renderHeight + 0.12f, _skateOriginPos.z);
+            _skateBoardVisual.transform.position   = new Vector3(_skateLaunchEnd.x, renderHeight + 0.12f, _skateLaunchEnd.z);
             _skateBoardVisual.transform.rotation   = Quaternion.Euler(0f, _skateBoardRotYaw, 0f);
             _skateBoardVisual.transform.localScale  = boardScale;
 
@@ -2060,6 +2139,7 @@ public partial class RougeGameManager
             {
                 _skatePhase      = 4;
                 _skatePhaseTimer = trickDur;
+                _skateTrickVariant = (_skateTrickVariant + 1) % 3;
                 _skateTrickOrigin = ClampSkateboardWorldPosition(player.transform.position);
                 float2 boardVelocityDir = math.normalizesafe(new float2(_skateBoardVelocity.x, _skateBoardVelocity.y), _skateMoveDirection);
                 _skateActionDirection = math.normalizesafe(boardVelocityDir, _skateMoveDirection);
@@ -2112,25 +2192,18 @@ public partial class RougeGameManager
         {
             _skateRideTimer -= dt;
             float t    = 1f - math.saturate(_skatePhaseTimer / math.max(0.001f, trickDur));
-            float moveT = t * t * (3f - 2f * t);
-            float yh   = math.sin(t * math.PI) * jumpH * 0.8f;
-            Vector3 pos= Vector3.Lerp(_skateTrickOrigin, _skateTrickEnd, moveT);
-            pos.y      = renderHeight + yh;
+            EvaluateSkateboardTrickPose(_skateTrickVariant, t, jumpH, boardScale, out Vector3 pos, out Vector3 trickFacing, out Vector3 boardPos, out Quaternion boardRotation);
             player.transform.position = pos;
             player.SuppressMovement   = true;
-            Vector3 trickForward = new Vector3(_skateActionDirection.x, 0f, _skateActionDirection.y);
-            player.transform.forward = trickForward;
+            player.transform.forward = trickFacing;
             _invincibilityTimer       = math.max(_invincibilityTimer, dt + 0.05f);
 
-            // 二段动作锁住起跳前方向，玩家和滑板一起向前跳
-            _skateBoardRotYaw = GetSkateboardYaw(_skateActionDirection) + t * 540f;
-            Vector3 boardPos = pos - trickForward * 0.85f;
-            boardPos.y = renderHeight + 0.14f + yh * 0.55f;
             _skateBoardVisual.SetActive(true);
             _skateBoardVisual.transform.position  = boardPos;
-            _skateBoardVisual.transform.rotation  = Quaternion.Euler(0f, _skateBoardRotYaw, 45f * math.sin(t * math.PI));
+            _skateBoardVisual.transform.rotation  = boardRotation;
             _skateBoardVisual.transform.localScale = boardScale;
             _skateBoardPos = new float2(boardPos.x, boardPos.z);
+            _skateBoardRotYaw = boardRotation.eulerAngles.y;
             AddSkateboardContactArea(_skateBoardPos, rideHitRadius * 0.95f, rideHitDps, rideFx);
 
             if (_skatePhaseTimer <= 0f)
@@ -2174,7 +2247,7 @@ public partial class RougeGameManager
             Vector3 boardEnd = _skateFinaleEnd + finaleForward * finaleBoardForwardOffset;
             Vector3 boardControl = Vector3.Lerp(boardStart, boardEnd, 0.5f) + Vector3.up * (jumpH + 1.4f);
             Vector3 boardPos = EvaluateQuadraticBezier(boardStart, boardControl, boardEnd, moveT);
-            Quaternion boardRot = Quaternion.LookRotation(finaleForward) * Quaternion.Euler(Mathf.Lerp(-65f, 120f, moveT), 0f, 0f);
+            Quaternion boardRot = EvaluateSkateboardFinaleRotation(finaleForward, moveT);
             _skateBoardVisual.SetActive(true);
             _skateBoardVisual.transform.position   = boardPos;
             _skateBoardVisual.transform.rotation   = boardRot;

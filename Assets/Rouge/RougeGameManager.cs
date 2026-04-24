@@ -315,11 +315,13 @@ public partial class RougeGameManager : MonoBehaviour
     private Vector2 _skateBoardVelocity;
     private float _skateBoardRotYaw;
     private Vector3 _skateOriginPos;
+    private Vector3 _skateLaunchEnd;
     private Vector3 _skateTrickOrigin;
     private Vector3 _skateTrickEnd;
     private float2  _skateBoardPos;
     private float2 _skateMoveDirection;
     private float2 _skateActionDirection;
+    private int _skateTrickVariant;
     private bool  _skatePendingEnd;
     private bool  _skateSlamFired;
     private Vector3 _skateFinaleStart;

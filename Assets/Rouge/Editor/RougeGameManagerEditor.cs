@@ -37,6 +37,7 @@ public class RougeGameManagerEditor : Editor
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("PoisonBottle"), "Poison Bottle");
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("Dash"), "Whirlwind");
             DrawSkillConfig(skillConfigProperty.FindPropertyRelative("OrbitBall"), "Orbit Ball");
+            DrawSkillConfig(skillConfigProperty.FindPropertyRelative("Skateboard"), "Skateboard");
         }
 
         serializedObject.ApplyModifiedProperties();
