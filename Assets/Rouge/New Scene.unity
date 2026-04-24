@@ -2784,19 +2784,19 @@ MonoBehaviour:
         ExecutionType: 0
         SustainPriority: 0
       Effects:
-        Tags: 0
+        Tags: 3
         KnockbackCenter: 0
         KnockbackForce:
-          x: 0
-          y: 0
+          x: 30
+          y: 30
           z: 0
         LaunchHeight:
-          x: 0
-          y: 0
+          x: 12
+          y: 12
           z: 0
         LaunchLandingRadius:
-          x: 0
-          y: 0
+          x: 2
+          y: 2
           z: 0
         PoisonSpreadRadius:
           x: 0
