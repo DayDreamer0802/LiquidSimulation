@@ -36,8 +36,9 @@ public partial class RougeGameManager
             PlayerSkillProgressBinding binding = PlayerSkillCatalog.ProgressionBindings[i];
             int progressionIndex = binding.ProgressionIndex;
             PlayerSkillDefinition definition = skillConfig.GetDefinition(binding.Type);
+            string displayName = string.IsNullOrWhiteSpace(binding.DisplayNameOverride) ? definition.DisplayName : binding.DisplayNameOverride;
             string disabledSuffix = IsSkillEnabled(binding.Type) ? string.Empty : " [OFF]";
-            sb.AppendLine($"{binding.ShortLabel}: {definition.DisplayName} Lv{_skillLevels[progressionIndex]} ({_skillTotalKills[progressionIndex]}){disabledSuffix}");
+            sb.AppendLine($"{binding.ShortLabel}: {displayName} Lv{_skillLevels[progressionIndex]} ({_skillTotalKills[progressionIndex]}){disabledSuffix}");
         }
     }
 

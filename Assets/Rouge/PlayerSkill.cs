@@ -184,16 +184,18 @@ public readonly struct PlayerSkillDefinition
 
 public readonly struct PlayerSkillProgressBinding
 {
-    public PlayerSkillProgressBinding(PlayerSkillType type, int progressionIndex, string shortLabel)
+    public PlayerSkillProgressBinding(PlayerSkillType type, int progressionIndex, string shortLabel, string displayNameOverride = null)
     {
         Type = type;
         ProgressionIndex = progressionIndex;
         ShortLabel = shortLabel;
+        DisplayNameOverride = displayNameOverride;
     }
 
     public PlayerSkillType Type { get; }
     public int ProgressionIndex { get; }
     public string ShortLabel { get; }
+    public string DisplayNameOverride { get; }
 }
 
 public readonly struct SkillUpdateContext
@@ -756,10 +758,10 @@ public static class PlayerSkillCatalog
 
     public static readonly PlayerSkillProgressBinding[] ProgressionBindings =
     {
-        new PlayerSkillProgressBinding(PlayerSkillType.LightPillarStrike, 0, "LPL"),
-        new PlayerSkillProgressBinding(PlayerSkillType.BombThrow, 1, "BMB"),
-        new PlayerSkillProgressBinding(PlayerSkillType.LaserBeam, 2, "LSR"),
-        new PlayerSkillProgressBinding(PlayerSkillType.MeleeSlash, 3, "MLR"),
+        new PlayerSkillProgressBinding(PlayerSkillType.LightPillarStrike, 0, "Q"),
+        new PlayerSkillProgressBinding(PlayerSkillType.LeapSmash, 1, "SP"),
+        new PlayerSkillProgressBinding(PlayerSkillType.LaserBeam, 2, "E"),
+        new PlayerSkillProgressBinding(PlayerSkillType.MeleeSlash, 3, "LC/R", "Melee Slash + Shockwave"),
         new PlayerSkillProgressBinding(PlayerSkillType.OrbitBall, 4, "ORB"),
         new PlayerSkillProgressBinding(PlayerSkillType.AutoShoot, 5, "BLT")
     };

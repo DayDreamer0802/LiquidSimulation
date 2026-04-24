@@ -23,6 +23,7 @@ public partial class RougeGameManager
         UpdatePoisonBottleSkill(context);
         UpdateDashSkill(context);
         UpdateSkateboardSkill(context);
+        SyncPlayerMovementSuppression();
         RefreshActiveSustainedSkill();
     }
 
@@ -199,6 +200,15 @@ public partial class RougeGameManager
             return false;
         }
 
+        if (_skatePhase != 0 && type != PlayerSkillType.MeleeSlash && type != PlayerSkillType.Skateboard)
+        {
+            SkillExecutionType skateboardLockedExecutionType = GetSkillExecutionType(type);
+            if (skateboardLockedExecutionType != SkillExecutionType.Instant)
+            {
+                return false;
+            }
+        }
+
         SkillPresentationConfig presentation = GetPresentationConfig(type);
         if (presentation == null)
         {
@@ -367,7 +377,9 @@ public partial class RougeGameManager
                 _skatePhase      = 0;
                 _skatePhaseTimer = 0f;
                 _skateRideTimer  = 0f;
+                _dashSpinTimer   = 0f;
                 if (_skateBoardVisual != null) _skateBoardVisual.SetActive(false);
+                if (_dashVisual != null) _dashVisual.SetActive(false);
                 if (player != null) player.SuppressMovement = false;
                 break;
         }
@@ -413,6 +425,16 @@ public partial class RougeGameManager
         }
 
         return Mathf.Max(0, presentation.SustainPriority) > _activeSustainedSkillPriority;
+    }
+
+    private void SyncPlayerMovementSuppression()
+    {
+        if (player == null)
+        {
+            return;
+        }
+
+        player.SuppressMovement = _dashSpinTimer > 0f || _jumpState == 1 || _shockwaveState != 0 || _skatePhase != 0;
     }
 
     private void SpawnImpact(float2 position, float explosionRadius, float ringRadius, float ringDuration, Color ringColor, float heightOffset = 1f)
@@ -529,16 +551,20 @@ public partial class RougeGameManager
                 continue;
             }
 
-            _tornadoPosData[i] = new float4(strikePos.x, renderHeight + 30f, strikePos.y, strikeRadius);
-            _tornadoStateData[i] = new float4(strikeRadius, 60f, strikeRadius, 1f);
+            float pillarHeightScale = math.max(42f, strikeRadius * 3.35f);
+            float pillarRadius = math.max(0.9f, strikeRadius * 0.36f);
+            _tornadoPosData[i] = new float4(strikePos.x, renderHeight + pillarHeightScale * 0.5f, strikePos.y, pillarRadius);
+            _tornadoStateData[i] = new float4(pillarRadius * 2f, pillarHeightScale, pillarRadius * 1.15f, 1f);
             _tornadoLifeTimers[i] = lightPillarVisualDuration;
             _tornadoMaxTimes[i] = lightPillarVisualDuration;
+            _tornadoRadiusMultipliers[i] = 0.96f + ((_pillarStrikesDone + i) % 3) * 0.035f;
             break;
         }
 
         if (TryAddCircularSkillArea(strikePos, strikeRadius, lightPillarDamage, lightPillarPullForce, lightPillarVerticalForce, lightPillarEffects))
         {
             SpawnImpact(strikePos, strikeRadius, strikeRadius, lightPillarRingDuration, new Color(1f, 0.9f, 0.2f, 1f));
+            SpawnAOERing(new Vector3(strikePos.x, renderHeight + 0.05f, strikePos.y), strikeRadius * 0.58f, lightPillarRingDuration * 0.68f, new Color(1f, 0.97f, 0.78f, 0.95f));
         }
 
         _pillarStrikesDone++;
@@ -1664,6 +1690,7 @@ public partial class RougeGameManager
     private void UpdateDashSkill(SkillUpdateContext context)
     {
         DashSkillConfig dash = skillConfig.Dash;
+        SkateboardSkillConfig skateboard = skillConfig.Skateboard;
         int dashLevel = currentLevel;
         ResolvedSkillHitEffectConfig dashEffects = dash.Effects.Resolve(dashLevel, dash.MaxLevel);
         float dashCooldown = dash.GetValue(dash.Cooldown, dashLevel);
@@ -1681,8 +1708,33 @@ public partial class RougeGameManager
         float dashPullForce = 0f;
         float dashVerticalForce = 0f;
         float dashRingDuration = dash.GetValue(dash.RingDuration, dashLevel);
+        float skateboardJumpHeight = skateboard.GetValue(skateboard.JumpHeight, dashLevel);
+        float skateboardRideSpeed = skateboard.GetValue(skateboard.RideSpeed, dashLevel) * 2f;
+        float skateboardWhirlwindDuration = math.min(dashDuration, math.max(0.38f, skateboard.GetValue(skateboard.TrickDuration, dashLevel) * 0.9f));
+        float skateboardWhirlwindDistance = math.max(skateboardRideSpeed * skateboardWhirlwindDuration * 0.55f, 3.2f);
+        float skateboardWhirlwindSpinDegrees = 720f;
+        bool dashPressed = RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Dash);
 
-        if (_dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && RougeInputManager.Instance.WasPressedThisFrame(RougeInputBinding.Dash) && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
+        if (_dashSpinTimer <= 0f && _skatePhase == 3 && dashPressed && _dashCooldownTimer <= 0f && player != null)
+        {
+            _dashCooldownTimer = dashCooldown;
+            _dashSpinTimer = skateboardWhirlwindDuration;
+            _dashSpinAngle = 0f;
+            _dashStartPosition = player.transform.position;
+            float2 boardDirection = math.normalizesafe(new float2(_skateBoardVelocity.x, _skateBoardVelocity.y), _skateMoveDirection);
+            _dashDirection = math.normalizesafe(boardDirection, new float2(0f, 1f));
+            float2 startPlanar = new float2(_dashStartPosition.x, _dashStartPosition.z);
+            float2 endPlanar = startPlanar + _dashDirection * skateboardWhirlwindDistance;
+            endPlanar.x = math.clamp(endPlanar.x, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            endPlanar.y = math.clamp(endPlanar.y, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+            _dashTargetPosition = new Vector3(endPlanar.x, renderHeight, endPlanar.y);
+            _skatePhase = 6;
+            _skatePhaseTimer = skateboardWhirlwindDuration;
+            _skateActionDirection = _dashDirection;
+            _invincibilityTimer = math.max(_invincibilityTimer, dashInvincibilityDuration);
+        }
+
+        if (_skatePhase == 0 && _dashSpinTimer <= 0f && CanStartMovementSkill(PlayerSkillType.Dash) && dashPressed && _dashCooldownTimer <= 0f && _jumpState == 0 && player != null && TryStartSkillActivation(PlayerSkillType.Dash))
         {
             _dashCooldownTimer = dashCooldown;
             _dashSpinTimer = dashDuration;
@@ -1708,38 +1760,78 @@ public partial class RougeGameManager
             return;
         }
 
+        bool isSkateboardWhirlwind = _skatePhase == 6;
+        float activeDashDuration = isSkateboardWhirlwind ? skateboardWhirlwindDuration : dashDuration;
         float previousTimer = _dashSpinTimer;
         _dashSpinTimer = math.max(0f, _dashSpinTimer - context.DeltaTime);
-        float previousProgress = 1f - previousTimer / math.max(0.01f, dashDuration);
-        float currentProgress = 1f - _dashSpinTimer / math.max(0.01f, dashDuration);
-        float previousTravel = EvaluateWhirlwindTravel(previousProgress);
+        float previousProgress = 1f - previousTimer / math.max(0.01f, activeDashDuration);
+        float currentProgress = 1f - _dashSpinTimer / math.max(0.01f, activeDashDuration);
         float currentTravel = EvaluateWhirlwindTravel(currentProgress);
-        Vector3 newPosition = Vector3.Lerp(_dashStartPosition, _dashTargetPosition, currentTravel);
-        player.transform.position = newPosition;
-        _invincibilityTimer = math.max(_invincibilityTimer, context.DeltaTime + 0.02f);
 
         float spinFactor = EvaluateWhirlwindSpinFactor(currentProgress);
-        _dashSpinAngle += dashMaxSpinRate * spinFactor * context.DeltaTime;
+        if (isSkateboardWhirlwind)
+        {
+            _dashSpinAngle = currentProgress * skateboardWhirlwindSpinDegrees;
+        }
+        else
+        {
+            _dashSpinAngle += dashMaxSpinRate * spinFactor * context.DeltaTime;
+        }
         _meleeHitShake = math.max(_meleeHitShake, 0.014f + spinFactor * 0.018f);
         _cameraFovOffset = math.max(_cameraFovOffset, 0.65f + spinFactor * 1.2f);
 
-        Quaternion spinRotation = Quaternion.AngleAxis(_dashSpinAngle, Vector3.up);
-        Vector3 bladeForward = spinRotation * new Vector3(_dashDirection.x, 0f, _dashDirection.y);
-        if (bladeForward.sqrMagnitude < 0.0001f)
+        Vector3 newPosition;
+        Vector3 bladeForward;
+        Vector3 bladeCenter;
+        if (isSkateboardWhirlwind)
         {
-            bladeForward = Vector3.forward;
+            Vector3 boardScale = GetSkateboardVisualScale();
+            EvaluateSkateboardWhirlwindPose(currentTravel, currentProgress, skateboardJumpHeight, _dashSpinAngle, boardScale, out newPosition, out Vector3 playerFacing, out Vector3 boardPosition, out Quaternion boardVisualRotation);
+            player.transform.position = newPosition;
+            player.transform.forward = playerFacing;
+            player.SuppressMovement = true;
+            EnsureSkateboardVisual();
+            _skateBoardPos = new float2(boardPosition.x, boardPosition.z);
+            _skateBoardRotYaw = boardVisualRotation.eulerAngles.y;
+            _skateBoardVisual.SetActive(true);
+            _skateBoardVisual.transform.position = boardPosition;
+            _skateBoardVisual.transform.rotation = boardVisualRotation;
+            _skateBoardVisual.transform.localScale = boardScale;
+            bladeForward = math.lengthsq(new float2(boardPosition.x - newPosition.x, boardPosition.z - newPosition.z)) > 0.0001f
+                ? new Vector3(boardPosition.x - newPosition.x, 0f, boardPosition.z - newPosition.z).normalized
+                : playerFacing;
+            bladeCenter = Vector3.Lerp(newPosition, boardPosition, 0.82f);
+            _skateRideTimer = math.max(0f, _skateRideTimer - context.DeltaTime);
+            if (_dashVisual != null)
+            {
+                _dashVisual.SetActive(false);
+            }
+        }
+        else
+        {
+            newPosition = Vector3.Lerp(_dashStartPosition, _dashTargetPosition, currentTravel);
+            player.transform.position = newPosition;
+            player.SuppressMovement = true;
+            Quaternion spinRotation = Quaternion.AngleAxis(_dashSpinAngle, Vector3.up);
+            bladeForward = spinRotation * new Vector3(_dashDirection.x, 0f, _dashDirection.y);
+            if (bladeForward.sqrMagnitude < 0.0001f)
+            {
+                bladeForward = Vector3.forward;
+            }
+
+            player.transform.forward = bladeForward;
+            bladeCenter = newPosition + bladeForward * (dashBladeLength * 0.45f);
+            float bladeScaleBoost = 1f + spinFactor * 0.45f;
+            if (_dashVisual != null)
+            {
+                _dashVisual.SetActive(true);
+                _dashVisual.transform.position = new Vector3(bladeCenter.x, renderHeight + 1f, bladeCenter.z);
+                _dashVisual.transform.rotation = Quaternion.LookRotation(bladeForward);
+                _dashVisual.transform.localScale = new Vector3(dashBladeWidth * bladeScaleBoost, dashBladeThickness, dashBladeLength * bladeScaleBoost);
+            }
         }
 
-        Vector3 bladeCenter = newPosition + bladeForward * (dashBladeLength * 0.45f);
-        float bladeScaleBoost = 1f + spinFactor * 0.45f;
-
-        if (_dashVisual != null)
-        {
-            _dashVisual.SetActive(true);
-            _dashVisual.transform.position = new Vector3(bladeCenter.x, renderHeight + 1f, bladeCenter.z);
-            _dashVisual.transform.rotation = Quaternion.LookRotation(bladeForward);
-            _dashVisual.transform.localScale = new Vector3(dashBladeWidth * bladeScaleBoost, dashBladeThickness, dashBladeLength * bladeScaleBoost);
-        }
+        _invincibilityTimer = math.max(_invincibilityTimer, context.DeltaTime + 0.02f);
 
         TryAddSkillArea(new RougeSkillArea
         {
@@ -1760,6 +1852,24 @@ public partial class RougeGameManager
         float2 endPos = new float2(player.transform.position.x, player.transform.position.z);
         SpawnImpact(endPos, dashImpactRadius, dashImpactRadius, dashRingDuration, new Color(1f, 0.75f, 0.15f, 1f));
         TryAddCircularSkillArea(endPos, dashImpactRadius, dashImpactDamage, math.abs(dashPullForce), dashVerticalForce, dashEffects);
+
+        if (isSkateboardWhirlwind)
+        {
+            Vector3 groundedEnd = player.transform.position;
+            groundedEnd.y = renderHeight;
+            player.transform.position = groundedEnd;
+            _skateMoveDirection = _dashDirection;
+            _skateBoardVelocity = new Vector2(_dashDirection.x, _dashDirection.y) * skillConfig.Skateboard.GetValue(skillConfig.Skateboard.RideSpeed, dashLevel) * 2f;
+            if (_skateRideTimer <= 0f)
+            {
+                BeginSkateboardFinale(groundedEnd, _dashDirection, math.max(skillConfig.Skateboard.GetValue(skillConfig.Skateboard.RideSpeed, dashLevel) * 2f * skillConfig.Skateboard.GetValue(skillConfig.Skateboard.FinaleDuration, dashLevel) * 0.8f, 5.75f), skillConfig.Skateboard.GetValue(skillConfig.Skateboard.FinaleDuration, dashLevel));
+            }
+            else
+            {
+                _skatePhase = 3;
+                _skatePhaseTimer = 0f;
+            }
+        }
 
         if (_dashVisual != null)
         {
@@ -1803,6 +1913,45 @@ public partial class RougeGameManager
 
         float q = (t - 0.82f) / 0.18f;
         return math.lerp(0.95f, 0.28f, q * q * (3f - 2f * q));
+    }
+
+    private void EvaluateSkateboardWhirlwindPose(
+        float travelT,
+        float normalizedTime,
+        float jumpHeight,
+        float spinAngle,
+        Vector3 boardScale,
+        out Vector3 playerPos,
+        out Vector3 playerForward,
+        out Vector3 boardPos,
+        out Quaternion boardRotation)
+    {
+        Vector3 forward = new Vector3(_dashDirection.x, 0f, _dashDirection.y);
+        Vector3 right = new Vector3(forward.z, 0f, -forward.x);
+        float jumpArc = math.sin(normalizedTime * math.PI) * jumpHeight * 0.5f;
+        float flourish = math.sin(normalizedTime * math.PI);
+        float attachT = math.saturate((normalizedTime - 0.78f) / 0.22f);
+        float attachEase = attachT * attachT * (3f - 2f * attachT);
+        float orbitRadians = spinAngle * Mathf.Deg2Rad;
+
+        playerPos = Vector3.Lerp(_dashStartPosition, _dashTargetPosition, travelT);
+        playerPos.y = renderHeight + jumpArc;
+        playerForward = forward;
+
+        Vector3 handPivot = playerPos + Vector3.up * (0.92f + flourish * 0.05f) + forward * 0.24f;
+        Vector3 orbitOffset = right * (math.cos(orbitRadians) * 1.02f) + forward * (math.sin(orbitRadians) * 1.02f);
+        Vector3 orbitPos = handPivot + orbitOffset;
+        orbitPos.y = handPivot.y - 0.18f + flourish * 0.05f;
+
+        Vector3 landingPos = playerPos + forward * 0.92f;
+        landingPos.y = renderHeight + boardScale.y * 0.08f;
+
+        boardPos = Vector3.Lerp(orbitPos, landingPos, attachEase);
+        Vector3 tangent = (-right * math.sin(orbitRadians) + forward * math.cos(orbitRadians)).normalized;
+        tangent = Vector3.Slerp(tangent, forward, attachEase * 0.88f).normalized;
+        boardRotation = Quaternion.LookRotation(tangent, Vector3.up) * Quaternion.Euler(12f * flourish, 0f, Mathf.Lerp(86f, 0f, attachEase));
+        boardPos = ClampSkateboardWorldPosition(boardPos);
+        boardPos.y = Mathf.Max(boardPos.y, renderHeight + boardScale.y * 0.08f);
     }
 
     private static Vector3 GetSkateboardVisualScale()
@@ -2036,6 +2185,7 @@ public partial class RougeGameManager
     //  Phase 3 = riding     持续骑行；朝 WASD 方向推进，松手仍保持最后方向
     //  Phase 4 = trick      再次按键后按当前移动方向前跳，动作中不会立刻结束
     //  Phase 5 = finale     玩家继续前跳，滑板从后侧被挑起后翻拍地
+    //  Phase 6 = skateSpin   滑板联动大风车，踩板前跳并持续旋转到落地
     // =====================================================================
 
     private void EnsureSkateboardVisual()
@@ -2110,6 +2260,12 @@ public partial class RougeGameManager
         }
 
         if (_skatePhase == 0) return;
+
+        if (_skatePhase == 6)
+        {
+            _invincibilityTimer = math.max(_invincibilityTimer, dt + 0.05f);
+            return;
+        }
 
         _skatePhaseTimer -= dt;
 

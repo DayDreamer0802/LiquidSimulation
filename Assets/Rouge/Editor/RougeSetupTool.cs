@@ -4,6 +4,9 @@ using UnityEngine.Rendering;
 
 public class RougeSetupTool
 {
+    private const string FloorMaterialPath = "Assets/Rouge/Rouge_CosmicFloor.mat";
+    private const string BarrierMaterialPath = "Assets/Rouge/Rouge_CosmicBarrier.mat";
+
     [MenuItem("Rouge/Initialize Scene")]
     public static void InitializeScene()
     {
@@ -18,12 +21,7 @@ public class RougeSetupTool
         floor.name = "Floor";
         floor.transform.localScale = new Vector3(50f, 1f, 50f);
         
-        Shader floorShader = Shader.Find("Rouge/CosmicFloor");
-        var floorMat = new Material(floorShader != null ? floorShader : Shader.Find("Universal Render Pipeline/Lit"));
-        if (floorShader == null)
-        {
-            floorMat.color = new Color(0.2f, 0.2f, 0.2f);
-        }
+        Material floorMat = LoadSharedMaterial(FloorMaterialPath, "Rouge/CosmicFloor", new Color(0.08f, 0.12f, 0.18f, 1f));
         floor.GetComponent<MeshRenderer>().material = floorMat;
 
         // Setup Player
@@ -57,13 +55,29 @@ public class RougeSetupTool
         obs1.transform.position = new Vector3(20f, 1f, 20f);
         obs1.transform.localScale = new Vector3(10f, 4f, 10f);
         obs1.layer = obstacleLayer;
+        obs1.GetComponent<MeshRenderer>().material = LoadSharedMaterial(BarrierMaterialPath, "Rouge/CosmicBarrier", new Color(0.18f, 0.28f, 0.4f, 0.88f));
 
         var obs2 = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         obs2.name = "Obstacle 2";
         obs2.transform.position = new Vector3(-30f, 1f, 15f);
         obs2.transform.localScale = new Vector3(8f, 4f, 8f);
         obs2.layer = obstacleLayer;
+        obs2.GetComponent<MeshRenderer>().material = LoadSharedMaterial(BarrierMaterialPath, "Rouge/CosmicBarrier", new Color(0.18f, 0.28f, 0.4f, 0.88f));
 
         Debug.Log("Rouge scene initialized successfully! Press Play to start.");
+    }
+
+    private static Material LoadSharedMaterial(string assetPath, string shaderName, Color fallbackColor)
+    {
+        Material sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+        if (sharedMaterial != null)
+        {
+            return sharedMaterial;
+        }
+
+        Shader shader = Shader.Find(shaderName);
+        var material = new Material(shader != null ? shader : Shader.Find("Universal Render Pipeline/Lit"));
+        material.color = fallbackColor;
+        return material;
     }
 }

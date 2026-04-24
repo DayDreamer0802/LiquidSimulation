@@ -371,7 +371,7 @@ public partial class RougeGameManager : MonoBehaviour
     private float[] _meteorVisualTimers = new float[MeteorVisualMax];
     private Vector3[] _meteorVisualTargets = new Vector3[MeteorVisualMax];
 
-    // Skill kill tracking: [0]=tornado [1]=bomb/jump [2]=laser [3]=melee/spike [4]=orbit [5]=bullet
+    // Skill kill tracking: [0]=light pillar [1]=leap/bomb [2]=laser/ice [3]=melee/shockwave [4]=orbit [5]=bullet
     private NativeArray<int> _skillKillCounts;
     private readonly int[] _skillTotalKills = new int[6];
     private readonly int[] _skillLevels = new int[6];
@@ -2086,9 +2086,15 @@ public partial class RougeGameManager : MonoBehaviour
                 _tornadoLifeTimers[i] -= dt;
                 float progress = 1f - math.max(0f, _tornadoLifeTimers[i] / _tornadoMaxTimes[i]);
                 float maxRadius = _tornadoPosData[i].w;
-                float currentRadius = math.lerp(maxRadius, 0.1f, math.pow(progress, 3f)); // Shrink to center quickly near end
-                
-                _tornadoStateData[i] = new float4(currentRadius * 2f, 100f, currentRadius * 2f, 1f - progress);
+                float radiusMultiplier = _tornadoRadiusMultipliers[i] > 0f ? _tornadoRadiusMultipliers[i] : 1f;
+                float appear = math.saturate(progress / 0.08f);
+                float fade = 1f - math.saturate((progress - 0.72f) / 0.28f);
+                float alpha = appear * fade;
+                float currentRadius = math.max(0.16f, maxRadius * radiusMultiplier * math.lerp(1.18f, 0.82f, progress));
+                float heightScale = math.max(40f, math.max(maxRadius * 6.5f, 48f) * math.lerp(1.08f, 0.94f, progress));
+
+                _tornadoPosData[i] = new float4(_tornadoPosData[i].x, renderHeight + heightScale * 0.5f, _tornadoPosData[i].z, maxRadius);
+                _tornadoStateData[i] = new float4(currentRadius * 2f, heightScale, currentRadius * 2f * 0.94f, alpha);
                 
                 if (_activeTornadoCount != i)
                 {
@@ -2096,7 +2102,9 @@ public partial class RougeGameManager : MonoBehaviour
                     _tornadoStateData[_activeTornadoCount] = _tornadoStateData[i];
                     _tornadoLifeTimers[_activeTornadoCount] = _tornadoLifeTimers[i];
                     _tornadoMaxTimes[_activeTornadoCount] = _tornadoMaxTimes[i];
+                    _tornadoRadiusMultipliers[_activeTornadoCount] = _tornadoRadiusMultipliers[i];
                     _tornadoLifeTimers[i] = 0f;
+                    _tornadoRadiusMultipliers[i] = 0f;
                 }
                 _activeTornadoCount++;
             }
@@ -2106,6 +2114,7 @@ public partial class RougeGameManager : MonoBehaviour
         {
             _tornadoPosData[ti] = new float4(99999f, -999f, 99999f, 0f);
             _tornadoStateData[ti] = float4.zero;
+            _tornadoRadiusMultipliers[ti] = 0f;
         }
 
         _tornadoPosBuffer.SetData(_tornadoPosData);

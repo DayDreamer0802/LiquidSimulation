@@ -25,23 +25,23 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _CenterGlow: 0.68
-    - _GridScale: -0.92
-    - _LineWidth: 0.0395
-    - _MajorGridEvery: 4.04
-    - _MajorLineWidth: 0.12
-    - _NebulaScale: 0.08
-    - _NebulaSpeed: 0.08
-    - _NebulaStrength: 0.06
-    - _ScanStrength: 0
-    - _StarBrightness: 0.89
-    - _StarDensity: 14
-    - _VignetteStrength: 0
+    - _CenterGlow: 0.92
+    - _GridScale: 1.12
+    - _LineWidth: 0.0063
+    - _MajorGridEvery: 5.6
+    - _MajorLineWidth: 0.052
+    - _NebulaScale: 0.115
+    - _NebulaSpeed: 0.06
+    - _NebulaStrength: 0.26
+    - _ScanStrength: 0.32
+    - _StarBrightness: 1.08
+    - _StarDensity: 12
+    - _VignetteStrength: 0.34
     m_Colors:
-    - _AccentColor: {r: 0.72, g: 0.9, b: 1, a: 1}
-    - _BaseColor: {r: 0.88, g: 0.18, b: 0.18, a: 1}
-    - _GridColor: {r: 0.21999997, g: 0.62, b: 1, a: 1}
-    - _NebulaColorA: {r: 0.11999995, g: 0.27999997, b: 0.62, a: 1}
-    - _NebulaColorB: {r: 0.37999994, g: 0.58, b: 1, a: 1}
+    - _AccentColor: {r: 0, g: 0, b: 0, a: 1}
+    - _BaseColor: {r: 0, g: 0, b: 0, a: 1}
+    - _GridColor: {r: 0.12578613, g: 0.12578613, b: 0.12578613, a: 1}
+    - _NebulaColorA: {r: 0.8742138, g: 0.8742138, b: 0.8742138, a: 1}
+    - _NebulaColorB: {r: 0.28, g: 0.5, b: 0.9, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
