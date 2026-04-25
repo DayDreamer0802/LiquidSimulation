@@ -16,6 +16,9 @@ public partial class RougeGameManager : MonoBehaviour
     private static readonly int PositionScaleBufferId = Shader.PropertyToID("_PositionScaleBuffer");
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ScaleMultiplierId = Shader.PropertyToID("_ScaleMultiplier");
+    private static readonly int VariationStrengthId = Shader.PropertyToID("_VariationStrength");
+    private static readonly int BreakupScaleId = Shader.PropertyToID("_BreakupScale");
+    private static readonly int BreakupStrengthId = Shader.PropertyToID("_BreakupStrength");
 
     [Header("References")]
     [SerializeField] private PlayerBase player;
@@ -32,6 +35,9 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float enemyRadius = 0.3f;
     [SerializeField] private float enemyMaxSpeed = 7f;
     [SerializeField] private float enemyVisualScale = 1.35f;
+    [SerializeField, Range(0f, 0.4f)] private float enemyVariationStrength = 0.18f;
+    [SerializeField, Range(0.5f, 8f)] private float enemyBreakupScale = 3.8f;
+    [SerializeField, Range(0f, 0.35f)] private float enemyBreakupStrength = 0.16f;
 
     [Header("Arena")]
     [SerializeField] private float arenaHalfExtent = 220f;
@@ -56,6 +62,8 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float densitySoftThreshold = 1.35f;
     [SerializeField] private float densityRepulsionStrength = 18f;
     [SerializeField] private float densityGradientClamp = 2.5f;
+    [SerializeField, Range(0f, 0.6f)] private float densityResponseJitter = 0.18f;
+    [SerializeField, Range(0f, 2f)] private float crowdReliefMaxDensityPressure = 0.75f;
     [SerializeField] private float flowFieldObstaclePadding = 1.2f;
     [SerializeField] private float obstaclePadding = 1.5f;
     [SerializeField] private float obstacleLookAhead = 3f;
@@ -1229,7 +1237,6 @@ public partial class RougeGameManager : MonoBehaviour
                 1.25f,
                 1.05f,
                 1.35f);
-            _iceZoneVisual.GetComponent<MeshRenderer>().material = _iceZoneMat;
             ConfigureGroundAoEVisual(_iceZoneVisual.GetComponent<MeshRenderer>(), _iceZoneMat);
             _iceZoneVisual.SetActive(false);
         }
@@ -1493,6 +1500,7 @@ public partial class RougeGameManager : MonoBehaviour
     private void CaptureObstacles()
     {
         Collider[] colliders = UnityEngine.Object.FindObjectsByType<Collider>(FindObjectsSortMode.None);
+        float capturedObstaclePadding = math.min(math.max(obstaclePadding, 0f), 0.18f);
         int count = 0;
         for (int i = 0; i < colliders.Length; i++)
         {
@@ -1520,22 +1528,108 @@ public partial class RougeGameManager : MonoBehaviour
             {
                 float2 center = new float2(sphere.transform.position.x, sphere.transform.position.z);
                 float r = sphere.radius * Mathf.Max(sphere.transform.lossyScale.x, sphere.transform.lossyScale.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = obstaclePadding };
+                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = capturedObstaclePadding };
             }
             else if (collider is CapsuleCollider capsule)
             {
                 float2 center = new float2(capsule.transform.position.x, capsule.transform.position.z);
                 float r = capsule.radius * Mathf.Max(capsule.transform.lossyScale.x, capsule.transform.lossyScale.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = obstaclePadding };
+                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = capturedObstaclePadding };
             }
             else
             {
                 Bounds bounds = collider.bounds;
                 float2 min = new float2(bounds.min.x, bounds.min.z);
                 float2 max = new float2(bounds.max.x, bounds.max.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 0, Min = min, Max = max, Padding = obstaclePadding };
+                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 0, Min = min, Max = max, Padding = capturedObstaclePadding };
             }
         }
+    }
+
+    private int ResolveFlowGoalIndex(float2 playerPos, float invCellSize)
+    {
+        int2 goalCell = RougeMortonGridUtility.WorldToGrid(playerPos, _flowGridOrigin, invCellSize, _flowGridDim);
+        int bestIndex = RougeMortonGridUtility.EncodeMorton(goalCell.x, goalCell.y);
+        if (!IsFlowCellBlocked(goalCell.x, goalCell.y))
+        {
+            return bestIndex;
+        }
+
+        float bestDistSq = float.MaxValue;
+        for (int ring = 1; ring < _flowGridDim; ring++)
+        {
+            bool found = false;
+            int minX = math.max(goalCell.x - ring, 0);
+            int maxX = math.min(goalCell.x + ring, _flowGridDim - 1);
+            int minY = math.max(goalCell.y - ring, 0);
+            int maxY = math.min(goalCell.y + ring, _flowGridDim - 1);
+
+            for (int y = minY; y <= maxY; y++)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (x != minX && x != maxX && y != minY && y != maxY)
+                    {
+                        continue;
+                    }
+
+                    if (IsFlowCellBlocked(x, y))
+                    {
+                        continue;
+                    }
+
+                    float2 cellCenter = _flowGridOrigin + (new float2(x + 0.5f, y + 0.5f) * _flowFieldRuntimeCellSize);
+                    float distSq = math.lengthsq(cellCenter - playerPos);
+                    if (distSq < bestDistSq)
+                    {
+                        bestDistSq = distSq;
+                        bestIndex = RougeMortonGridUtility.EncodeMorton(x, y);
+                        found = true;
+                    }
+                }
+            }
+
+            if (found)
+            {
+                return bestIndex;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private bool IsFlowCellBlocked(int x, int y)
+    {
+        if (!_obstacles.IsCreated || _obstacleCount <= 0)
+        {
+            return false;
+        }
+
+        float2 cellCenter = _flowGridOrigin + (new float2(x + 0.5f, y + 0.5f) * _flowFieldRuntimeCellSize);
+        float navPadding = math.max(flowFieldObstaclePadding, 0f);
+        for (int obstacleIndex = 0; obstacleIndex < _obstacleCount; obstacleIndex++)
+        {
+            RougeObstacle obstacle = _obstacles[obstacleIndex];
+            if (obstacle.Type == 1)
+            {
+                float paddedRadius = obstacle.CircleRadius + navPadding;
+                if (math.lengthsq(cellCenter - obstacle.Center) <= paddedRadius * paddedRadius)
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            float2 minPadded = obstacle.Min - new float2(navPadding);
+            float2 maxPadded = obstacle.Max + new float2(navPadding);
+            if (cellCenter.x >= minPadded.x && cellCenter.x <= maxPadded.x && cellCenter.y >= minPadded.y && cellCenter.y <= maxPadded.y)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void SeedEnemies()
@@ -1720,7 +1814,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void RenderExplosions()
     {
-        if (_explosionCount <= 0 || _expPosBuffer == null || _vfxSphereMesh == null || _vfxExplosionMat == null) return;
+        if (_explosionCount <= 0 || _expPosBuffer == null || _expStateBuffer == null || _expArgsBuffer == null || _vfxSphereMesh == null || _vfxExplosionMat == null) return;
 
         _expPosBuffer.SetData(_expPosData, 0, 0, _explosionCount);
         _expStateBuffer.SetData(_expStateData, 0, 0, _explosionCount);
@@ -1795,6 +1889,9 @@ public partial class RougeGameManager : MonoBehaviour
         enemyMaterial.SetBuffer("_StateBuffer", _stateBuffer);
        // enemyMaterial.SetColor(BaseColorId, new Color(0.88f, 0.18f, 0.18f, 1f));
         enemyMaterial.SetFloat(ScaleMultiplierId, enemyVisualScale);
+        enemyMaterial.SetFloat(VariationStrengthId, enemyVariationStrength);
+        enemyMaterial.SetFloat(BreakupScaleId, enemyBreakupScale);
+        enemyMaterial.SetFloat(BreakupStrengthId, enemyBreakupStrength);
 
         Vector3 center = player != null ? player.transform.position : transform.position;
         float extent = math.max(arenaHalfExtent, despawnDistance) * 2f;
@@ -1858,8 +1955,7 @@ public partial class RougeGameManager : MonoBehaviour
             RenderHeight = renderHeight
         }.ScheduleBatch(activeEnemyCount, simulationBatchSize, clearGridHandle);
 
-        int2 flowGoalCell = RougeMortonGridUtility.WorldToGrid(playerPos, _flowGridOrigin, invCellSize, _flowGridDim);
-        int flowGoalIndex = RougeMortonGridUtility.EncodeMorton(flowGoalCell.x, flowGoalCell.y);
+        int flowGoalIndex = ResolveFlowGoalIndex(playerPos, invCellSize);
 
         JobHandle flowInitHandle = new InitializeFlowFieldJob
         {
@@ -1977,6 +2073,8 @@ public partial class RougeGameManager : MonoBehaviour
             DensitySoftThreshold = densitySoftThreshold,
             DensityRepulsionStrength = densityRepulsionStrength,
             DensityGradientClamp = densityGradientClamp,
+            DensityResponseJitter = densityResponseJitter,
+            CrowdReliefMaxDensityPressure = crowdReliefMaxDensityPressure,
             FrameSeed = (uint)(Time.frameCount * 1664525 + 1013904223),
             SkillKillCounts = _skillKillCounts,
             BombDmgMult   = math.clamp(0.3f + _skillLevels[1] * 0.035f, 0.3f, 2.0f),

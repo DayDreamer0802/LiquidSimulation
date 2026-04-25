@@ -430,7 +430,7 @@ Transform:
   m_GameObject: {fileID: 218225268}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 13, y: 1, z: -12.5}
+  m_LocalPosition: {x: 28.4, y: 1, z: -12.5}
   m_LocalScale: {x: 50.9, y: 4, z: 7.87}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1634,29 +1634,34 @@ MonoBehaviour:
   laserBeamMaterial: {fileID: 2100000, guid: 6104fed70fe0b2247b5a136b93c7b514, type: 2}
   enemyCount: 200000
   enemyMaxHealth: 24
-  enemyRadius: 1
+  enemyRadius: 1.2
   enemyMaxSpeed: 7
   enemyVisualScale: 1
+  enemyVariationStrength: 0.18
+  enemyBreakupScale: 3.8
+  enemyBreakupStrength: 0.16
   arenaHalfExtent: 256
   spawnRadiusMin: 50
   spawnRadiusMax: 180
   despawnDistance: 260
   renderHeight: 0.25
-  chaseAcceleration: 22
-  velocityDamping: 0.96
+  chaseAcceleration: 16
+  velocityDamping: 0.9
   separationRadius: 1.3
   separationStrength: 10
-  crowdReliefRadius: 10
-  crowdReliefStrength: 20
+  crowdReliefRadius: 3
+  crowdReliefStrength: 3
   crowdOrbitStrength: 10
   denseSeparationBoost: 1.25
   denseNeighborThreshold: 10
   flowFieldCellSize: 2
   flowFieldIterations: 12
   flowFieldMaxGridDim: 256
-  densitySoftThreshold: 1.35
-  densityRepulsionStrength: 18
-  densityGradientClamp: 2.5
+  densitySoftThreshold: 3
+  densityRepulsionStrength: 10
+  densityGradientClamp: 1.9
+  densityResponseJitter: 0.18
+  crowdReliefMaxDensityPressure: 0.75
   flowFieldObstaclePadding: 1.2
   obstaclePadding: 1.5
   obstacleLookAhead: 3

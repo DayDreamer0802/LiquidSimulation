@@ -112,9 +112,10 @@ public unsafe struct RasterizeObstacleGridJob : IJob
         for (int obstacleIndex = 0; obstacleIndex < ObstacleCount; obstacleIndex++)
         {
             RougeObstacle obstacle = obstaclePtr[obstacleIndex];
+            float navPadding = math.max(ExtraPadding, 0f);
             if (obstacle.Type == 1)
             {
-                float paddedRadius = obstacle.CircleRadius + obstacle.Padding + ExtraPadding;
+                float paddedRadius = obstacle.CircleRadius + navPadding;
                 float2 min = obstacle.Center - paddedRadius;
                 float2 max = obstacle.Center + paddedRadius;
                 int2 minCell = RougeMortonGridUtility.WorldToGrid(min, GridOrigin, InvCellSize, GridDim);
@@ -136,8 +137,8 @@ public unsafe struct RasterizeObstacleGridJob : IJob
                 continue;
             }
 
-            float2 minPadded = obstacle.Min - new float2(obstacle.Padding + ExtraPadding);
-            float2 maxPadded = obstacle.Max + new float2(obstacle.Padding + ExtraPadding);
+            float2 minPadded = obstacle.Min - new float2(navPadding);
+            float2 maxPadded = obstacle.Max + new float2(navPadding);
             int2 minCellAabb = RougeMortonGridUtility.WorldToGrid(minPadded, GridOrigin, InvCellSize, GridDim);
             int2 maxCellAabb = RougeMortonGridUtility.WorldToGrid(maxPadded, GridOrigin, InvCellSize, GridDim);
 
@@ -145,7 +146,11 @@ public unsafe struct RasterizeObstacleGridJob : IJob
             {
                 for (int x = minCellAabb.x; x <= maxCellAabb.x; x++)
                 {
-                    blockedPtr[RougeMortonGridUtility.EncodeMorton(x, y)] = 1;
+                    float2 cellCenter = GridOrigin + (new float2(x + 0.5f, y + 0.5f) * cellSize);
+                    if (cellCenter.x >= minPadded.x && cellCenter.x <= maxPadded.x && cellCenter.y >= minPadded.y && cellCenter.y <= maxPadded.y)
+                    {
+                        blockedPtr[RougeMortonGridUtility.EncodeMorton(x, y)] = 1;
+                    }
                 }
             }
         }
@@ -821,6 +826,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public float DensitySoftThreshold;
     public float DensityRepulsionStrength;
     public float DensityGradientClamp;
+    public float DensityResponseJitter;
+    public float CrowdReliefMaxDensityPressure;
     public uint FrameSeed;
     public float2 BulletMin;
     public float2 BulletMax;
@@ -850,7 +857,6 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         RougeEnemyEffectState* effectOutPtr = (RougeEnemyEffectState*)EffectStateOut.GetUnsafePtr();
 
         int endIndex = startIndex + count;
-        float crowdReliefRadiusSq = CrowdReliefRadius * CrowdReliefRadius;
         bool hasBulletBounds = BulletCount > 0 && BulletMin.x <= BulletMax.x && BulletMin.y <= BulletMax.y;
 
         for (int i = startIndex; i < endIndex; i++)
@@ -940,6 +946,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
+            float2 directToPlayer = distToPlayerSq > 0.0001f ? toPlayer * math.rsqrt(distToPlayerSq) : new float2(0f, 1f);
             bool isAirborne = pos.y > RenderHeight + 0.5f;
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
@@ -947,29 +954,36 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 float2 desired = SampleFlowDirection(pos.xz, flowPtr);
                 if (math.lengthsq(desired) < 0.0001f)
                 {
-                    desired = distToPlayerSq > 0.0001f ? toPlayer * math.rsqrt(distToPlayerSq) : new float2(0f, 1f);
+                    desired = directToPlayer;
+                }
+
+                float snapRadius = math.max(GridCellSize * 1.35f, radius * 4f + 0.35f);
+                float snapWeight = distToPlayerSq > 0.0001f
+                    ? 1f - math.saturate(math.sqrt(distToPlayerSq) / math.max(snapRadius, 0.001f))
+                    : 1f;
+                if (snapWeight > 0f)
+                {
+                    desired = math.normalizesafe(math.lerp(desired, directToPlayer, snapWeight), directToPlayer);
                 }
 
                 acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor);
 
+                float unitVariation = Hash01((uint)sourceIndex + 1u);
+                float signedVariation = unitVariation * 2f - 1f;
+                float densityThreshold = math.max(0f, DensitySoftThreshold + signedVariation * DensityResponseJitter);
+                float densityResponseScale = math.max(0.35f, 1f + signedVariation * (DensityResponseJitter * 0.75f));
                 float density = SampleDensity(pos.xz, densityPtr);
-                float densityPressure = math.max(0f, density - DensitySoftThreshold);
+                float densityPressure = math.saturate(density - densityThreshold);
+                densityPressure *= math.lerp(1f, 0.15f, snapWeight);
                 if (densityPressure > 0f)
                 {
-                    float2 densityGradient = SampleDensityGradient(pos.xz, densityPtr);
+                    float2 densityGradient =  SampleDensityGradient(pos.xz, densityPtr);
                     float gradientLengthSq = math.lengthsq(densityGradient);
                     if (gradientLengthSq > 0.000001f)
                     {
                         float gradientLength = math.sqrt(gradientLengthSq);
                         float2 gradientDir = densityGradient / gradientLength;
-                        acceleration.xz += -gradientDir * (math.min(gradientLength, DensityGradientClamp) * DensityRepulsionStrength * densityPressure);
-                    }
-
-                    if (CrowdReliefRadius > 0f && distToPlayerSq > 0.0001f && distToPlayerSq < crowdReliefRadiusSq)
-                    {
-                        float playerWeight = 1f - math.saturate(math.sqrt(distToPlayerSq) / math.max(CrowdReliefRadius, 0.001f));
-                        float2 awayFromPlayer = -(toPlayer * math.rsqrt(math.max(distToPlayerSq, 0.0001f)));
-                        acceleration.xz += awayFromPlayer * (CrowdReliefStrength * densityPressure * playerWeight);
+                        acceleration.xz += -gradientDir * (math.min(gradientLength, DensityGradientClamp) * DensityRepulsionStrength * densityPressure * densityResponseScale);
                     }
                 }
             }
@@ -1300,6 +1314,16 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         }
 
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
+    }
+
+    private static float Hash01(uint value)
+    {
+        value ^= 2747636419u;
+        value *= 2654435769u;
+        value ^= value >> 16;
+        value *= 2654435769u;
+        value ^= value >> 16;
+        return (value & 0x00FFFFFFu) * (1f / 16777215f);
     }
 
     private float2 SampleFlowDirection(float2 worldPos, float2* flowPtr)
