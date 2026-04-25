@@ -2181,16 +2181,16 @@ MonoBehaviour:
         y: 0.6
         z: 0
       LaunchDuration:
-        x: 0.18
-        y: 0.18
+        x: 0.3
+        y: 0.3
         z: 0
       SlamDuration:
-        x: 0.12
-        y: 0.12
+        x: 0.2
+        y: 0.2
         z: 0
       JumpHeight:
-        x: 12
-        y: 16
+        x: 30
+        y: 30
         z: 2
       RingLifetime:
         x: 0.7
@@ -2783,7 +2783,7 @@ MonoBehaviour:
         ActivationKey: 324
         ExecutionType: 0
         SustainPriority: 0
-      Effects:
+      FinaleSlamEffects:
         Tags: 3
         KnockbackCenter: 0
         KnockbackForce:
@@ -2827,19 +2827,62 @@ MonoBehaviour:
           y: 0
           z: 0
       RideEffects:
-        Tags: 0
+        Tags: 3
         KnockbackCenter: 0
         KnockbackForce:
-          x: 0
+          x: 20
           y: 0
           z: 0
         LaunchHeight:
-          x: 0
+          x: 10
           y: 0
           z: 0
         LaunchLandingRadius:
+          x: 2
+          y: 0
+          z: 0
+        PoisonSpreadRadius:
           x: 0
           y: 0
+          z: 0
+        SlowPercent:
+          x: 0
+          y: 0
+          z: 0
+        SlowDuration:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionDamage:
+          x: 0
+          y: 0
+          z: 0
+        CurseExplosionRadius:
+          x: 0
+          y: 0
+          z: 0
+        BurnDamage:
+          x: 0
+          y: 0
+          z: 0
+        BurnDuration:
+          x: 0
+          y: 0
+          z: 0
+      WhirlwindEffects:
+        Tags: 3
+        KnockbackCenter: 0
+        KnockbackForce:
+          x: 25
+          y: 25
+          z: 0
+        LaunchHeight:
+          x: 12
+          y: 12
+          z: 0
+        LaunchLandingRadius:
+          x: 3
+          y: 3
           z: 0
         PoisonSpreadRadius:
           x: 0

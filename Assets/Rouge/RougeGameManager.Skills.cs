@@ -1699,6 +1699,7 @@ public partial class RougeGameManager
         SkateboardSkillConfig skateboard = skillConfig.Skateboard;
         int dashLevel = currentLevel;
         ResolvedSkillHitEffectConfig dashEffects = dash.Effects.Resolve(dashLevel, dash.MaxLevel);
+        ResolvedSkillHitEffectConfig skateboardWhirlwindEffects = skateboard.WhirlwindEffects.Resolve(dashLevel, skateboard.MaxLevel);
         float dashCooldown = dash.GetValue(dash.Cooldown, dashLevel);
         float dashDuration = dash.GetValue(dash.Duration, dashLevel);
         float dashDistance = dash.GetValue(dash.Distance, dashLevel);
@@ -1773,6 +1774,7 @@ public partial class RougeGameManager
         float previousProgress = 1f - previousTimer / math.max(0.01f, activeDashDuration);
         float currentProgress = 1f - _dashSpinTimer / math.max(0.01f, activeDashDuration);
         float currentTravel = EvaluateWhirlwindTravel(currentProgress);
+        ResolvedSkillHitEffectConfig activeDashEffects = isSkateboardWhirlwind ? skateboardWhirlwindEffects : dashEffects;
 
         float spinFactor = EvaluateWhirlwindSpinFactor(currentProgress);
         if (isSkateboardWhirlwind)
@@ -1848,7 +1850,7 @@ public partial class RougeGameManager
             Damage = dashSpinDamage * (0.85f + spinFactor * 0.35f),
             PullForce = math.abs(dashPullForce) * (0.85f + spinFactor * 0.25f),
             VerticalForce = dashVerticalForce
-        }, dashEffects);
+        }, activeDashEffects);
 
         if (_dashSpinTimer > 0f)
         {
@@ -1857,7 +1859,7 @@ public partial class RougeGameManager
 
         float2 endPos = new float2(player.transform.position.x, player.transform.position.z);
         SpawnImpact(endPos, dashImpactRadius, dashImpactRadius, dashRingDuration, new Color(1f, 0.75f, 0.15f, 1f));
-        TryAddCircularSkillArea(endPos, dashImpactRadius, dashImpactDamage, math.abs(dashPullForce), dashVerticalForce, dashEffects);
+        TryAddCircularSkillArea(endPos, dashImpactRadius, dashImpactDamage, math.abs(dashPullForce), dashVerticalForce, activeDashEffects);
 
         if (isSkateboardWhirlwind)
         {
@@ -2026,12 +2028,6 @@ public partial class RougeGameManager
         {
             return;
         }
-
-        effects.Tags |= SkillHitEffectTag.Knockback | SkillHitEffectTag.Launch;
-        effects.KnockbackCenter = SkillKnockbackCenter.SkillPosition;
-        effects.KnockbackForce = math.max(effects.KnockbackForce, 72f);
-        effects.LaunchHeight = math.max(effects.LaunchHeight, 18f);
-        effects.LaunchLandingRadius = math.max(effects.LaunchLandingRadius, radius * 1.1f);
 
         RougeSkillArea area = new RougeSkillArea
         {
@@ -2227,7 +2223,7 @@ public partial class RougeGameManager
         float trickDur    = cfg.GetValue(cfg.TrickDuration,    lvl);
         float finaleDur   = cfg.GetValue(cfg.FinaleDuration,   lvl);
         float jumpH       = cfg.GetValue(cfg.JumpHeight,       lvl);
-        ResolvedSkillHitEffectConfig slamFx = cfg.Effects.Resolve(lvl, cfg.MaxLevel);
+        ResolvedSkillHitEffectConfig slamFx = cfg.FinaleSlamEffects.Resolve(lvl, cfg.MaxLevel);
         ResolvedSkillHitEffectConfig rideFx = cfg.RideEffects.Resolve(lvl, cfg.MaxLevel);
         Vector3 boardScale = GetSkateboardVisualScale();
         float rideTurnRate = 220f;

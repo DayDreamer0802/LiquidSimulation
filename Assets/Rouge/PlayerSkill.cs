@@ -1,6 +1,7 @@
 using System;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public enum PlayerSkillType
 {
@@ -622,8 +623,16 @@ public class OrbitBallSkillConfig : LevelScaledSkillConfig
 public class SkateboardSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Skateboard Slam", "R-CLICK", false, KeyCode.Mouse1);
-    public SkillHitEffectConfig Effects;
+    [Header("滑板终结拍地效果")]
+    [FormerlySerializedAs("Effects")]
+    public SkillHitEffectConfig FinaleSlamEffects;
+
+    [Header("滑板骑行/空中特技接触效果")]
     public SkillHitEffectConfig RideEffects;
+
+    [Header("滑板大风车效果")]
+    public SkillHitEffectConfig WhirlwindEffects;
+
     public float3 Cooldown          = new float3(18f, 12f, 2f);
     public float3 RideDuration      = new float3(7f,  12f, 1f);
     public float3 RideSpeed         = new float3(24f, 34f, 1f);
