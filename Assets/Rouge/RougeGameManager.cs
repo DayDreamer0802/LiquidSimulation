@@ -50,6 +50,13 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float crowdOrbitStrength = 8f;
     [SerializeField, Range(0f, 4f)] private float denseSeparationBoost = 1.25f;
     [SerializeField, Range(1, 32)] private int denseNeighborThreshold = 6;
+    [SerializeField] private float flowFieldCellSize = 1.5f;
+    [SerializeField, Range(2, 16)] private int flowFieldIterations = 6;
+    [SerializeField, Range(64, 256)] private int flowFieldMaxGridDim = 256;
+    [SerializeField] private float densitySoftThreshold = 1.35f;
+    [SerializeField] private float densityRepulsionStrength = 18f;
+    [SerializeField] private float densityGradientClamp = 2.5f;
+    [SerializeField] private float flowFieldObstaclePadding = 1.2f;
     [SerializeField] private float obstaclePadding = 1.5f;
     [SerializeField] private float obstacleLookAhead = 3f;
     [SerializeField] private float obstacleRepulsion = 30f;
@@ -123,6 +130,11 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _bulletCellHeads;
     private NativeArray<int> _bulletCellEntries;
     private NativeArray<int> _bulletCellNext;
+    private NativeArray<int> _densityFieldFixed;
+    private NativeArray<float> _flowDistanceField;
+    private NativeArray<float> _flowDistanceScratch;
+    private NativeArray<float2> _flowDirectionField;
+    private NativeArray<byte> _flowBlockedCells;
     private NativeArray<RougeObstacle> _obstacles;
     private NativeArray<int> _playerDamageCount;
     private NativeArray<int> _enemyKillCount;
@@ -145,8 +157,13 @@ public partial class RougeGameManager : MonoBehaviour
     private int _hashSize;
     private int _hashMask;
     private int _chunkCount;
+    private int _flowGridDim;
+    private int _flowGridCellCount;
+    private float2 _flowGridOrigin;
+    private float _flowFieldRuntimeCellSize;
     private int _activeBulletCount;
     private float _fireTimer;
+    private bool _simulationResultBackBufferReady;
 
     private int _obstacleCount;
 
@@ -504,6 +521,7 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         _simulationHandle.Complete();
+    FinalizeCompletedSimulationBuffers();
 
         if (_enemyKillCount.IsCreated)
         {
@@ -830,6 +848,19 @@ public partial class RougeGameManager : MonoBehaviour
         _hashSize = Mathf.NextPowerOfTwo(Mathf.Max(enemyCount * 2, 65536));
         _hashMask = _hashSize - 1;
         _chunkCount = Mathf.CeilToInt(enemyCount / (float)sortBatchSize);
+        _flowFieldRuntimeCellSize = math.max(flowFieldCellSize, 0.5f);
+        int maxFlowGridDim = math.clamp(flowFieldMaxGridDim, 64, 256);
+        int computedFlowGridDim = Mathf.NextPowerOfTwo(Mathf.CeilToInt((arenaHalfExtent * 2f + _flowFieldRuntimeCellSize * 2f) / _flowFieldRuntimeCellSize));
+        while (computedFlowGridDim > maxFlowGridDim)
+        {
+            _flowFieldRuntimeCellSize *= 1.15f;
+            computedFlowGridDim = Mathf.NextPowerOfTwo(Mathf.CeilToInt((arenaHalfExtent * 2f + _flowFieldRuntimeCellSize * 2f) / _flowFieldRuntimeCellSize));
+        }
+
+        _flowGridDim = Mathf.Clamp(computedFlowGridDim, 32, maxFlowGridDim);
+        _flowGridCellCount = _flowGridDim * _flowGridDim;
+        float gridSpan = _flowGridDim * _flowFieldRuntimeCellSize;
+        _flowGridOrigin = new float2(-gridSpan * 0.5f, -gridSpan * 0.5f);
 
         _positionsA = new NativeArray<float4>(enemyCount, Allocator.Persistent);
         _positionsB = new NativeArray<float4>(enemyCount, Allocator.Persistent);
@@ -843,10 +874,15 @@ public partial class RougeGameManager : MonoBehaviour
         _tempEnemyKeys = new NativeArray<ulong>(enemyCount, Allocator.Persistent);
         _cellOffsets = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _cellCounts = new NativeArray<int>(_hashSize, Allocator.Persistent);
-        _bulletCellHeads = new NativeArray<int>(_hashSize, Allocator.Persistent);
+        _bulletCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _neighborOffsets = new NativeArray<int2>(9, Allocator.Persistent);
         _histograms = new NativeArray<int>(math.max(_chunkCount * 256, 256), Allocator.Persistent);
         _binTotals = new NativeArray<int>(256, Allocator.Persistent);
+        _densityFieldFixed = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _flowDistanceField = new NativeArray<float>(_flowGridCellCount, Allocator.Persistent);
+        _flowDistanceScratch = new NativeArray<float>(_flowGridCellCount, Allocator.Persistent);
+        _flowDirectionField = new NativeArray<float2>(_flowGridCellCount, Allocator.Persistent);
+        _flowBlockedCells = new NativeArray<byte>(_flowGridCellCount, Allocator.Persistent);
         ResizeBulletStorage(maxBullets);
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
@@ -908,6 +944,7 @@ public partial class RougeGameManager : MonoBehaviour
         
         _laserTimer = 0f;
         _laserCooldownTimer = 0f;
+        _simulationResultBackBufferReady = false;
         _meleeCooldownTimer = 0f;
         _meleeFinisherSlamTimer = 0f;
 
@@ -1432,6 +1469,27 @@ public partial class RougeGameManager : MonoBehaviour
         }
     }
 
+    private void FinalizeCompletedSimulationBuffers()
+    {
+        if (!_simulationResultBackBufferReady)
+        {
+            return;
+        }
+
+        SwapNativeArrays(ref _positionsA, ref _positionsB);
+        SwapNativeArrays(ref _velocitiesA, ref _velocitiesB);
+        SwapNativeArrays(ref _stateA, ref _stateB);
+        SwapNativeArrays(ref _effectStateA, ref _effectStateB);
+        _simulationResultBackBufferReady = false;
+    }
+
+    private static void SwapNativeArrays<T>(ref NativeArray<T> left, ref NativeArray<T> right) where T : struct
+    {
+        NativeArray<T> temp = left;
+        left = right;
+        right = temp;
+    }
+
     private void CaptureObstacles()
     {
         Collider[] colliders = UnityEngine.Object.FindObjectsByType<Collider>(FindObjectsSortMode.None);
@@ -1550,6 +1608,9 @@ public partial class RougeGameManager : MonoBehaviour
 
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         float maxDistanceSq = (arenaHalfExtent + 40f) * (arenaHalfExtent + 40f);
+    float targetPadding = math.max(enemyRadius * 2f, 0.5f);
+    float2 bulletMin = new float2(float.MaxValue, float.MaxValue);
+    float2 bulletMax = new float2(float.MinValue, float.MinValue);
 
         for (int i = 0; i < _activeBulletCount;)
         {
@@ -1570,6 +1631,9 @@ public partial class RougeGameManager : MonoBehaviour
             }
 
             _bullets[i] = bullet;
+            float expandedRadius = bullet.Radius + targetPadding;
+            bulletMin = math.min(bulletMin, math.min(bullet.Previous, bullet.Current) - expandedRadius);
+            bulletMax = math.max(bulletMax, math.max(bullet.Previous, bullet.Current) + expandedRadius);
             i++;
         }
 
@@ -1577,6 +1641,11 @@ public partial class RougeGameManager : MonoBehaviour
         {
             _bulletMin = float2.zero;
             _bulletMax = float2.zero;
+        }
+        else
+        {
+            _bulletMin = bulletMin;
+            _bulletMax = bulletMax;
         }
     }
 
@@ -1753,50 +1822,87 @@ public partial class RougeGameManager : MonoBehaviour
         if (activeEnemyCount <= 0)
         {
             _simulationHandle = default;
+            _simulationResultBackBufferReady = false;
             return;
         }
 
-        int activeChunkCount = Mathf.Max(1, Mathf.CeilToInt(activeEnemyCount / (float)sortBatchSize));
-        float cellSize = math.max(separationRadius, enemyRadius * 2.5f);
-        float invCellSize = 1f / math.max(cellSize, 0.001f);
-
-        JobHandle handle = new BuildEnemyKeysJob
+        float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+        int gridBatchSize = 1024;
+        int flowIterationCount = math.clamp(flowFieldIterations, 2, 8);
+        float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
+        JobHandle clearGridHandle = new ClearFlowFieldGridJob
         {
-            PositionScaleIn = _positionsA,
-            EnemyKeys = _enemyKeys,
+            DensityFieldFixed = _densityFieldFixed,
+            BlockedCells = _flowBlockedCells
+        }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
+
+        JobHandle obstacleHandle = new RasterizeObstacleGridJob
+        {
+            Obstacles = _obstacles,
+            ObstacleCount = _obstacleCount,
+            BlockedCells = _flowBlockedCells,
+            GridOrigin = _flowGridOrigin,
             InvCellSize = invCellSize,
-            HashMask = _hashMask
-        }.ScheduleBatch(activeEnemyCount, sortBatchSize);
+            GridDim = _flowGridDim,
+            ExtraPadding = flowFieldObstaclePadding
+        }.Schedule(clearGridHandle);
 
-        handle = ScheduleRadixSort(handle, activeEnemyCount, activeChunkCount);
-
-        handle = new ClearGridJob
+        JobHandle densityHandle = new BuildEnemyDensityFieldJob
         {
-            CellCounts = _cellCounts,
-            CellOffsets = _cellOffsets
-        }.ScheduleBatch(_hashSize, sortBatchSize, handle);
-
-        handle = new BuildCellOffsetsJob
-        {
-            SortedKeys = _enemyKeys,
-            CellOffsets = _cellOffsets,
-            CellCounts = _cellCounts
-        }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
-
-        handle = new ReorderEnemiesJob
-        {
-            SortedKeys = _enemyKeys,
             PositionScaleIn = _positionsA,
-            VelocityIn = _velocitiesA,
             StateIn = _stateA,
-            EffectStateIn = _effectStateA,
-            PositionScaleOut = _positionsB,
-            VelocityOut = _velocitiesB,
-            StateOut = _stateB,
-            EffectStateOut = _effectStateB
-        }.ScheduleBatch(activeEnemyCount, sortBatchSize, handle);
+            DensityFieldFixed = _densityFieldFixed,
+            GridOrigin = _flowGridOrigin,
+            InvCellSize = invCellSize,
+            GridDim = _flowGridDim,
+            RenderHeight = renderHeight
+        }.ScheduleBatch(activeEnemyCount, simulationBatchSize, clearGridHandle);
 
-        handle = new BuildBulletGridJob
+        int2 flowGoalCell = RougeMortonGridUtility.WorldToGrid(playerPos, _flowGridOrigin, invCellSize, _flowGridDim);
+        int flowGoalIndex = RougeMortonGridUtility.EncodeMorton(flowGoalCell.x, flowGoalCell.y);
+
+        JobHandle flowInitHandle = new InitializeFlowFieldJob
+        {
+            BlockedCells = _flowBlockedCells,
+            FlowDistances = _flowDistanceField,
+            GridDim = _flowGridDim,
+            GoalIndex = flowGoalIndex
+        }.ScheduleBatch(_flowGridCellCount, gridBatchSize, obstacleHandle);
+
+        NativeArray<float> flowSource = _flowDistanceField;
+        NativeArray<float> flowTarget = _flowDistanceScratch;
+        JobHandle flowRelaxHandle = flowInitHandle;
+        for (int iteration = 0; iteration < flowIterationCount; iteration++)
+        {
+            flowRelaxHandle = new RelaxFlowFieldJob
+            {
+                BlockedCells = _flowBlockedCells,
+                FlowDistancesIn = flowSource,
+                FlowDistancesOut = flowTarget,
+                GridDim = _flowGridDim,
+                CellSize = _flowFieldRuntimeCellSize,
+                GoalIndex = flowGoalIndex
+            }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowRelaxHandle);
+
+            NativeArray<float> temp = flowSource;
+            flowSource = flowTarget;
+            flowTarget = temp;
+        }
+
+        JobHandle flowDirectionHandle = new BuildFlowFieldDirectionsJob
+        {
+            BlockedCells = _flowBlockedCells,
+            FlowDistances = flowSource,
+            FlowDirections = _flowDirectionField,
+            GridDim = _flowGridDim
+        }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowRelaxHandle);
+
+        JobHandle clearBulletHandle = new ClearBulletGridHeadsJob
+        {
+            CellHeads = _bulletCellHeads
+        }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
+
+        JobHandle bulletHandle = new BuildBulletGridJob
         {
             Bullets = _bullets,
             BulletCount = _activeBulletCount,
@@ -1804,25 +1910,24 @@ public partial class RougeGameManager : MonoBehaviour
             CellEntries = _bulletCellEntries,
             CellNext = _bulletCellNext,
             EntryCapacity = _bulletCellEntries.Length,
+            GridOrigin = _flowGridOrigin,
             InvCellSize = invCellSize,
-            HashMask = _hashMask
-        }.Schedule(handle);
+            GridDim = _flowGridDim,
+            TargetRadiusPadding = math.max(enemyRadius * 2f, 0.5f)
+        }.Schedule(clearBulletHandle);
 
-        float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
-        handle = new SimulateEnemiesJob
+        JobHandle handle = new SimulateEnemiesFlowFieldJob
         {
-            SortedKeys = _enemyKeys,
-            PositionScaleIn = _positionsB,
-            VelocityIn = _velocitiesB,
-            StateIn = _stateB,
-            EffectStateIn = _effectStateB,
-            PositionScaleOut = _positionsA,
-            VelocityOut = _velocitiesA,
-            StateOut = _stateA,
-            EffectStateOut = _effectStateA,
-            CellOffsets = _cellOffsets,
-            CellCounts = _cellCounts,
-            NeighborOffsets = _neighborOffsets,
+            PositionScaleIn = _positionsA,
+            VelocityIn = _velocitiesA,
+            StateIn = _stateA,
+            EffectStateIn = _effectStateA,
+            PositionScaleOut = _positionsB,
+            VelocityOut = _velocitiesB,
+            StateOut = _stateB,
+            EffectStateOut = _effectStateB,
+            DensityFieldFixed = _densityFieldFixed,
+            FlowDirections = _flowDirectionField,
             Bullets = _bullets,
             BulletCellHeads = _bulletCellHeads,
             BulletCellEntries = _bulletCellEntries,
@@ -1865,8 +1970,13 @@ public partial class RougeGameManager : MonoBehaviour
             BulletMax = _bulletMax,
             RenderHeight = renderHeight,
             DeltaTime = dt,
-            InvCellSize = invCellSize,
-            HashMask = _hashMask,
+            GridOrigin = _flowGridOrigin,
+            GridCellSize = _flowFieldRuntimeCellSize,
+            GridInvCellSize = invCellSize,
+            GridDim = _flowGridDim,
+            DensitySoftThreshold = densitySoftThreshold,
+            DensityRepulsionStrength = densityRepulsionStrength,
+            DensityGradientClamp = densityGradientClamp,
             FrameSeed = (uint)(Time.frameCount * 1664525 + 1013904223),
             SkillKillCounts = _skillKillCounts,
             BombDmgMult   = math.clamp(0.3f + _skillLevels[1] * 0.035f, 0.3f, 2.0f),
@@ -1874,9 +1984,10 @@ public partial class RougeGameManager : MonoBehaviour
             MeleeDmgMult  = math.clamp(0.3f + _skillLevels[3] * 0.035f, 0.3f, 2.0f),
             OrbitDmgMult  = math.clamp(2.0f + _skillLevels[4] * 0.5f, 2.0f, 15.0f),
             BulletDmgMult = math.clamp(0.3f + _skillLevels[5] * 0.035f, 0.3f, 2.0f)
-        }.ScheduleBatch(activeEnemyCount, simulationBatchSize, handle);
+        }.ScheduleBatch(activeEnemyCount, simulationBatchSize, JobHandle.CombineDependencies(densityHandle, flowDirectionHandle, bulletHandle));
 
         _simulationHandle = handle;
+        _simulationResultBackBufferReady = true;
     }
 
     private JobHandle ScheduleRadixSort(JobHandle dependency, int activeEnemyCount, int activeChunkCount)
@@ -2205,6 +2316,7 @@ public partial class RougeGameManager : MonoBehaviour
     private void Dispose()
     {
         _simulationHandle.Complete();
+        FinalizeCompletedSimulationBuffers();
         _simulationHandle = default;
         _initialized = false;
         _activeBulletCount = 0;
@@ -2294,6 +2406,11 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _bulletCellHeads);
         ReleaseNative(ref _bulletCellEntries);
         ReleaseNative(ref _bulletCellNext);
+        ReleaseNative(ref _densityFieldFixed);
+        ReleaseNative(ref _flowDistanceField);
+        ReleaseNative(ref _flowDistanceScratch);
+        ReleaseNative(ref _flowDirectionField);
+        ReleaseNative(ref _flowBlockedCells);
         ReleaseNative(ref _neighborOffsets);
         ReleaseNative(ref _histograms);
         ReleaseNative(ref _binTotals);
