@@ -1500,7 +1500,7 @@ public partial class RougeGameManager : MonoBehaviour
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
-            if (collider.bounds.size.y < 0.2f || collider.bounds.size.x > 80f) continue;
+            if (collider.bounds.size.y < 0.2f ) continue;
             count++;
         }
 

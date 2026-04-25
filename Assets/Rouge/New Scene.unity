@@ -1637,7 +1637,7 @@ MonoBehaviour:
   enemyRadius: 1
   enemyMaxSpeed: 7
   enemyVisualScale: 1
-  arenaHalfExtent: 220
+  arenaHalfExtent: 256
   spawnRadiusMin: 50
   spawnRadiusMax: 180
   despawnDistance: 260
@@ -1651,7 +1651,7 @@ MonoBehaviour:
   crowdOrbitStrength: 10
   denseSeparationBoost: 1.25
   denseNeighborThreshold: 10
-  flowFieldCellSize: 1.5
+  flowFieldCellSize: 2
   flowFieldIterations: 12
   flowFieldMaxGridDim: 256
   densitySoftThreshold: 1.35
