@@ -5,6 +5,7 @@ Shader "Rouge/AOERing"
         _Color("Color", Color) = (1, 0.6, 0.0, 0.8)
         _InnerRadiusRatio("Inner Radius Ratio", Range(0.5, 0.99)) = 0.75
         _GlowIntensity("Glow Intensity", Float) = 3.0
+        _AlphaMultiplier("Alpha Multiplier", Range(0, 1)) = 1.0
     }
 
     SubShader
@@ -29,6 +30,7 @@ Shader "Rouge/AOERing"
             float4 _Color;
             float _InnerRadiusRatio;
             float _GlowIntensity;
+            float _AlphaMultiplier;
             CBUFFER_END
 
             struct Attributes
@@ -71,7 +73,7 @@ Shader "Rouge/AOERing"
                 float glow = lerp(0.72, 1.0 + _GlowIntensity * 0.24, pow(edgeFactor, 1.6));
 
                 half3 col = _Color.rgb * glow * (0.88 + rim * 0.12);
-                float alpha = _Color.a * heightFactor * pow(edgeFactor, 1.45);
+                float alpha = _Color.a * _AlphaMultiplier * heightFactor * pow(edgeFactor, 1.45);
 
                 return half4(col, alpha);
             }

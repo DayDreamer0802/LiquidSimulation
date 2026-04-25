@@ -104,6 +104,7 @@
                 float localY : TEXCOORD4;
                 float variation : TEXCOORD5;
                 float dead : TEXCOORD6;
+                float launchBuffered : TEXCOORD7;
             };
 
             float Hash01(uint value)
@@ -139,6 +140,7 @@
                 output.localY = input.positionOS.y;
                 output.variation = Hash01(input.instanceID + 1u);
                 output.dead = step(0.5, fmod(floor(visualFlags * 0.5), 2.0));
+                output.launchBuffered = step(0.5, fmod(floor(visualFlags * 0.25), 2.0));
 
                 return output;
             }
@@ -182,9 +184,15 @@
                 float distToPlayer = distance(input.positionWS.xz, _PlayerFocusPosition.xz);
                 float nearDistance = max(_NearPlayerDistance, 0.001);
                 float veryNearDistance = max(min(_VeryNearPlayerDistance, nearDistance), 0.001);
+                float proximityMask = 1.0 - max(input.dead, input.launchBuffered);
+                float aliveMask = 1.0 - input.dead;
                 float nearWeight = 1.0 - saturate(distToPlayer / nearDistance);
                 float veryNearWeight = 1.0 - saturate(distToPlayer / veryNearDistance);
                 float airborneWeight = saturate((input.positionWS.y - (_RenderHeight + _AirborneHeightThreshold)) / max(_AirborneHeightThreshold, 0.001));
+
+                nearWeight *= proximityMask;
+                veryNearWeight *= proximityMask;
+                airborneWeight *= aliveMask;
 
                 col = lerp(col, _NearPlayerColor.rgb, nearWeight * saturate(_NearPlayerColor.a));
                 col = lerp(col, _VeryNearPlayerColor.rgb, veryNearWeight * saturate(_VeryNearPlayerColor.a));

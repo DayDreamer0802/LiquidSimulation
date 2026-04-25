@@ -758,6 +758,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const float VisualStateFlagStep = 10f;
     private const int CurseVisualFlag = 1;
     private const int DeadVisualFlag = 2;
+    private const int BufferedLaunchVisualFlag = 4;
+    private const float LaunchMotionDuration = 0.22f;
+    private const float LaunchStackDuration = 0.12f;
+    private const float LaunchPlanarImpulseFactor = 1.05f;
+    private const float LaunchPlanarImpulseWithKnockbackFactor = 0.35f;
+    private const float LaunchMaxVerticalSpeedMultiplier = 1.85f;
     private const float PoisonDurationSeconds = 2f;
     private const float PoisonTickInterval = 0.5f;
     private const float PoisonTickMaxHealthRatio = 0.1f;
@@ -885,6 +891,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float flashTimer = math.frac(math.max(state4.w, 0f));
             int visualFlags = DecodeVisualFlags(state4.w);
             bool isDeadVisual = (visualFlags & DeadVisualFlag) != 0;
+            bool isBufferedLaunchVisual = (visualFlags & BufferedLaunchVisualFlag) != 0;
+            bool bufferedLaunchDeath = isBufferedLaunchVisual;
+            bool launchKillPending = tornadoMark > 2.5f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+
+            if (launchKillPending && health <= 0f)
+            {
+                bufferedLaunchDeath = true;
+                health = 1f;
+            }
 
             if (math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
             {
@@ -925,9 +940,19 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true));
+                    EncodeVisualState(flashTimer, false, true, false));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
+            }
+
+            if (effects.LaunchMotionTimer > 0f)
+            {
+                effects.LaunchMotionTimer = math.max(0f, effects.LaunchMotionTimer - DeltaTime);
+            }
+
+            if (effects.LaunchStackTimer > 0f)
+            {
+                effects.LaunchStackTimer = math.max(0f, effects.LaunchStackTimer - DeltaTime);
             }
 
             if (effects.SlowTimer > 0f)
@@ -947,7 +972,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 directToPlayer = distToPlayerSq > 0.0001f ? toPlayer * math.rsqrt(distToPlayerSq) : new float2(0f, 1f);
-            bool isAirborne = pos.y > RenderHeight + 0.5f;
+            bool isAirborne = tornadoMark > 2.5f
+                || vel.y > 0.05f
+                || pos.y > RenderHeight + 0.05f
+                || effects.LaunchMotionTimer > 0f
+                || effects.LaunchStackTimer > 0f
+                || effects.LaunchLandingRadius > 0f
+                || effects.LaunchLandingDamage > 0f
+                || bufferedLaunchDeath;
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
@@ -1007,6 +1039,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     case 9:
                     case 10:
                     case 11:
+                    case 12:
                         ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
                         break;
                 }
@@ -1141,7 +1174,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 }
             }
 
-            if (health <= 0f && !isAirborne)
+            launchKillPending = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+            if (launchKillPending && health <= 0f)
+            {
+                bufferedLaunchDeath = true;
+                health = 1f;
+            }
+
+            if (health <= 0f && !launchKillPending)
             {
                 acceleration = float3.zero;
                 vel = float3.zero;
@@ -1226,10 +1266,13 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
                 pos.y = RenderHeight;
                 vel.y = 0f;
+                effects.LaunchMotionTimer = 0f;
+                effects.LaunchStackTimer = 0f;
                 ResolveObstaclePenetration(ref pos, ref vel, radius, obstaclePtr, ObstacleCount);
             }
 
-            bool justDied = health <= 0f && !hitPlayer && !isDeadVisual;
+            launchKillPending = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+            bool justDied = health <= 0f && !hitPlayer && !isDeadVisual && !launchKillPending;
             if (justDied)
             {
                 if (diedFromPoison && effects.PoisonSpreadRadius > 0f)
@@ -1290,7 +1333,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 EncodeVisualState(
                     flashTimer,
                     effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
-                    health <= 0f));
+                    health <= 0f,
+                    bufferedLaunchDeath && launchKillPending && health > 0f));
             effectOutPtr[sourceIndex] = effects;
         }
     }
@@ -1300,7 +1344,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         return (int)math.floor(math.max(encodedValue, 0f) / VisualStateFlagStep + 0.0001f);
     }
 
-    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual)
+    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual, bool isBufferedLaunchVisual)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -1313,7 +1357,43 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             flags |= DeadVisualFlag;
         }
 
+        if (isBufferedLaunchVisual)
+        {
+            flags |= BufferedLaunchVisualFlag;
+        }
+
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
+    }
+
+    private static RougeSkillArea BuildWeightedMotionArea(RougeSkillArea skill, float knockbackScale, float launchScale, bool ensureKnockback)
+    {
+        RougeSkillArea weightedSkill = skill;
+        SkillHitEffectTag tags = (SkillHitEffectTag)weightedSkill.EffectFlags;
+        float baseLaunch = skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight;
+
+        if (ensureKnockback && (tags & SkillHitEffectTag.Launch) != 0)
+        {
+            tags |= SkillHitEffectTag.Knockback;
+            weightedSkill.EffectFlags = (int)tags;
+        }
+
+        if ((tags & SkillHitEffectTag.Knockback) != 0)
+        {
+            float baseKnockback = skill.EffectKnockbackForce == 0f ? 35f : skill.EffectKnockbackForce;
+            if (ensureKnockback && (tags & SkillHitEffectTag.Launch) != 0)
+            {
+                baseKnockback = math.max(baseKnockback, baseLaunch * 2.2f);
+            }
+
+            weightedSkill.EffectKnockbackForce = baseKnockback * math.max(knockbackScale, 0f);
+        }
+
+        if ((tags & SkillHitEffectTag.Launch) != 0)
+        {
+            weightedSkill.EffectLaunchHeight = baseLaunch * math.max(launchScale, 0f);
+        }
+
+        return weightedSkill;
     }
 
     private static float Hash01(uint value)
@@ -1577,11 +1657,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         {
             float2 dir = math.normalizesafe(diff, new float2(0f, 1f));
             float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
+            float knockbackScale = math.lerp(0.3f, 1f, weight);
+            float launchScale = math.lerp(0.35f, 1f, weight);
             vel.y = math.max(vel.y, skill.VerticalForce * (1f + weight * 2f));
-            acceleration.xz += dir * (skill.PullForce + 25f);
+            acceleration.xz += dir * (skill.PullForce + 25f) * knockbackScale;
             tornadoMark = 2f;
             flashTimer = 1f;
-            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+            RougeSkillArea weightedSkill = BuildWeightedMotionArea(skill, knockbackScale, launchScale, false);
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
         }
     }
 
@@ -1642,6 +1725,21 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         float distSq = math.lengthsq(diff);
         if (distSq > skill.Radius * skill.Radius) return;
 
+        SkillHitEffectTag tags = (SkillHitEffectTag)skill.EffectFlags;
+        bool isSkateboardLaunchArea = skill.Type == 12 && (tags & SkillHitEffectTag.Launch) != 0;
+        bool launchAlreadyActive = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.05f || effects.LaunchMotionTimer > 0f;
+        if (isSkateboardLaunchArea && launchAlreadyActive && effects.LaunchStackTimer <= 0f)
+        {
+            return;
+        }
+
+        float radialWeight = skill.Radius > 0.001f
+            ? 1f - math.saturate(math.sqrt(math.max(distSq, 0.0001f)) / skill.Radius)
+            : 1f;
+        RougeSkillArea weightedSkill = isSkateboardLaunchArea
+            ? BuildWeightedMotionArea(skill, math.lerp(0.9f, 1.75f, radialWeight), math.lerp(1.05f, 1.75f, radialWeight), true)
+            : skill;
+
         if (skill.AuxA > 0f)
         {
             float dist = math.sqrt(math.max(distSq, 0.0001f));
@@ -1656,10 +1754,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (skill.Damage > 0f)
         {
             health -= skill.Damage * DeltaTime;
+            if (isSkateboardLaunchArea)
+            {
+                health = math.max(health, 1f);
+            }
         }
 
-        flashTimer = math.max(flashTimer, 0.2f);
-        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+        flashTimer = math.max(flashTimer, isSkateboardLaunchArea ? 0.9f : 0.2f);
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
     }
 
     private static float SamplePoisonNoise(float2 center, float2 offset, float noiseScale, float seed)
@@ -1688,11 +1790,27 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
         if ((tags & SkillHitEffectTag.Launch) != 0)
         {
-            float launchHeight = skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight;
-            vel.y = math.max(vel.y, launchHeight * KnockbackResist);
+            float launchImpulse = (skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight) * KnockbackResist;
+            float launchMaxVerticalSpeed = math.max(launchImpulse * LaunchMaxVerticalSpeedMultiplier, launchImpulse + 6f);
+            bool allowLaunchStack = effects.LaunchStackTimer > 0f;
+            bool hasKnockbackTag = (tags & SkillHitEffectTag.Knockback) != 0;
+            bool startingLaunchChain = tornadoMark <= 2.5f && effects.LaunchMotionTimer <= 0f && pos.y <= RenderHeight + 0.05f && vel.y <= 0.05f;
+
+            vel.y = allowLaunchStack
+                ? math.min(vel.y + launchImpulse, launchMaxVerticalSpeed)
+                : math.max(vel.y, launchImpulse);
+
+            float planarLaunchImpulse = launchImpulse * (hasKnockbackTag ? LaunchPlanarImpulseWithKnockbackFactor : LaunchPlanarImpulseFactor);
+            vel.xz += pushDir * planarLaunchImpulse;
             tornadoMark = 3f;
             effects.LaunchLandingDamage = math.max(effects.LaunchLandingDamage, skill.Damage * 0.5f);
             effects.LaunchLandingRadius = math.max(effects.LaunchLandingRadius, skill.EffectLaunchLandingRadius);
+            effects.LaunchMotionTimer = math.max(effects.LaunchMotionTimer, LaunchMotionDuration);
+            if (startingLaunchChain)
+            {
+                effects.LaunchStackTimer = math.max(effects.LaunchStackTimer, LaunchStackDuration);
+            }
+            flashTimer = math.max(flashTimer, 0.9f);
         }
 
         if ((tags & SkillHitEffectTag.Poison) != 0)
@@ -1806,6 +1924,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     private const float VisualStateFlagStep = 10f;
     private const int CurseVisualFlag = 1;
     private const int DeadVisualFlag = 2;
+    private const int BufferedLaunchVisualFlag = 4;
+    private const float LaunchMotionDuration = 0.22f;
+    private const float LaunchStackDuration = 0.12f;
+    private const float LaunchPlanarImpulseFactor = 1.05f;
+    private const float LaunchPlanarImpulseWithKnockbackFactor = 0.35f;
+    private const float LaunchMaxVerticalSpeedMultiplier = 1.85f;
     private const float PoisonDurationSeconds = 2f;
     private const float PoisonTickInterval = 0.5f;
     private const float PoisonTickMaxHealthRatio = 0.1f;
@@ -1937,6 +2061,15 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float flashTimer = math.frac(math.max(state4.w, 0f));
             int visualFlags = DecodeVisualFlags(state4.w);
             bool isDeadVisual = (visualFlags & DeadVisualFlag) != 0;
+            bool isBufferedLaunchVisual = (visualFlags & BufferedLaunchVisualFlag) != 0;
+            bool bufferedLaunchDeath = isBufferedLaunchVisual;
+            bool launchKillPending = tornadoMark > 2.5f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+
+            if (launchKillPending && health <= 0f)
+            {
+                bufferedLaunchDeath = true;
+                health = 1f;
+            }
 
             if (math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
             {
@@ -1977,9 +2110,19 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true));
+                    EncodeVisualState(flashTimer, false, true, false));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
+            }
+
+            if (effects.LaunchMotionTimer > 0f)
+            {
+                effects.LaunchMotionTimer = math.max(0f, effects.LaunchMotionTimer - DeltaTime);
+            }
+
+            if (effects.LaunchStackTimer > 0f)
+            {
+                effects.LaunchStackTimer = math.max(0f, effects.LaunchStackTimer - DeltaTime);
             }
 
             int2 cell = (int2)math.floor(pos.xz * InvCellSize);
@@ -2015,7 +2158,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 desired = math.normalizesafe(toPlayer);
-            bool isAirborne = pos.y > RenderHeight + 0.5f;
+            bool isAirborne = tornadoMark > 2.5f
+                || vel.y > 0.05f
+                || pos.y > RenderHeight + 0.05f
+                || effects.LaunchMotionTimer > 0f
+                || effects.LaunchStackTimer > 0f
+                || effects.LaunchLandingRadius > 0f
+                || effects.LaunchLandingDamage > 0f
+                || bufferedLaunchDeath;
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
@@ -2182,6 +2332,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     case 9:
                     case 10:
                     case 11:
+                    case 12:
                         ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
                         break;
                 }
@@ -2338,7 +2489,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 }
             }
 
-            if (health <= 0f && !isAirborne)
+            launchKillPending = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+            if (launchKillPending && health <= 0f)
+            {
+                bufferedLaunchDeath = true;
+                health = 1f;
+            }
+
+            if (health <= 0f && !launchKillPending)
             {
                 acceleration = float3.zero;
                 vel = float3.zero;
@@ -2423,9 +2581,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
                 pos.y = RenderHeight;
                 vel.y = 0f;
+                effects.LaunchMotionTimer = 0f;
+                effects.LaunchStackTimer = 0f;
             }
 
-            bool justDied = health <= 0f && !hitPlayer && !isDeadVisual;
+            launchKillPending = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
+            bool justDied = health <= 0f && !hitPlayer && !isDeadVisual && !launchKillPending;
             if (justDied)
             {
                 if (diedFromPoison && effects.PoisonSpreadRadius > 0f)
@@ -2486,7 +2647,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 EncodeVisualState(
                     flashTimer,
                     effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
-                    health <= 0f));
+                    health <= 0f,
+                    bufferedLaunchDeath && launchKillPending && health > 0f));
             effectOutPtr[sourceIndex] = effects;
         }
     }
@@ -2496,7 +2658,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         return (int)math.floor(math.max(encodedValue, 0f) / VisualStateFlagStep + 0.0001f);
     }
 
-    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual)
+    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual, bool isBufferedLaunchVisual)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -2509,7 +2671,43 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             flags |= DeadVisualFlag;
         }
 
+        if (isBufferedLaunchVisual)
+        {
+            flags |= BufferedLaunchVisualFlag;
+        }
+
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
+    }
+
+    private static RougeSkillArea BuildWeightedMotionArea(RougeSkillArea skill, float knockbackScale, float launchScale, bool ensureKnockback)
+    {
+        RougeSkillArea weightedSkill = skill;
+        SkillHitEffectTag tags = (SkillHitEffectTag)weightedSkill.EffectFlags;
+        float baseLaunch = skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight;
+
+        if (ensureKnockback && (tags & SkillHitEffectTag.Launch) != 0)
+        {
+            tags |= SkillHitEffectTag.Knockback;
+            weightedSkill.EffectFlags = (int)tags;
+        }
+
+        if ((tags & SkillHitEffectTag.Knockback) != 0)
+        {
+            float baseKnockback = skill.EffectKnockbackForce == 0f ? 35f : skill.EffectKnockbackForce;
+            if (ensureKnockback && (tags & SkillHitEffectTag.Launch) != 0)
+            {
+                baseKnockback = math.max(baseKnockback, baseLaunch * 2.2f);
+            }
+
+            weightedSkill.EffectKnockbackForce = baseKnockback * math.max(knockbackScale, 0f);
+        }
+
+        if ((tags & SkillHitEffectTag.Launch) != 0)
+        {
+            weightedSkill.EffectLaunchHeight = baseLaunch * math.max(launchScale, 0f);
+        }
+
+        return weightedSkill;
     }
 
     private void ProcessTornado(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
@@ -2642,11 +2840,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         {
             float2 dir = math.normalizesafe(diff, new float2(0f, 1f));
             float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
+            float knockbackScale = math.lerp(0.3f, 1f, weight);
+            float launchScale = math.lerp(0.35f, 1f, weight);
             vel.y = math.max(vel.y, skill.VerticalForce * (1f + weight * 2f));
-            acceleration.xz += dir * (skill.PullForce + 25f);
+            acceleration.xz += dir * (skill.PullForce + 25f) * knockbackScale;
             tornadoMark = 2f;
             flashTimer = 1f;
-            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+            RougeSkillArea weightedSkill = BuildWeightedMotionArea(skill, knockbackScale, launchScale, false);
+            ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
         }
     }
 
@@ -2707,6 +2908,21 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         float distSq = math.lengthsq(diff);
         if (distSq > skill.Radius * skill.Radius) return;
 
+        SkillHitEffectTag tags = (SkillHitEffectTag)skill.EffectFlags;
+        bool isSkateboardLaunchArea = skill.Type == 12 && (tags & SkillHitEffectTag.Launch) != 0;
+        bool launchAlreadyActive = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.05f || effects.LaunchMotionTimer > 0f;
+        if (isSkateboardLaunchArea && launchAlreadyActive && effects.LaunchStackTimer <= 0f)
+        {
+            return;
+        }
+
+        float radialWeight = skill.Radius > 0.001f
+            ? 1f - math.saturate(math.sqrt(math.max(distSq, 0.0001f)) / skill.Radius)
+            : 1f;
+        RougeSkillArea weightedSkill = isSkateboardLaunchArea
+            ? BuildWeightedMotionArea(skill, math.lerp(0.9f, 1.75f, radialWeight), math.lerp(1.05f, 1.75f, radialWeight), true)
+            : skill;
+
         if (skill.AuxA > 0f)
         {
             float dist = math.sqrt(math.max(distSq, 0.0001f));
@@ -2721,10 +2937,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         if (skill.Damage > 0f)
         {
             health -= skill.Damage * DeltaTime;
+            if (isSkateboardLaunchArea)
+            {
+                health = math.max(health, 1f);
+            }
         }
 
-        flashTimer = math.max(flashTimer, 0.2f);
-        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+        flashTimer = math.max(flashTimer, isSkateboardLaunchArea ? 0.9f : 0.2f);
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
     }
 
     private static float SamplePoisonNoise(float2 center, float2 offset, float noiseScale, float seed)
@@ -2753,11 +2973,27 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
         if ((tags & SkillHitEffectTag.Launch) != 0)
         {
-            float launchHeight = skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight;
-            vel.y = math.max(vel.y, launchHeight * KnockbackResist);
+            float launchImpulse = (skill.EffectLaunchHeight == 0f ? 12f : skill.EffectLaunchHeight) * KnockbackResist;
+            float launchMaxVerticalSpeed = math.max(launchImpulse * LaunchMaxVerticalSpeedMultiplier, launchImpulse + 6f);
+            bool allowLaunchStack = effects.LaunchStackTimer > 0f;
+            bool hasKnockbackTag = (tags & SkillHitEffectTag.Knockback) != 0;
+            bool startingLaunchChain = tornadoMark <= 2.5f && effects.LaunchMotionTimer <= 0f && pos.y <= RenderHeight + 0.05f && vel.y <= 0.05f;
+
+            vel.y = allowLaunchStack
+                ? math.min(vel.y + launchImpulse, launchMaxVerticalSpeed)
+                : math.max(vel.y, launchImpulse);
+
+            float planarLaunchImpulse = launchImpulse * (hasKnockbackTag ? LaunchPlanarImpulseWithKnockbackFactor : LaunchPlanarImpulseFactor);
+            vel.xz += pushDir * planarLaunchImpulse;
             tornadoMark = 3f;
             effects.LaunchLandingDamage = math.max(effects.LaunchLandingDamage, skill.Damage * 0.5f);
             effects.LaunchLandingRadius = math.max(effects.LaunchLandingRadius, skill.EffectLaunchLandingRadius);
+            effects.LaunchMotionTimer = math.max(effects.LaunchMotionTimer, LaunchMotionDuration);
+            if (startingLaunchChain)
+            {
+                effects.LaunchStackTimer = math.max(effects.LaunchStackTimer, LaunchStackDuration);
+            }
+            flashTimer = math.max(flashTimer, 0.9f);
         }
 
         if ((tags & SkillHitEffectTag.Poison) != 0)

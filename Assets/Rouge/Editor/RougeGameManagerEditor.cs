@@ -63,17 +63,15 @@ public class RougeGameManagerEditor : Editor
                 DrawPresentation(presentationProperty);
             }
 
-            SerializedProperty effectsProperty = skillProperty.FindPropertyRelative("Effects");
-            if (effectsProperty != null)
-            {
-                EditorGUILayout.Space(4f);
-                DrawSectionHeader("Effects");
-                DrawEffects(effectsProperty);
-            }
+            DrawEffectsSection(skillProperty, "Effects", "Effects");
+            DrawEffectsSection(skillProperty, "FinisherEffects", "Finisher Effects");
+            DrawEffectsSection(skillProperty, "FinaleSlamEffects", "Finale Slam Effects");
+            DrawEffectsSection(skillProperty, "RideEffects", "Ride Effects");
+            DrawEffectsSection(skillProperty, "WhirlwindEffects", "Whirlwind Effects");
 
             EditorGUILayout.Space(4f);
             DrawSectionHeader("Parameters");
-            DrawRemainingFields(skillProperty, "Presentation", "Effects");
+            DrawRemainingFields(skillProperty, "Presentation", "Effects", "FinisherEffects", "FinaleSlamEffects", "RideEffects", "WhirlwindEffects");
 
             EditorGUI.indentLevel--;
         }
@@ -141,6 +139,7 @@ public class RougeGameManagerEditor : Editor
         if ((tags & SkillHitEffectTag.Knockback) != 0)
         {
             DrawSectionHeader("Knockback");
+            EditorGUILayout.PropertyField(effectsProperty.FindPropertyRelative("KnockbackCenter"));
             EditorGUILayout.PropertyField(effectsProperty.FindPropertyRelative("KnockbackForce"));
         }
 
@@ -177,6 +176,19 @@ public class RougeGameManagerEditor : Editor
             EditorGUILayout.PropertyField(effectsProperty.FindPropertyRelative("BurnDamage"));
             EditorGUILayout.PropertyField(effectsProperty.FindPropertyRelative("BurnDuration"));
         }
+    }
+
+    private static void DrawEffectsSection(SerializedProperty skillProperty, string propertyName, string label)
+    {
+        SerializedProperty effectsProperty = skillProperty.FindPropertyRelative(propertyName);
+        if (effectsProperty == null)
+        {
+            return;
+        }
+
+        EditorGUILayout.Space(4f);
+        DrawSectionHeader(label);
+        DrawEffects(effectsProperty);
     }
 
     private static void DrawRemainingFields(SerializedProperty parentProperty, params string[] excludedNames)

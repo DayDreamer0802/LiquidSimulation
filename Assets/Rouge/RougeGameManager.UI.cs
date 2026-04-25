@@ -39,7 +39,8 @@ public partial class RougeGameManager
             PlayerSkillDefinition definition = skillConfig.GetDefinition(binding.Type);
             string displayName = string.IsNullOrWhiteSpace(binding.DisplayNameOverride) ? definition.DisplayName : binding.DisplayNameOverride;
             string disabledSuffix = IsSkillEnabled(binding.Type) ? string.Empty : " [OFF]";
-            sb.AppendLine($"{binding.ShortLabel}: {displayName} Lv{_skillLevels[progressionIndex]} ({_skillTotalKills[progressionIndex]}){disabledSuffix}");
+            string lockSuffix = IsSkillProgressionLocked(progressionIndex) ? " [NO-UP]" : string.Empty;
+            sb.AppendLine($"{binding.ShortLabel}: {displayName} Lv{_skillLevels[progressionIndex]} ({GetSkillProgressSummary(progressionIndex)}){lockSuffix}{disabledSuffix}");
         }
     }
 

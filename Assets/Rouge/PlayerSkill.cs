@@ -72,6 +72,8 @@ public struct ResolvedSkillHitEffectConfig
 public abstract class LevelScaledSkillConfig
 {
     public int MaxLevel = 60;
+    public bool DisableLevelUp;
+    public float3 UpgradeKillRequirement = new float3(150f, 150f, 0f);
 
     public float GetValue(float3 value, int level)
     {
@@ -91,6 +93,71 @@ public abstract class LevelScaledSkillConfig
     public int GetBaseIntValue(float3 value)
     {
         return Mathf.FloorToInt(value.x);
+    }
+
+    public int GetInitialSkillLevel()
+    {
+        return 1;
+    }
+
+    public int GetUpgradeKillRequirement(int currentLevel)
+    {
+        if (currentLevel < 1 || currentLevel >= Mathf.Max(1, MaxLevel))
+        {
+            return 0;
+        }
+
+        return Mathf.Max(1, GetIntValue(UpgradeKillRequirement, currentLevel));
+    }
+
+    public int GetTotalKillsRequiredForLevel(int level)
+    {
+        int clampedLevel = Mathf.Clamp(level, GetInitialSkillLevel(), Mathf.Max(1, MaxLevel));
+        int totalRequiredKills = 0;
+        for (int currentLevel = GetInitialSkillLevel(); currentLevel < clampedLevel; currentLevel++)
+        {
+            totalRequiredKills += GetUpgradeKillRequirement(currentLevel);
+        }
+
+        return totalRequiredKills;
+    }
+
+    public int EvaluateProgressionLevel(int totalKills)
+    {
+        int level = GetInitialSkillLevel();
+        int safeTotalKills = Mathf.Max(0, totalKills);
+        int safeMaxLevel = Mathf.Max(1, MaxLevel);
+        while (level < safeMaxLevel)
+        {
+            int requiredKills = GetUpgradeKillRequirement(level);
+            if (requiredKills <= 0 || safeTotalKills < requiredKills)
+            {
+                break;
+            }
+
+            safeTotalKills -= requiredKills;
+            level++;
+        }
+
+        return level;
+    }
+
+    public int GetKillsIntoCurrentLevel(int totalKills)
+    {
+        int level = EvaluateProgressionLevel(totalKills);
+        return Mathf.Max(0, totalKills - GetTotalKillsRequiredForLevel(level));
+    }
+
+    public int GetRemainingKillsToNextLevel(int totalKills)
+    {
+        int level = EvaluateProgressionLevel(totalKills);
+        int nextLevelRequirement = GetUpgradeKillRequirement(level);
+        if (nextLevelRequirement <= 0)
+        {
+            return 0;
+        }
+
+        return Mathf.Max(0, nextLevelRequirement - GetKillsIntoCurrentLevel(totalKills));
     }
 
     public static float GetSkillValue(float3 value, int level, int maxLevel)
@@ -344,6 +411,7 @@ public class LightPillarSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Light Pillar Strike", "Q", false, KeyCode.Q);
     public SkillHitEffectConfig Effects;
+    public Material ImpactRingMaterial;
     public float3 Cooldown = new float3(10f, 10f, 0f);
     public float3 StrikeCount = new float3(4f, 16f, 1f);
     public float3 StartDistance = new float3(6f, 6f, 0f);
@@ -417,6 +485,10 @@ public class MeleeSlashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Melee Slash", "MOUSE L-CLICK", false);
     public SkillHitEffectConfig Effects;
+    public SkillHitEffectConfig FinisherEffects;
+    public Material SlashVisualMaterial;
+    public Material FinisherVisualMaterial;
+    public Material SpikeVisualMaterial;
     public float3 SlashCooldown = new float3(0.22f, 0.22f, 0f);
     public float3 FinisherCooldown = new float3(1.5f, 1.5f, 0f);
     public float3 ComboWindow = new float3(1.5f, 1.5f, 0f);
@@ -433,9 +505,6 @@ public class MeleeSlashSkillConfig : LevelScaledSkillConfig
     public float3 ThrustAdvanceSpeed = new float3(20f, 24f, 2f);
     public float3 SlashDamage = new float3(800f, 2200f, 2f);
     public float3 SpinDamage = new float3(1200f, 3200f, 2f);
-    public float3 PullForce = new float3(120f, 160f, 2f);
-    public float3 SlashVerticalForce = new float3(80f, 110f, 2f);
-    public float3 ThrustVerticalForce = new float3(90f, 125f, 2f);
     public float3 FinisherSlamDuration = new float3(0.12f, 0.12f, 0f);
     public float3 FinisherSlamWidth = new float3(5f, 6.5f, 2f);
     public float3 FinisherSlamLength = new float3(12f, 15f, 2f);
@@ -455,9 +524,6 @@ public class MeleeSlashSkillConfig : LevelScaledSkillConfig
     public float3 CenterSpikeDistance = new float3(14f, 17f, 2f);
     public float3 SideSpikeDistance = new float3(12f, 15f, 2f);
     public float3 SideSpikeAngle = new float3(28f, 35f, 2f);
-    public float3 CenterSpikeVerticalForce = new float3(90f, 120f, 2f);
-    public float3 SideSpikeVerticalForce = new float3(65f, 95f, 2f);
-    public float3 SpikePullForce = new float3(40f, 60f, 2f);
 
     public PlayerSkillDefinition ToDefinition()
     {
@@ -633,6 +699,8 @@ public class SkateboardSkillConfig : LevelScaledSkillConfig
     [Header("滑板大风车效果")]
     public SkillHitEffectConfig WhirlwindEffects;
 
+    public Material BoardVisualMaterial;
+
     public float3 Cooldown          = new float3(18f, 12f, 2f);
     public float3 RideDuration      = new float3(7f,  12f, 1f);
     public float3 RideSpeed         = new float3(24f, 34f, 1f);
@@ -641,8 +709,6 @@ public class SkateboardSkillConfig : LevelScaledSkillConfig
     public float3 RideContactDamagePerSecond = new float3(180f, 520f, 2f);
     public float3 SlamRadius        = new float3(14f, 22f, 2f);
     public float3 SlamDamage        = new float3(500f, 2800f, 2f);
-    public float3 SlamVerticalForce = new float3(38f, 58f,  1f);
-    public float3 SlamPullForce     = new float3(-180f, -300f, 1f);
     public float3 InitJumpDuration  = new float3(0.38f, 0.38f, 0f);
     public float3 LandDuration      = new float3(0.18f, 0.18f, 0f);
     public float3 TrickDuration     = new float3(0.65f, 0.65f, 0f);
@@ -676,6 +742,43 @@ public class PlayerSkillConfigSet
     public static PlayerSkillConfigSet CreateDefault()
     {
         return new PlayerSkillConfigSet();
+    }
+
+    public LevelScaledSkillConfig GetLevelScaledConfig(PlayerSkillType type)
+    {
+        EnsureInitialized();
+
+        switch (type)
+        {
+            case PlayerSkillType.AutoShoot:
+                return AutoShoot;
+            case PlayerSkillType.LeapSmash:
+                return LeapSmash;
+            case PlayerSkillType.LightPillarStrike:
+                return LightPillar;
+            case PlayerSkillType.BombThrow:
+                return BombThrow;
+            case PlayerSkillType.LaserBeam:
+                return LaserBeam;
+            case PlayerSkillType.MeleeSlash:
+                return MeleeSlash;
+            case PlayerSkillType.Shockwave:
+                return Shockwave;
+            case PlayerSkillType.MeteorRain:
+                return MeteorRain;
+            case PlayerSkillType.IceZone:
+                return IceZone;
+            case PlayerSkillType.PoisonBottle:
+                return PoisonBottle;
+            case PlayerSkillType.Dash:
+                return Dash;
+            case PlayerSkillType.OrbitBall:
+                return OrbitBall;
+            case PlayerSkillType.Skateboard:
+                return Skateboard;
+            default:
+                return null;
+        }
     }
 
     public void EnsureInitialized()

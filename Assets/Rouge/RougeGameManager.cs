@@ -63,7 +63,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField, Range(0f, 4f)] private float denseSeparationBoost = 1.25f;
     [SerializeField, Range(1, 32)] private int denseNeighborThreshold = 6;
     [SerializeField] private float flowFieldCellSize = 1.5f;
-    [SerializeField, Range(2, 16)] private int flowFieldIterations = 6;
+    [SerializeField, Range(2, 128)] private int flowFieldIterations = 6;
     [SerializeField, Range(64, 256)] private int flowFieldMaxGridDim = 256;
     [SerializeField] private float densitySoftThreshold = 1.35f;
     [SerializeField] private float densityRepulsionStrength = 18f;
@@ -261,6 +261,8 @@ public partial class RougeGameManager : MonoBehaviour
     private float2 _spikeDir;
     private GameObject[] _spikeVisuals = new GameObject[3];
     private Material _spikeMat;
+    private Mesh _spikeMesh;
+    private bool _ownsSpikeMesh;
 
     private float _orbitTimer;
     private System.Collections.Generic.List<GameObject> _orbitVisuals = new System.Collections.Generic.List<GameObject>();
@@ -369,6 +371,10 @@ public partial class RougeGameManager : MonoBehaviour
     private Vector3 _skateFinaleEnd;
     private GameObject _skateBoardVisual;
     private Material   _skateBoardMat;
+    private bool _ownsMeleeMat;
+    private bool _ownsMeleeFinisherMat;
+    private bool _ownsSpikeMat;
+    private bool _ownsSkateboardMat;
     private bool _hasActiveSustainedSkill;
     private PlayerSkillType _activeSustainedSkillType;
     private int _activeSustainedSkillPriority;
@@ -427,6 +433,8 @@ public partial class RougeGameManager : MonoBehaviour
     private float[] _aoeRingMaxRadius = new float[MaxAOERings];
     private Vector3[] _aoeRingPositions = new Vector3[MaxAOERings];
     private Color[] _aoeRingColors = new Color[MaxAOERings];
+    private Material[] _aoeRingMaterials = new Material[MaxAOERings];
+    private bool[] _aoeRingUseMaterialColor = new bool[MaxAOERings];
     private Material _aoeRingMat;
     private MaterialPropertyBlock _aoeRingPropertyBlock;
     private Mesh _cylinderMesh;
@@ -566,9 +574,15 @@ public partial class RougeGameManager : MonoBehaviour
                 int recent = _skillKillCounts[sk];
                 if (recent > 0)
                 {
-                    _skillTotalKills[sk] += recent;
                     _skillKillCounts[sk] = 0;
-                    _skillLevels[sk] = Mathf.Min(60, _skillTotalKills[sk] / 150);
+                    LevelScaledSkillConfig progressionConfig = GetSkillProgressionConfig(sk);
+                    if (progressionConfig == null || progressionConfig.DisableLevelUp)
+                    {
+                        continue;
+                    }
+
+                    _skillTotalKills[sk] += recent;
+                    _skillLevels[sk] = progressionConfig.EvaluateProgressionLevel(_skillTotalKills[sk]);
                 }
             }
         }
@@ -921,6 +935,10 @@ public partial class RougeGameManager : MonoBehaviour
         _survivalTime = 0f;
         System.Array.Clear(_skillTotalKills, 0, 6);
         System.Array.Clear(_skillLevels, 0, 6);
+        for (int skillIndex = 0; skillIndex < _skillLevels.Length; skillIndex++)
+        {
+            _skillLevels[skillIndex] = GetInitialSkillProgressionLevel(skillIndex);
+        }
 
         playerHealth = playerMaxHealth;
 
@@ -1177,12 +1195,18 @@ public partial class RougeGameManager : MonoBehaviour
             _meleeVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(_meleeVisual.GetComponent<Collider>());
             _meleeVisual.name = "Melee Slash";
-            _meleeMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _meleeMat.color = new Color(1f, 0.3f, 0.1f, 0.6f);
-            _meleeMat.SetFloat("_Surface", 1f); // Transparent
-            _meleeMat.SetColor("_EmissionColor", new Color(1f, 0.3f, 0.1f, 1f) * 4f);
-            _meleeVisual.GetComponent<MeshRenderer>().material = _meleeMat;
+            _ownsMeleeMat = skillConfig.MeleeSlash.SlashVisualMaterial == null;
+            _meleeMat = skillConfig.MeleeSlash.SlashVisualMaterial != null
+                ? skillConfig.MeleeSlash.SlashVisualMaterial
+                : CreateFallbackHologramMaterial(new Color(0.16f, 0.95f, 1f, 1f), new Color(0.95f, 0.98f, 1f, 1f), 0.62f, 20f, 2.3f);
+            _meleeVisual.GetComponent<MeshRenderer>().sharedMaterial = _meleeMat;
             _meleeVisual.SetActive(false);
+        }
+
+        MeshRenderer meleeRenderer = _meleeVisual != null ? _meleeVisual.GetComponent<MeshRenderer>() : null;
+        if (meleeRenderer != null && meleeRenderer.sharedMaterial != _meleeMat)
+        {
+            meleeRenderer.sharedMaterial = _meleeMat;
         }
 
         if (_meleeFinisherVisual == null)
@@ -1190,20 +1214,34 @@ public partial class RougeGameManager : MonoBehaviour
             _meleeFinisherVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(_meleeFinisherVisual.GetComponent<Collider>());
             _meleeFinisherVisual.name = "Melee Finisher Slam";
-            _meleeFinisherMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _meleeFinisherMat.color = new Color(1f, 0.85f, 0.45f, 0.75f);
-            _meleeFinisherMat.SetFloat("_Surface", 1f);
-            _meleeFinisherMat.SetColor("_EmissionColor", new Color(1f, 0.7f, 0.2f, 1f) * 4f);
-            _meleeFinisherVisual.GetComponent<MeshRenderer>().material = _meleeFinisherMat;
+            _ownsMeleeFinisherMat = skillConfig.MeleeSlash.FinisherVisualMaterial == null;
+            _meleeFinisherMat = skillConfig.MeleeSlash.FinisherVisualMaterial != null
+                ? skillConfig.MeleeSlash.FinisherVisualMaterial
+                : CreateFallbackHologramMaterial(new Color(1f, 0.74f, 0.22f, 1f), new Color(1f, 0.98f, 0.78f, 1f), 0.74f, 16f, 2.8f);
+            _meleeFinisherVisual.GetComponent<MeshRenderer>().sharedMaterial = _meleeFinisherMat;
             _meleeFinisherVisual.SetActive(false);
+        }
+
+        MeshRenderer meleeFinisherRenderer = _meleeFinisherVisual != null ? _meleeFinisherVisual.GetComponent<MeshRenderer>() : null;
+        if (meleeFinisherRenderer != null && meleeFinisherRenderer.sharedMaterial != _meleeFinisherMat)
+        {
+            meleeFinisherRenderer.sharedMaterial = _meleeFinisherMat;
         }
 
         if (_spikeMat == null)
         {
-            _spikeMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _spikeMat.color = new Color(0.65f, 0.52f, 0.3f, 1f);
-            _spikeMat.SetColor("_EmissionColor", new Color(0.9f, 0.6f, 0.2f, 1f) * 2f);
+            _ownsSpikeMat = skillConfig.MeleeSlash.SpikeVisualMaterial == null;
+            _spikeMat = skillConfig.MeleeSlash.SpikeVisualMaterial != null
+                ? skillConfig.MeleeSlash.SpikeVisualMaterial
+                : CreateFallbackHologramMaterial(new Color(0.18f, 1f, 0.86f, 1f), new Color(0.94f, 1f, 0.94f, 1f), 0.8f, 24f, 2.45f);
         }
+
+        if (_spikeMesh == null)
+        {
+            _spikeMesh = CreateConeMesh(18);
+            _ownsSpikeMesh = true;
+        }
+
         for (int iSpkI = 0; iSpkI < 3; iSpkI++)
         {
             if (_spikeVisuals[iSpkI] == null)
@@ -1211,8 +1249,26 @@ public partial class RougeGameManager : MonoBehaviour
                 _spikeVisuals[iSpkI] = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 Destroy(_spikeVisuals[iSpkI].GetComponent<Collider>());
                 _spikeVisuals[iSpkI].name = "Spike " + iSpkI;
-                _spikeVisuals[iSpkI].GetComponent<MeshRenderer>().material = _spikeMat;
+                MeshFilter spikeMeshFilter = _spikeVisuals[iSpkI].GetComponent<MeshFilter>();
+                if (spikeMeshFilter != null && _spikeMesh != null)
+                {
+                    spikeMeshFilter.sharedMesh = _spikeMesh;
+                }
+
+                _spikeVisuals[iSpkI].GetComponent<MeshRenderer>().sharedMaterial = _spikeMat;
                 _spikeVisuals[iSpkI].SetActive(false);
+            }
+
+            MeshFilter reboundSpikeMeshFilter = _spikeVisuals[iSpkI] != null ? _spikeVisuals[iSpkI].GetComponent<MeshFilter>() : null;
+            if (reboundSpikeMeshFilter != null && reboundSpikeMeshFilter.sharedMesh != _spikeMesh)
+            {
+                reboundSpikeMeshFilter.sharedMesh = _spikeMesh;
+            }
+
+            MeshRenderer spikeRenderer = _spikeVisuals[iSpkI] != null ? _spikeVisuals[iSpkI].GetComponent<MeshRenderer>() : null;
+            if (spikeRenderer != null && spikeRenderer.sharedMaterial != _spikeMat)
+            {
+                spikeRenderer.sharedMaterial = _spikeMat;
             }
         }
 
@@ -1361,12 +1417,15 @@ public partial class RougeGameManager : MonoBehaviour
             _dashVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(_dashVisual.GetComponent<Collider>());
             _dashVisual.name = "Whirlwind Visual";
-            _dashMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _dashMat.color = new Color(1f, 0.88f, 0.35f, 0.55f);
-            _dashMat.SetFloat("_Surface", 1f);
-            _dashMat.SetColor("_EmissionColor", new Color(1f, 0.75f, 0.2f, 1f) * 4f);
-            _dashVisual.GetComponent<MeshRenderer>().material = _dashMat;
+            _dashMat = CreateFallbackHologramMaterial(new Color(1f, 0.72f, 0.22f, 1f), new Color(1f, 0.97f, 0.82f, 1f), 0.76f, 14f, 2.65f);
+            _dashVisual.GetComponent<MeshRenderer>().sharedMaterial = _dashMat;
             _dashVisual.SetActive(false);
+        }
+
+        MeshRenderer dashRenderer = _dashVisual != null ? _dashVisual.GetComponent<MeshRenderer>() : null;
+        if (dashRenderer != null && dashRenderer.sharedMaterial != _dashMat)
+        {
+            dashRenderer.sharedMaterial = _dashMat;
         }
 
 
@@ -1491,6 +1550,60 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier - scroll * cameraZoomScrollStep, 0.5f, 3f);
+    }
+
+    private int GetInitialSkillProgressionLevel(int progressionIndex)
+    {
+        LevelScaledSkillConfig progressionConfig = GetSkillProgressionConfig(progressionIndex);
+        return progressionConfig != null ? progressionConfig.GetInitialSkillLevel() : 1;
+    }
+
+    private LevelScaledSkillConfig GetSkillProgressionConfig(int progressionIndex)
+    {
+        if (skillConfig == null)
+        {
+            return null;
+        }
+
+        for (int i = 0; i < PlayerSkillCatalog.ProgressionBindings.Length; i++)
+        {
+            PlayerSkillProgressBinding binding = PlayerSkillCatalog.ProgressionBindings[i];
+            if (binding.ProgressionIndex == progressionIndex)
+            {
+                return skillConfig.GetLevelScaledConfig(binding.Type);
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsSkillProgressionLocked(int progressionIndex)
+    {
+        LevelScaledSkillConfig progressionConfig = GetSkillProgressionConfig(progressionIndex);
+        return progressionConfig != null && progressionConfig.DisableLevelUp;
+    }
+
+    private string GetSkillProgressSummary(int progressionIndex)
+    {
+        LevelScaledSkillConfig progressionConfig = GetSkillProgressionConfig(progressionIndex);
+        int totalSkillKills = progressionIndex >= 0 && progressionIndex < _skillTotalKills.Length ? _skillTotalKills[progressionIndex] : 0;
+        if (progressionConfig == null)
+        {
+            return totalSkillKills.ToString();
+        }
+
+        if (progressionConfig.DisableLevelUp)
+        {
+            return $"{totalSkillKills} | LOCK";
+        }
+
+        int remainingKills = progressionConfig.GetRemainingKillsToNextLevel(totalSkillKills);
+        if (remainingKills <= 0)
+        {
+            return $"{totalSkillKills} | MAX";
+        }
+
+        return $"{totalSkillKills} | NEXT {remainingKills}";
     }
 
     private void BuildNeighborOffsets()
@@ -2175,7 +2288,7 @@ public partial class RougeGameManager : MonoBehaviour
         return handle;
     }
 
-    private void SpawnAOERing(Vector3 center, float radius, float duration, Color color = default)
+    private void SpawnAOERing(Vector3 center, float radius, float duration, Color color = default, Material material = null, bool useMaterialColor = false)
     {
         if (color == default) color = new Color(1f, 0.5f, 0f, 1f); // default orange
         for (int i = 0; i < MaxAOERings; i++)
@@ -2187,6 +2300,8 @@ public partial class RougeGameManager : MonoBehaviour
                 _aoeRingMaxRadius[i] = radius;
                 _aoeRingPositions[i] = center;
                 _aoeRingColors[i] = color;
+                _aoeRingMaterials[i] = material;
+                _aoeRingUseMaterialColor[i] = useMaterialColor;
                 return;
             }
         }
@@ -2202,6 +2317,8 @@ public partial class RougeGameManager : MonoBehaviour
                 if (_aoeRingTimers[i] <= 0f)
                 {
                     _aoeRingTimers[i] = 0f;
+                    _aoeRingMaterials[i] = null;
+                    _aoeRingUseMaterialColor[i] = false;
                 }
             }
         }
@@ -2313,6 +2430,12 @@ public partial class RougeGameManager : MonoBehaviour
                 continue;
             }
 
+            Material ringMaterial = _aoeRingMaterials[i] != null ? _aoeRingMaterials[i] : _aoeRingMat;
+            if (ringMaterial == null)
+            {
+                continue;
+            }
+
             float progress = 1f - math.max(0f, _aoeRingTimers[i] / math.max(0.01f, _aoeRingMaxTimes[i]));
             float travel = progress * progress * (3f - 2f * progress);
             float currentRadius = _aoeRingMaxRadius[i] * math.lerp(0.12f, 1f, travel);
@@ -2323,12 +2446,26 @@ public partial class RougeGameManager : MonoBehaviour
             Matrix4x4 matrix = Matrix4x4.TRS(center, Quaternion.identity, new Vector3(currentRadius * 2f, ringHeight, currentRadius * 2f));
 
             _aoeRingPropertyBlock.Clear();
-            _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.82f, 0.94f, progress));
+            if (ringMaterial.HasProperty("_InnerRadiusRatio"))
+            {
+                _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.82f, 0.94f, progress));
+            }
+
             Color color = _aoeRingColors[i];
             color.a *= alpha;
-            _aoeRingPropertyBlock.SetColor("_Color", color);
+            if (_aoeRingUseMaterialColor[i])
+            {
+                if (ringMaterial.HasProperty("_AlphaMultiplier"))
+                {
+                    _aoeRingPropertyBlock.SetFloat("_AlphaMultiplier", color.a);
+                }
+            }
+            else if (ringMaterial.HasProperty("_Color"))
+            {
+                _aoeRingPropertyBlock.SetColor("_Color", color);
+            }
 
-            Graphics.DrawMesh(_cylinderMesh, matrix, _aoeRingMat, gameObject.layer, null, 0, _aoeRingPropertyBlock, UnityEngine.Rendering.ShadowCastingMode.Off, false, null, false);
+            Graphics.DrawMesh(_cylinderMesh, matrix, ringMaterial, gameObject.layer, null, 0, _aoeRingPropertyBlock, UnityEngine.Rendering.ShadowCastingMode.Off, false, null, false);
         }
     }
 
@@ -2375,7 +2512,13 @@ public partial class RougeGameManager : MonoBehaviour
                         _tornadoImpactEffects[i]))
                     {
                         Vector3 impactCenter = new Vector3(_tornadoImpactPositions[i].x, renderHeight + 0.04f, _tornadoImpactPositions[i].y);
-                        SpawnAOERing(impactCenter, _tornadoImpactRadii[i], _tornadoImpactRingDurations[i], _tornadoImpactRingColors[i]);
+                        SpawnAOERing(
+                            impactCenter,
+                            _tornadoImpactRadii[i],
+                            _tornadoImpactRingDurations[i],
+                            _tornadoImpactRingColors[i],
+                            skillConfig != null ? skillConfig.LightPillar.ImpactRingMaterial : null,
+                            skillConfig != null && skillConfig.LightPillar != null && skillConfig.LightPillar.ImpactRingMaterial != null);
                         SpawnExplosionVFX(impactCenter + Vector3.up * 0.3f, math.max(0.8f, _tornadoImpactRadii[i] * 0.22f));
                     }
                 }
@@ -2463,11 +2606,12 @@ public partial class RougeGameManager : MonoBehaviour
                 if (_laserExtraVisuals[li] != null) { Destroy(_laserExtraVisuals[li]); _laserExtraVisuals[li] = null; }
         if (_tornadoMat) Destroy(_tornadoMat);
         if (_laserMat && _ownsLaserMat) Destroy(_laserMat);
-        if (_meleeMat) Destroy(_meleeMat);
+        if (_meleeMat && _ownsMeleeMat) Destroy(_meleeMat);
         if (_meleeVisual) Destroy(_meleeVisual);
-        if (_meleeFinisherMat) Destroy(_meleeFinisherMat);
+        if (_meleeFinisherMat && _ownsMeleeFinisherMat) Destroy(_meleeFinisherMat);
         if (_meleeFinisherVisual) Destroy(_meleeFinisherVisual);
-        if (_spikeMat) Destroy(_spikeMat);
+        if (_spikeMat && _ownsSpikeMat) Destroy(_spikeMat);
+        if (_spikeMesh && _ownsSpikeMesh) Destroy(_spikeMesh);
         if (_spikeVisuals != null)
             for (int iSpkD = 0; iSpkD < _spikeVisuals.Length; iSpkD++)
                 if (_spikeVisuals[iSpkD] != null) { Destroy(_spikeVisuals[iSpkD]); _spikeVisuals[iSpkD] = null; }
@@ -2483,6 +2627,8 @@ public partial class RougeGameManager : MonoBehaviour
         if (_iceZoneMat) Destroy(_iceZoneMat);
         if (_dashVisual) Destroy(_dashVisual);
         if (_dashMat) Destroy(_dashMat);
+        if (_skateBoardMat && _ownsSkateboardMat) Destroy(_skateBoardMat);
+        if (_skateBoardVisual) Destroy(_skateBoardVisual);
         if (_poisonBottleMat) Destroy(_poisonBottleMat);
         if (_poisonZoneMat) Destroy(_poisonZoneMat);
         if (_burnPatchMat) Destroy(_burnPatchMat);
@@ -2604,6 +2750,105 @@ public partial class RougeGameManager : MonoBehaviour
         return material;
     }
 
+    private static Material CreateFallbackHologramMaterial(Color baseColor, Color accentColor, float alpha, float scanlineDensity, float glowStrength)
+    {
+        Shader shader = Shader.Find("Rouge/Hologram");
+        Material material;
+        if (shader != null)
+        {
+            material = new Material(shader)
+            {
+                hideFlags = HideFlags.DontSave
+            };
+            material.SetColor("_BaseColor", baseColor);
+            material.SetColor("_AccentColor", accentColor);
+            material.SetFloat("_Alpha", alpha);
+            material.SetFloat("_ScanlineDensity", scanlineDensity);
+            material.SetFloat("_ScanlineSpeed", 2.2f);
+            material.SetFloat("_FresnelPower", 2.4f);
+            material.SetFloat("_GlowStrength", glowStrength);
+            material.SetFloat("_NoiseStrength", 0.16f);
+            return material;
+        }
+
+        material = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+        {
+            hideFlags = HideFlags.DontSave
+        };
+        material.SetColor("_BaseColor", new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
+        material.SetFloat("_Surface", 1f);
+        material.SetColor("_EmissionColor", accentColor * math.max(1f, glowStrength));
+        return material;
+    }
+
+    private static Mesh CreateConeMesh(int segmentCount = 20)
+    {
+        int safeSegmentCount = Mathf.Max(3, segmentCount);
+        Mesh mesh = new Mesh
+        {
+            name = "RougeCone"
+        };
+
+        Vector3[] vertices = new Vector3[safeSegmentCount * 2 + 2];
+        Vector3[] normals = new Vector3[vertices.Length];
+        Vector2[] uv = new Vector2[vertices.Length];
+        int[] triangles = new int[safeSegmentCount * 6 + safeSegmentCount * 3];
+
+        vertices[0] = new Vector3(0f, 1f, 0f);
+        normals[0] = Vector3.up;
+        uv[0] = new Vector2(0.5f, 1f);
+
+        vertices[1] = new Vector3(0f, -1f, 0f);
+        normals[1] = Vector3.down;
+        uv[1] = new Vector2(0.5f, 0.5f);
+
+        for (int i = 0; i < safeSegmentCount; i++)
+        {
+            float angle = i / (float)safeSegmentCount * math.PI * 2f;
+            float x = math.cos(angle);
+            float z = math.sin(angle);
+            int sideIndex = 2 + i;
+            int capIndex = 2 + safeSegmentCount + i;
+            Vector3 ringVertex = new Vector3(x, -1f, z);
+
+            vertices[sideIndex] = ringVertex;
+            normals[sideIndex] = new Vector3(x, 0.55f, z).normalized;
+            uv[sideIndex] = new Vector2(i / (float)safeSegmentCount, 0f);
+
+            vertices[capIndex] = ringVertex;
+            normals[capIndex] = Vector3.down;
+            uv[capIndex] = new Vector2((x + 1f) * 0.5f, (z + 1f) * 0.5f);
+        }
+
+        int triangleIndex = 0;
+        for (int i = 0; i < safeSegmentCount; i++)
+        {
+            int next = (i + 1) % safeSegmentCount;
+            int sideCurrent = 2 + i;
+            int sideNext = 2 + next;
+            triangles[triangleIndex++] = 0;
+            triangles[triangleIndex++] = sideNext;
+            triangles[triangleIndex++] = sideCurrent;
+        }
+
+        for (int i = 0; i < safeSegmentCount; i++)
+        {
+            int next = (i + 1) % safeSegmentCount;
+            int capCurrent = 2 + safeSegmentCount + i;
+            int capNext = 2 + safeSegmentCount + next;
+            triangles[triangleIndex++] = 1;
+            triangles[triangleIndex++] = capCurrent;
+            triangles[triangleIndex++] = capNext;
+        }
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.uv = uv;
+        mesh.triangles = triangles;
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
     private static float2 Rotate(float2 value, float angle)
     {
         float sin = math.sin(angle);
@@ -2683,14 +2928,6 @@ public partial class RougeGameManager : MonoBehaviour
             skillConfig.Dash.ImpactDamage = PlayerSkillScaling.Constant(260f);
       //      skillConfig.Dash.PullForce = PlayerSkillScaling.Constant(320f);
       //      skillConfig.Dash.VerticalForce = PlayerSkillScaling.Constant(90f);
-        }
-
-        if (Mathf.Approximately(skillConfig.MeleeSlash.GetBaseValue(skillConfig.MeleeSlash.SlashVerticalForce), 18f))
-        {
-            skillConfig.MeleeSlash.SlashVerticalForce = PlayerSkillScaling.Constant(80f);
-            skillConfig.MeleeSlash.ThrustVerticalForce = PlayerSkillScaling.Constant(90f);
-            skillConfig.MeleeSlash.CenterSpikeVerticalForce = PlayerSkillScaling.Constant(90f);
-            skillConfig.MeleeSlash.SideSpikeVerticalForce = PlayerSkillScaling.Constant(65f);
         }
 
         // if (Mathf.Approximately(skillConfig.LightPillar.GetBaseValue(skillConfig.LightPillar.VerticalForce), 45f))
@@ -2777,6 +3014,8 @@ public struct RougeEnemyEffectState
     public float CurseExplosionRadius;
     public float LaunchLandingDamage;
     public float LaunchLandingRadius;
+    public float LaunchMotionTimer;
+    public float LaunchStackTimer;
     public float BurnDuration;
 }
 

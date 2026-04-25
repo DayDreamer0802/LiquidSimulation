@@ -568,7 +568,7 @@ public partial class RougeGameManager
             _tornadoImpactPullForces[i] = lightPillarPullForce;
             _tornadoImpactVerticalForces[i] = lightPillarVerticalForce;
             _tornadoImpactRingDurations[i] = lightPillarBeamDuration - lightPillarPreImpactDuration;
-            _tornadoImpactRingColors[i] = new Color(1f, 0.95f, 0.78f, 0.92f);
+            _tornadoImpactRingColors[i] = new Color(0.2f, 1f, 0.96f, 1f);
             _tornadoImpactEffects[i] = lightPillarEffects;
             break;
         }
@@ -879,9 +879,6 @@ public partial class RougeGameManager
         float meleeThrustAdvanceSpeed = melee.GetValue(melee.ThrustAdvanceSpeed, meleeLevel);
         float meleeSlashDamage = melee.GetValue(melee.SlashDamage, meleeLevel);
         float meleeSpinDamage = melee.GetValue(melee.SpinDamage, meleeLevel);
-        float meleePullForce = melee.GetValue(melee.PullForce, meleeLevel);
-        float meleeSlashVerticalForce = melee.GetValue(melee.SlashVerticalForce, meleeLevel);
-        float meleeThrustVerticalForce = melee.GetValue(melee.ThrustVerticalForce, meleeLevel);
 
         if (_meleeComboWindow > 0f)
         {
@@ -990,8 +987,8 @@ public partial class RougeGameManager
                 Direction = swingDirection,
                 Radius = radius,
                 Damage = _meleeComboStep == 4 ? meleeSpinDamage : meleeSlashDamage,
-                PullForce = meleePullForce,
-                VerticalForce = _meleeComboStep == 3 ? meleeThrustVerticalForce : meleeSlashVerticalForce
+                PullForce = 0f,
+                VerticalForce = 0f
             }, meleeEffects);
         }
         else if (_meleeVisual)
@@ -1078,7 +1075,9 @@ public partial class RougeGameManager
     {
         MeleeSlashSkillConfig melee = skillConfig.MeleeSlash;
         int meleeLevel = currentLevel;
-        ResolvedSkillHitEffectConfig meleeEffects = melee.Effects.Resolve(meleeLevel, melee.MaxLevel);
+        ResolvedSkillHitEffectConfig finisherEffects = melee.FinisherEffects.Resolve(meleeLevel, melee.MaxLevel);
+        ResolvedSkillHitEffectConfig sideFinisherEffects = finisherEffects;
+        sideFinisherEffects.LaunchHeight *= 0.75f;
         float meleeSpikeDuration = melee.GetValue(melee.SpikeDuration, meleeLevel);
         float meleeSpikeRiseRatio = melee.GetValue(melee.SpikeRiseRatio, meleeLevel);
         float centerSpikeHeight = melee.GetValue(melee.CenterSpikeHeight, meleeLevel);
@@ -1088,9 +1087,6 @@ public partial class RougeGameManager
         float centerSpikeDistance = melee.GetValue(melee.CenterSpikeDistance, meleeLevel);
         float sideSpikeDistance = melee.GetValue(melee.SideSpikeDistance, meleeLevel);
         float sideSpikeAngle = melee.GetValue(melee.SideSpikeAngle, meleeLevel) * math.PI / 180f;
-        float centerSpikeVerticalForce = melee.GetValue(melee.CenterSpikeVerticalForce, meleeLevel);
-        float sideSpikeVerticalForce = melee.GetValue(melee.SideSpikeVerticalForce, meleeLevel);
-        float spikePullForce = melee.GetValue(melee.SpikePullForce, meleeLevel);
 
         if (_spikeStartupTimer > 0f || _spikeTimer <= 0f)
         {
@@ -1119,21 +1115,23 @@ public partial class RougeGameManager
                 if (visible)
                 {
                     _spikeVisuals[i].transform.position = new Vector3(spikeBase.x, renderHeight + height * 0.5f, spikeBase.y);
+                    _spikeVisuals[i].transform.rotation = Quaternion.Euler(0f, (_survivalTime * 720f) + i * 120f, 0f);
                     _spikeVisuals[i].transform.localScale = new Vector3(radius * 2f, height * 0.5f, radius * 2f);
                 }
             }
 
             if (risingPhase && height > 0.3f)
             {
+                ResolvedSkillHitEffectConfig activeFinisherEffects = i == 0 ? finisherEffects : sideFinisherEffects;
                 TryAddSkillArea(new RougeSkillArea
                 {
                     Type = 6,
                     Position = spikeBase,
                     Radius = radius + 3f,
-                    VerticalForce = i == 0 ? centerSpikeVerticalForce : sideSpikeVerticalForce,
-                    PullForce = spikePullForce,
+                    VerticalForce = 0f,
+                    PullForce = 0f,
                     Damage = 0f
-                }, meleeEffects);
+                }, activeFinisherEffects);
             }
         }
 
@@ -2031,7 +2029,7 @@ public partial class RougeGameManager
 
         RougeSkillArea area = new RougeSkillArea
         {
-            Type = 11,
+            Type = 12,
             Position = boardPosition,
             Radius = radius,
             Damage = math.max(0f, damagePerSecond)
@@ -2192,14 +2190,26 @@ public partial class RougeGameManager
 
     private void EnsureSkateboardVisual()
     {
-        if (_skateBoardVisual != null) return;
-        _skateBoardVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        _skateBoardVisual.name = "SkateboardVisual";
-        _skateBoardVisual.GetComponent<Collider>().enabled = false;
-        _skateBoardMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        _skateBoardMat.SetColor("_BaseColor", new Color(0.2f, 0.55f, 1f, 1f));
-        _skateBoardVisual.GetComponent<Renderer>().sharedMaterial = _skateBoardMat;
-        _skateBoardVisual.SetActive(false);
+        if (_skateBoardVisual == null)
+        {
+            _skateBoardVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            _skateBoardVisual.name = "SkateboardVisual";
+            _skateBoardVisual.GetComponent<Collider>().enabled = false;
+            Material boardVisualMaterial = skillConfig != null && skillConfig.Skateboard != null
+                ? skillConfig.Skateboard.BoardVisualMaterial
+                : null;
+            _ownsSkateboardMat = boardVisualMaterial == null;
+            _skateBoardMat = boardVisualMaterial != null
+                ? boardVisualMaterial
+                : CreateFallbackHologramMaterial(new Color(0.18f, 0.82f, 1f, 1f), new Color(0.92f, 0.98f, 1f, 1f), 0.72f, 18f, 2.15f);
+            _skateBoardVisual.SetActive(false);
+        }
+
+        Renderer boardRenderer = _skateBoardVisual.GetComponent<Renderer>();
+        if (boardRenderer != null && boardRenderer.sharedMaterial != _skateBoardMat)
+        {
+            boardRenderer.sharedMaterial = _skateBoardMat;
+        }
     }
 
     private void UpdateSkateboardSkill(SkillUpdateContext context)
@@ -2216,8 +2226,6 @@ public partial class RougeGameManager
         float rideHitDps    = cfg.GetValue(cfg.RideContactDamagePerSecond, lvl);
         float slamRadius  = cfg.GetValue(cfg.SlamRadius,       lvl);
         float slamDamage  = cfg.GetValue(cfg.SlamDamage,       lvl);
-        float slamVForce  = cfg.GetValue(cfg.SlamVerticalForce,lvl);
-        float slamPull    = cfg.GetValue(cfg.SlamPullForce,    lvl);
         float initJumpDur = cfg.GetValue(cfg.InitJumpDuration, lvl);
         float landDur     = cfg.GetValue(cfg.LandDuration,     lvl);
         float trickDur    = cfg.GetValue(cfg.TrickDuration,    lvl);
@@ -2477,7 +2485,7 @@ public partial class RougeGameManager
             {
                 _skateSlamFired = true;
                 float2 slamPos  = new float2(boardEnd.x, boardEnd.z);
-                TryAddCircularSkillArea(slamPos, slamRadius, slamDamage, math.abs(slamPull), slamVForce, slamFx);
+                TryAddCircularSkillArea(slamPos, slamRadius, slamDamage, 0f, 0f, slamFx);
                 SpawnImpact(slamPos, slamRadius * 0.55f, slamRadius, 0.6f, new Color(0.3f, 0.7f, 1f));
                 _meleeHitShake = 0.3f;
             }
