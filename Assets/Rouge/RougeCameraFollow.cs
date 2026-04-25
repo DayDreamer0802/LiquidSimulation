@@ -5,6 +5,7 @@ public class RougeCameraFollow : MonoBehaviour
 {
     private static float s_runtimeHeightOffset;
     private static float s_runtimeFovOffset;
+    private static float s_runtimeZoomScale = 1f;
     private static Camera s_primaryCamera;
 
     public Transform target;
@@ -14,10 +15,11 @@ public class RougeCameraFollow : MonoBehaviour
     private float _baseFov = -1f;
     private Camera _camera;
 
-    public static void SetRuntimeEffects(float heightOffset, float fovOffset)
+    public static void SetRuntimeEffects(float heightOffset, float fovOffset, float zoomScale = 1f)
     {
         s_runtimeHeightOffset = heightOffset;
         s_runtimeFovOffset = fovOffset;
+        s_runtimeZoomScale = Mathf.Max(0.01f, zoomScale);
     }
 
     public static Camera ResolveCamera()
@@ -67,7 +69,7 @@ public class RougeCameraFollow : MonoBehaviour
     {
         if (target != null)
         {
-            Vector3 desiredPosition = target.position + offset;
+            Vector3 desiredPosition = target.position + offset * s_runtimeZoomScale;
             float followT = 1f - Mathf.Pow(1f - Mathf.Clamp01(smoothSpeed), Time.deltaTime * 60f);
             Vector3 smoothedPosition = Vector3.Lerp(transform.position, desiredPosition, followT);
             smoothedPosition += Vector3.up * s_runtimeHeightOffset;

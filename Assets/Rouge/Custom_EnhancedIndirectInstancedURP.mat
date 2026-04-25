@@ -25,18 +25,27 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
+    - _AirborneHeightThreshold: 0.8
     - _BreakupScale: 3.8
     - _BreakupStrength: 0.16
     - _FresnelPower: 1.76
+    - _NearPlayerDistance: 24
+    - _RenderHeight: 0.25
     - _RimStrength: 0.57
     - _ScaleMultiplier: 1
     - _VariationStrength: 0.18
+    - _VeryNearPlayerDistance: 8
     m_Colors:
+    - _AirborneColor: {r: 0.46, g: 0.82, b: 1, a: 0.78}
     - _BaseColor: {r: 0.3383963, g: 0.49240702, b: 0.74213827, a: 1}
     - _BottomTint: {r: 0.82075465, g: 0.871311, b: 1, a: 1}
+    - _DeadColor: {r: 0.12, g: 0.14, b: 0.16, a: 0.92}
     - _FlashColor: {r: 0.8459119, g: 0.9584078, b: 1, a: 1}
+    - _NearPlayerColor: {r: 1, g: 0.62, b: 0.22, a: 0.35}
+    - _PlayerFocusPosition: {r: 7.8874516, g: 1.5, b: -193.89688, a: 0}
     - _RimColor: {r: 0.68867916, g: 0.8882438, b: 1, a: 1}
     - _ShieldColor: {r: 0, g: 0, b: 0, a: 1}
     - _TopTint: {r: 0.36019138, g: 0.69026506, b: 0.72955966, a: 1}
+    - _VeryNearPlayerColor: {r: 1, g: 0.18, b: 0.12, a: 0.72}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

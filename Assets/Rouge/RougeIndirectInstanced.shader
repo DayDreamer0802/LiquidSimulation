@@ -17,6 +17,20 @@
         [Header(Fresnel Shield FX)]
         [HDR] _ShieldColor("Shield Glow Color", Color) = (0.0, 1.0, 1.0, 1) // 默认青色盾光
         _FresnelPower("Fresnel Power", Range(0.1, 8.0)) = 3.0 // 边缘光锐度，越大边缘越窄
+
+        [Header(Player Proximity FX)]
+        [HDR] _NearPlayerColor("Near Player Color", Color) = (1.0, 0.62, 0.22, 0.35)
+        _NearPlayerDistance("Near Player Distance", Range(0.5, 24.0)) = 6.0
+        [HDR] _VeryNearPlayerColor("Very Near Player Color", Color) = (1.0, 0.18, 0.12, 0.72)
+        _VeryNearPlayerDistance("Very Near Player Distance", Range(0.25, 12.0)) = 2.2
+
+        [Header(State Color FX)]
+        [HDR] _AirborneColor("Airborne Color", Color) = (0.46, 0.82, 1.0, 0.78)
+        _AirborneHeightThreshold("Airborne Height Threshold", Range(0.05, 6.0)) = 0.8
+        [HDR] _DeadColor("Dead Color", Color) = (0.12, 0.14, 0.16, 0.92)
+
+        [HideInInspector] _PlayerFocusPosition("Player Focus Position", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _RenderHeight("Render Height", Float) = 0
     }
 
     SubShader
@@ -62,6 +76,15 @@
                 float _BreakupStrength;
                 float _RimStrength;
                 float _FresnelPower; // 菲涅尔锐度参数
+                float4 _NearPlayerColor;
+                float _NearPlayerDistance;
+                float4 _VeryNearPlayerColor;
+                float _VeryNearPlayerDistance;
+                float4 _AirborneColor;
+                float _AirborneHeightThreshold;
+                float4 _DeadColor;
+                float4 _PlayerFocusPosition;
+                float _RenderHeight;
             CBUFFER_END
 
             struct Attributes
@@ -80,6 +103,7 @@
                 float curse : TEXCOORD3;
                 float localY : TEXCOORD4;
                 float variation : TEXCOORD5;
+                float dead : TEXCOORD6;
             };
 
             float Hash01(uint value)
@@ -114,6 +138,7 @@
                 output.curse = step(0.5, fmod(visualFlags, 2.0));
                 output.localY = input.positionOS.y;
                 output.variation = Hash01(input.instanceID + 1u);
+                output.dead = step(0.5, fmod(floor(visualFlags * 0.5), 2.0));
 
                 return output;
             }
@@ -153,6 +178,18 @@
                 half luminance = dot(col, half3(0.2126, 0.7152, 0.0722));
                 half3 curseCol = luminance.xxx * 0.32 + _ShieldColor.rgb * fresnel * 0.28;
                 col = lerp(col, curseCol, input.curse);
+
+                float distToPlayer = distance(input.positionWS.xz, _PlayerFocusPosition.xz);
+                float nearDistance = max(_NearPlayerDistance, 0.001);
+                float veryNearDistance = max(min(_VeryNearPlayerDistance, nearDistance), 0.001);
+                float nearWeight = 1.0 - saturate(distToPlayer / nearDistance);
+                float veryNearWeight = 1.0 - saturate(distToPlayer / veryNearDistance);
+                float airborneWeight = saturate((input.positionWS.y - (_RenderHeight + _AirborneHeightThreshold)) / max(_AirborneHeightThreshold, 0.001));
+
+                col = lerp(col, _NearPlayerColor.rgb, nearWeight * saturate(_NearPlayerColor.a));
+                col = lerp(col, _VeryNearPlayerColor.rgb, veryNearWeight * saturate(_VeryNearPlayerColor.a));
+                col = lerp(col, _AirborneColor.rgb, airborneWeight * saturate(_AirborneColor.a));
+                col = lerp(col, _DeadColor.rgb, input.dead * saturate(_DeadColor.a));
 
                 float flashAmt = saturate(input.flash);
                 col += _FlashColor.rgb * flashAmt * (0.35 + fresnel * 1.1);

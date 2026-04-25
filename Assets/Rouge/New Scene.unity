@@ -1645,6 +1645,8 @@ MonoBehaviour:
   spawnRadiusMax: 180
   despawnDistance: 260
   renderHeight: 0.25
+  cameraZoomMultiplier: 1
+  cameraZoomScrollStep: 0.15
   chaseAcceleration: 16
   velocityDamping: 0.9
   separationRadius: 1.3
@@ -1655,7 +1657,7 @@ MonoBehaviour:
   denseSeparationBoost: 1.25
   denseNeighborThreshold: 10
   flowFieldCellSize: 2
-  flowFieldIterations: 12
+  flowFieldIterations: 16
   flowFieldMaxGridDim: 256
   densitySoftThreshold: 3
   densityRepulsionStrength: 10
@@ -2448,12 +2450,12 @@ MonoBehaviour:
         y: 35
         z: 2
       CenterSpikeVerticalForce:
-        x: 90
-        y: 120
+        x: 30
+        y: 30
         z: 2
       SideSpikeVerticalForce:
-        x: 65
-        y: 95
+        x: 25
+        y: 25
         z: 2
       SpikePullForce:
         x: 40

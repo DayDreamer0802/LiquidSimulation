@@ -18,6 +18,7 @@ public partial class RougeGameManager
         sb.AppendLine($"LEVEL: {currentLevel} | KILLS: {totalKills}");
         sb.AppendLine($"ACTIVE ENEMIES: {_currentMaxEnemies} / {enemyCount}");
         sb.AppendLine($"PLAYER HP: {Mathf.RoundToInt(playerHealth)} / {playerMaxHealth}");
+        sb.AppendLine($"VIEW ZOOM: {cameraZoomMultiplier:F2}x");
         sb.AppendLine();
 
         AppendSkillProgressHud(sb);

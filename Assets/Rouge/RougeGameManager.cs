@@ -19,6 +19,8 @@ public partial class RougeGameManager : MonoBehaviour
     private static readonly int VariationStrengthId = Shader.PropertyToID("_VariationStrength");
     private static readonly int BreakupScaleId = Shader.PropertyToID("_BreakupScale");
     private static readonly int BreakupStrengthId = Shader.PropertyToID("_BreakupStrength");
+    private static readonly int PlayerFocusPositionId = Shader.PropertyToID("_PlayerFocusPosition");
+    private static readonly int ShaderRenderHeightId = Shader.PropertyToID("_RenderHeight");
 
     [Header("References")]
     [SerializeField] private PlayerBase player;
@@ -45,6 +47,10 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float spawnRadiusMax = 180f;
     [SerializeField] private float despawnDistance = 260f;
     [SerializeField] private float renderHeight = 0f;
+
+    [Header("Camera")]
+    [SerializeField, Range(0.5f, 3f)] private float cameraZoomMultiplier = 1f;
+    [SerializeField, Range(0.02f, 0.5f)] private float cameraZoomScrollStep = 0.15f;
 
     [Header("Steering")]
     [SerializeField] private float chaseAcceleration = 22f;
@@ -529,7 +535,7 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         _simulationHandle.Complete();
-    FinalizeCompletedSimulationBuffers();
+        FinalizeCompletedSimulationBuffers();
 
         if (_enemyKillCount.IsCreated)
         {
@@ -553,7 +559,6 @@ public partial class RougeGameManager : MonoBehaviour
             }
         }
 
-        // Per-skill kill accumulation
         if (_skillKillCounts.IsCreated)
         {
             for (int sk = 0; sk < 6; sk++)
@@ -563,14 +568,17 @@ public partial class RougeGameManager : MonoBehaviour
                 {
                     _skillTotalKills[sk] += recent;
                     _skillKillCounts[sk] = 0;
-                    _skillLevels[sk] = Mathf.Min(60, _skillTotalKills[sk] / 150); // increased to max level 60
+                    _skillLevels[sk] = Mathf.Min(60, _skillTotalKills[sk] / 150);
                 }
             }
         }
 
         _survivalTime += Time.deltaTime;
 
-        if (_invincibilityTimer > 0f) _invincibilityTimer -= Time.deltaTime;
+        if (_invincibilityTimer > 0f)
+        {
+            _invincibilityTimer -= Time.deltaTime;
+        }
 
         int damage = _playerDamageCount[0];
         if (damage > 0)
@@ -586,30 +594,36 @@ public partial class RougeGameManager : MonoBehaviour
                     _pendingPlayerHitRepulsePosition = player.PlanarPosition;
                 }
             }
+
             _playerDamageCount[0] = 0;
         }
 
         if (playerHealth <= 0f)
         {
             Dispose();
-            UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
             return;
         }
 
         float dt = Mathf.Min(Time.deltaTime, 0.05f) * fixedSimulationDt;
-        
-        if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.Plus)) {
+        HandleCameraZoomInput();
+
+        if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.Plus))
+        {
             _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + 10000);
         }
-        if (Input.GetKeyDown(KeyCode.Minus)) {
+
+        if (Input.GetKeyDown(KeyCode.Minus))
+        {
             _currentMaxEnemies = Mathf.Max(10, _currentMaxEnemies - 10000);
         }
 
         _spawnTimer += dt;
-        if (_spawnTimer > 1f) {
+        if (_spawnTimer > 1f)
+        {
             _spawnTimer = 0f;
-            if (_currentMaxEnemies < enemyCount) {
-                // Ramping up exponentially + flat faster rate to reach 100k cap sensibly
+            if (_currentMaxEnemies < enemyCount)
+            {
                 int growth = 20 + currentLevel * 10 + (int)(_currentMaxEnemies * 0.02f);
                 if (Input.GetKey(KeyCode.RightBracket)) growth *= 10;
                 _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + growth);
@@ -619,10 +633,12 @@ public partial class RougeGameManager : MonoBehaviour
         UpdateSkills(dt);
         ApplyPendingPlayerContactSkill();
 
-     
-        while (_explosionQueue.TryDequeue(out float2 expPos)) {
-            if (_skillAreaCount < _skillAreasDb.Length) {
-                _skillAreasDb[_skillAreaCount++] = new RougeSkillArea {
+        while (_explosionQueue.TryDequeue(out float2 expPos))
+        {
+            if (_skillAreaCount < _skillAreasDb.Length)
+            {
+                _skillAreasDb[_skillAreaCount++] = new RougeSkillArea
+                {
                     Type = 2,
                     Position = expPos,
                     Radius = 8f,
@@ -630,7 +646,7 @@ public partial class RougeGameManager : MonoBehaviour
                     PullForce = -120f,
                     VerticalForce = 25f
                 };
-                // Spawn VFX sphere at explosion pos
+
                 SpawnExplosionVFX(new Vector3(expPos.x, renderHeight + 1f, expPos.y), 6f);
                 SpawnAOERing(new Vector3(expPos.x, renderHeight, expPos.y), 8f, 0.35f, new Color(1f, 0.4f, 0.1f, 1f));
             }
@@ -663,6 +679,7 @@ public partial class RougeGameManager : MonoBehaviour
                         0.35f,
                         eventType == RougeSkillEventType.CurseExplosion ? new Color(0.12f, 0.12f, 0.12f, 1f) : new Color(1f, 0.7f, 0.22f, 1f));
                     break;
+
                 case RougeSkillEventType.PoisonSpread:
                     if (_skillAreaCount < _skillAreasDb.Length)
                     {
@@ -678,6 +695,7 @@ public partial class RougeGameManager : MonoBehaviour
 
                     SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.1f, skillEvent.Position.y), skillEvent.Radius, 0.3f, new Color(0.35f, 1f, 0.45f, 1f));
                     break;
+
                 case RougeSkillEventType.BurnGround:
                     ActivateBurnPatch(
                         skillEvent.Position,
@@ -687,6 +705,7 @@ public partial class RougeGameManager : MonoBehaviour
                         math.max(0.35f, skillEvent.Duration * 0.55f));
                     SpawnAOERing(new Vector3(skillEvent.Position.x, renderHeight + 0.05f, skillEvent.Position.y), skillEvent.Radius * 0.92f, 0.28f, new Color(1f, 0.4f, 0.08f, 1f));
                     break;
+
                 case RougeSkillEventType.EnemyDeathBurst:
                     SpawnDeathBurstVFX(new Vector3(skillEvent.Position.x, renderHeight + 0.35f, skillEvent.Position.y), math.max(0.8f, skillEvent.Radius * 2.4f));
                     break;
@@ -695,7 +714,6 @@ public partial class RougeGameManager : MonoBehaviour
 
         UpdateBurnPatches(dt);
 
-        // Compact active VFX so we only upload and draw live instances.
         _explosionCount = 0;
         for (int vi = 0; vi < MaxExplosions; vi++)
         {
@@ -786,7 +804,6 @@ public partial class RougeGameManager : MonoBehaviour
         RenderExplosions();
         RenderDeathBursts();
         RenderTornados();
-        // Light Pillar Array replaces Tornado instancing
         ScheduleSimulation(math.max(dt, 0.0001f));
 
         if (_uiText != null)
@@ -838,6 +855,7 @@ public partial class RougeGameManager : MonoBehaviour
         despawnDistance = Mathf.Max(despawnDistance, spawnRadiusMax + 20f);
         enemyMesh = enemyMesh != null ? enemyMesh : CreateFallbackQuad();
         enemyMaterial = enemyMaterial != null ? enemyMaterial : CreateFallbackMaterial();
+        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier, 0.5f, 3f);
 
         if (_bulletMesh == null)
         {
@@ -1438,7 +1456,7 @@ public partial class RougeGameManager : MonoBehaviour
         RougeCameraFollow cameraFollow = camera.GetComponent<RougeCameraFollow>();
         if (cameraFollow != null)
         {
-            RougeCameraFollow.SetRuntimeEffects(_cameraLiftOffset, _cameraFovOffset);
+            RougeCameraFollow.SetRuntimeEffects(_cameraLiftOffset, _cameraFovOffset, cameraZoomMultiplier);
             _cameraLiftOffset = Mathf.Lerp(_cameraLiftOffset, 0f, 8f * Time.deltaTime);
             _cameraFovOffset = Mathf.Lerp(_cameraFovOffset, 0f, 7f * Time.deltaTime);
             return;
@@ -1462,6 +1480,17 @@ public partial class RougeGameManager : MonoBehaviour
 
         _cameraLiftOffset = Mathf.Lerp(_cameraLiftOffset, 0f, 8f * Time.deltaTime);
         _cameraFovOffset = Mathf.Lerp(_cameraFovOffset, 0f, 7f * Time.deltaTime);
+    }
+
+    private void HandleCameraZoomInput()
+    {
+        float scroll = Input.mouseScrollDelta.y;
+        if (math.abs(scroll) <= 0.001f)
+        {
+            return;
+        }
+
+        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier - scroll * cameraZoomScrollStep, 0.5f, 3f);
     }
 
     private void BuildNeighborOffsets()
@@ -1508,7 +1537,7 @@ public partial class RougeGameManager : MonoBehaviour
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
-            if (collider.bounds.size.y < 0.2f ) continue;
+            if (collider.bounds.size.y < 0.2f) continue;
             count++;
         }
 
@@ -1892,6 +1921,8 @@ public partial class RougeGameManager : MonoBehaviour
         enemyMaterial.SetFloat(VariationStrengthId, enemyVariationStrength);
         enemyMaterial.SetFloat(BreakupScaleId, enemyBreakupScale);
         enemyMaterial.SetFloat(BreakupStrengthId, enemyBreakupStrength);
+        enemyMaterial.SetVector(PlayerFocusPositionId, player != null ? (Vector4)player.transform.position : (Vector4)transform.position);
+        enemyMaterial.SetFloat(ShaderRenderHeightId, renderHeight);
 
         Vector3 center = player != null ? player.transform.position : transform.position;
         float extent = math.max(arenaHalfExtent, despawnDistance) * 2f;
