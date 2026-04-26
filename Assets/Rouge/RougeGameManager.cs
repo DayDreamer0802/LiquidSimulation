@@ -77,6 +77,10 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float obstacleOrbitStrength = 18f;
     [SerializeField] private LayerMask obstacleLayers = -1;
 
+    [Header("Pathfinding Targets")]
+    [Tooltip("除 player 之外的额外寻路目标（体育馆设施、召唤物、诱饵等）。运行时也可用 AddTarget/RemoveTarget API。")]
+    [SerializeField] private List<Transform> extraTargets = new List<Transform>();
+
     [Header("Skill Config")]
     [SerializeField] private PlayerSkillConfigSet skillConfig = new PlayerSkillConfigSet();
 
@@ -150,6 +154,13 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<float2> _flowDirectionField;
     private NativeArray<byte> _flowBlockedCells;
     private NativeArray<RougeObstacle> _obstacles;
+    private int _staticObstacleCount;
+    private int _dynamicObstacleCount;
+    private NativeArray<byte> _staticBlockedCells;
+    private NativeArray<int> _flowGoalIndices;
+    private const int MaxFlowGoalCount = 16;
+    private static readonly List<RougeDynamicObstacle> s_dynamicObstacles = new List<RougeDynamicObstacle>();
+    private readonly List<Transform> _runtimeExtraTargets = new List<Transform>();
     private NativeArray<int> _playerDamageCount;
     private NativeArray<int> _enemyKillCount;
     private NativeQueue<float2> _explosionQueue;
@@ -477,33 +488,10 @@ public partial class RougeGameManager : MonoBehaviour
             for (int i = 0; i < _obstacleCount; i++)
             {
                 RougeObstacle obs = _obstacles[i];
-                if (obs.Type == 0) // AABB
-                {
-                    float2 minP = obs.Min - new float2(0.5f);
-                    float2 maxP = obs.Max + new float2(0.5f);
-                    if (pos.x >= minP.x && pos.x <= maxP.x && pos.z >= minP.y && pos.z <= maxP.y)
-                    {
-                        float dx1 = pos.x - minP.x, dx2 = maxP.x - pos.x;
-                        float dy1 = pos.z - minP.y, dy2 = maxP.y - pos.z;
-                        float minD = Mathf.Min(Mathf.Min(dx1, dx2), Mathf.Min(dy1, dy2));
-                        if (minD == dx1) pos.x = minP.x;
-                        else if (minD == dx2) pos.x = maxP.x;
-                        else if (minD == dy1) pos.z = minP.y;
-                        else pos.z = maxP.y;
-                    }
-                }
-                else // Circle
-                {
-                    float2 diff = new float2(pos.x, pos.z) - obs.Center;
-                    float dist = math.length(diff);
-                    float totalR = obs.CircleRadius + obs.Padding + 0.5f;
-                    if (dist < totalR && dist > 0.001f)
-                    {
-                        float2 push = (diff / dist) * totalR;
-                        pos.x = obs.Center.x + push.x;
-                        pos.z = obs.Center.y + push.y;
-                    }
-                }
+                float extraPadding = obs.Type == RougeObstacle.CircleType ? obs.Padding + 0.5f : 0.5f;
+                float2 resolved = RougeObstacleMath.ResolvePointOutside(obs, new float2(pos.x, pos.z), extraPadding);
+                pos.x = resolved.x;
+                pos.z = resolved.y;
             }
         }
         
@@ -923,6 +911,8 @@ public partial class RougeGameManager : MonoBehaviour
         _flowDistanceScratch = new NativeArray<float>(_flowGridCellCount, Allocator.Persistent);
         _flowDirectionField = new NativeArray<float2>(_flowGridCellCount, Allocator.Persistent);
         _flowBlockedCells = new NativeArray<byte>(_flowGridCellCount, Allocator.Persistent);
+        _staticBlockedCells = new NativeArray<byte>(_flowGridCellCount, Allocator.Persistent);
+        _flowGoalIndices = new NativeArray<int>(MaxFlowGoalCount, Allocator.Persistent);
         ResizeBulletStorage(maxBullets);
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
@@ -1652,11 +1642,18 @@ public partial class RougeGameManager : MonoBehaviour
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
             if (collider.bounds.size.y < 0.2f) continue;
-            count++;
+            // 排除已挂 RougeDynamicObstacle 的 collider（它们走动态注册路径）
+            if (collider.GetComponent<RougeDynamicObstacle>() != null) continue;
+            if (RougeDynamicObstacle.TryCreateObstacleFromCollider(collider, capturedObstaclePadding, out _))
+            {
+                count++;
+            }
         }
 
-        _obstacleCount = count;
-        _obstacles = new NativeArray<RougeObstacle>(Mathf.Max(1, count), Allocator.Persistent);
+        // 预留动态障碍空间：静态 + 动态扩展容量（运行时还可再扩）
+        int dynamicCapacity = math.max(s_dynamicObstacles.Count * 2, 32);
+        int totalCapacity = math.max(1, count + dynamicCapacity);
+        _obstacles = new NativeArray<RougeObstacle>(totalCapacity, Allocator.Persistent);
 
         int obstacleIndex = 0;
         for (int i = 0; i < colliders.Length; i++)
@@ -1666,27 +1663,162 @@ public partial class RougeGameManager : MonoBehaviour
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
             if (collider.bounds.size.y < 0.2f || collider.bounds.size.x > 80f) continue;
+            if (collider.GetComponent<RougeDynamicObstacle>() != null) continue;
 
-            if (collider is SphereCollider sphere)
+            if (RougeDynamicObstacle.TryCreateObstacleFromCollider(collider, capturedObstaclePadding, out RougeObstacle obstacle))
             {
-                float2 center = new float2(sphere.transform.position.x, sphere.transform.position.z);
-                float r = sphere.radius * Mathf.Max(sphere.transform.lossyScale.x, sphere.transform.lossyScale.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = capturedObstaclePadding };
-            }
-            else if (collider is CapsuleCollider capsule)
-            {
-                float2 center = new float2(capsule.transform.position.x, capsule.transform.position.z);
-                float r = capsule.radius * Mathf.Max(capsule.transform.lossyScale.x, capsule.transform.lossyScale.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 1, Center = center, CircleRadius = r, Padding = capturedObstaclePadding };
-            }
-            else
-            {
-                Bounds bounds = collider.bounds;
-                float2 min = new float2(bounds.min.x, bounds.min.z);
-                float2 max = new float2(bounds.max.x, bounds.max.z);
-                _obstacles[obstacleIndex++] = new RougeObstacle { Type = 0, Min = min, Max = max, Padding = capturedObstaclePadding };
+                _obstacles[obstacleIndex++] = obstacle;
             }
         }
+
+        _staticObstacleCount = obstacleIndex;
+        _dynamicObstacleCount = 0;
+        _obstacleCount = _staticObstacleCount;
+
+        // 一次性把静态障碍栅格化进 _staticBlockedCells，运行时只需 memcpy + 仅 dynamic 段重栅格化
+        BakeStaticBlockedCells();
+    }
+
+    private void BakeStaticBlockedCells()
+    {
+        if (!_staticBlockedCells.IsCreated || !_obstacles.IsCreated) return;
+        // 清零
+        unsafe
+        {
+            UnsafeUtility.MemClear(_staticBlockedCells.GetUnsafePtr(), _staticBlockedCells.Length * sizeof(byte));
+        }
+        if (_staticObstacleCount <= 0) return;
+
+        float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+        // 同步执行（一次性）
+        new RasterizeObstacleGridJob
+        {
+            Obstacles = _obstacles,
+            StartIndex = 0,
+            ObstacleCount = _staticObstacleCount,
+            BlockedCells = _staticBlockedCells,
+            GridOrigin = _flowGridOrigin,
+            InvCellSize = invCellSize,
+            GridDim = _flowGridDim,
+            ExtraPadding = flowFieldObstaclePadding
+        }.Run();
+    }
+
+    /// <summary>每帧把已注册的动态障碍刷新到 _obstacles 的动态后缀段。</summary>
+    private void RefreshDynamicObstacleSnapshot()
+    {
+        // 清理无效引用
+        for (int i = s_dynamicObstacles.Count - 1; i >= 0; i--)
+        {
+            if (s_dynamicObstacles[i] == null)
+            {
+                s_dynamicObstacles.RemoveAt(i);
+            }
+        }
+
+        int needed = s_dynamicObstacles.Count;
+        int requiredCapacity = _staticObstacleCount + needed;
+
+        // 容量不够时扩张（极少发生：CaptureObstacles 已预留余量）
+        if (!_obstacles.IsCreated || _obstacles.Length < requiredCapacity)
+        {
+            int newCapacity = math.max(requiredCapacity, math.max(_obstacles.IsCreated ? _obstacles.Length * 2 : 32, 32));
+            NativeArray<RougeObstacle> grown = new NativeArray<RougeObstacle>(newCapacity, Allocator.Persistent);
+            if (_obstacles.IsCreated && _staticObstacleCount > 0)
+            {
+                NativeArray<RougeObstacle>.Copy(_obstacles, grown, _staticObstacleCount);
+            }
+            if (_obstacles.IsCreated) _obstacles.Dispose();
+            _obstacles = grown;
+        }
+
+        int written = 0;
+        for (int i = 0; i < needed; i++)
+        {
+            RougeDynamicObstacle src = s_dynamicObstacles[i];
+            if (src == null || !src.isActiveAndEnabled) continue;
+            _obstacles[_staticObstacleCount + written] = src.Snapshot();
+            written++;
+        }
+
+        _dynamicObstacleCount = written;
+        _obstacleCount = _staticObstacleCount + _dynamicObstacleCount;
+    }
+
+    /// <summary>静态障碍发生变化（如可破坏地形拆除）时调用，重新扫描场景并烘焙静态阻挡 mask。</summary>
+    public void RebuildStaticPathfinding()
+    {
+        if (!_initialized) return;
+        if (_obstacles.IsCreated) _obstacles.Dispose();
+        CaptureObstacles();
+    }
+
+    /// <summary>由 RougeDynamicObstacle.OnEnable 调用。</summary>
+    public static void RegisterDynamicObstacle(RougeDynamicObstacle obstacle)
+    {
+        if (obstacle == null) return;
+        if (!s_dynamicObstacles.Contains(obstacle))
+        {
+            s_dynamicObstacles.Add(obstacle);
+        }
+    }
+
+    /// <summary>由 RougeDynamicObstacle.OnDisable 调用。</summary>
+    public static void UnregisterDynamicObstacle(RougeDynamicObstacle obstacle)
+    {
+        if (obstacle == null) return;
+        s_dynamicObstacles.Remove(obstacle);
+    }
+
+    /// <summary>运行时增加额外寻路目标（除 player 外）。</summary>
+    public void AddTarget(Transform target)
+    {
+        if (target == null) return;
+        if (!_runtimeExtraTargets.Contains(target))
+        {
+            _runtimeExtraTargets.Add(target);
+        }
+    }
+
+    /// <summary>运行时移除额外寻路目标。</summary>
+    public void RemoveTarget(Transform target)
+    {
+        if (target == null) return;
+        _runtimeExtraTargets.Remove(target);
+    }
+
+    /// <summary>把 player + extraTargets + 运行时目标解析为非阻挡 cell index 写入 _flowGoalIndices；返回有效目标数。</summary>
+    private int ResolveFlowGoals(float2 playerPos, float invCellSize)
+    {
+        int written = 0;
+
+        // 主目标 = player
+        _flowGoalIndices[written++] = ResolveFlowGoalIndex(playerPos, invCellSize);
+
+        // serialized extraTargets
+        if (extraTargets != null)
+        {
+            for (int i = 0; i < extraTargets.Count && written < MaxFlowGoalCount; i++)
+            {
+                Transform t = extraTargets[i];
+                if (t == null || !t.gameObject.activeInHierarchy) continue;
+                Vector3 wp = t.position;
+                _flowGoalIndices[written++] = ResolveFlowGoalIndex(new float2(wp.x, wp.z), invCellSize);
+            }
+        }
+
+        // runtime AddTarget
+        for (int i = 0; i < _runtimeExtraTargets.Count && written < MaxFlowGoalCount;)
+        {
+            Transform t = _runtimeExtraTargets[i];
+            if (t == null) { _runtimeExtraTargets.RemoveAt(i); continue; }
+            if (!t.gameObject.activeInHierarchy) { i++; continue; }
+            Vector3 wp = t.position;
+            _flowGoalIndices[written++] = ResolveFlowGoalIndex(new float2(wp.x, wp.z), invCellSize);
+            i++;
+        }
+
+        return written;
     }
 
     private int ResolveFlowGoalIndex(float2 playerPos, float invCellSize)
@@ -1753,7 +1885,7 @@ public partial class RougeGameManager : MonoBehaviour
         for (int obstacleIndex = 0; obstacleIndex < _obstacleCount; obstacleIndex++)
         {
             RougeObstacle obstacle = _obstacles[obstacleIndex];
-            if (obstacle.Type == 1)
+            if (obstacle.Type == RougeObstacle.CircleType)
             {
                 float paddedRadius = obstacle.CircleRadius + navPadding;
                 if (math.lengthsq(cellCenter - obstacle.Center) <= paddedRadius * paddedRadius)
@@ -1764,9 +1896,7 @@ public partial class RougeGameManager : MonoBehaviour
                 continue;
             }
 
-            float2 minPadded = obstacle.Min - new float2(navPadding);
-            float2 maxPadded = obstacle.Max + new float2(navPadding);
-            if (cellCenter.x >= minPadded.x && cellCenter.x <= maxPadded.x && cellCenter.y >= minPadded.y && cellCenter.y <= maxPadded.y)
+            if (RougeObstacleMath.ContainsPoint(obstacle, cellCenter, navPadding))
             {
                 return true;
             }
@@ -2072,22 +2202,34 @@ public partial class RougeGameManager : MonoBehaviour
         int gridBatchSize = 1024;
         int flowIterationCount = math.clamp(flowFieldIterations, 2, 8);
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
-        JobHandle clearGridHandle = new ClearFlowFieldGridJob
+
+        // 1) 把动态障碍快照刷到 _obstacles 后缀；每帧仅 List<Transform> 走读，不做 FindObjectsByType
+        RefreshDynamicObstacleSnapshot();
+
+        // 2) 把启动时烘焙好的 _staticBlockedCells memcpy 进工作 buffer，并清零 density
+        JobHandle clearGridHandle = new CopyStaticBlockedMaskJob
         {
-            DensityFieldFixed = _densityFieldFixed,
-            BlockedCells = _flowBlockedCells
+            StaticBlockedCells = _staticBlockedCells,
+            BlockedCells = _flowBlockedCells,
+            DensityFieldFixed = _densityFieldFixed
         }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
 
-        JobHandle obstacleHandle = new RasterizeObstacleGridJob
+        // 3) 仅栅格化动态障碍段（_dynamicObstacleCount 通常很小）
+        JobHandle obstacleHandle = clearGridHandle;
+        if (_dynamicObstacleCount > 0)
         {
-            Obstacles = _obstacles,
-            ObstacleCount = _obstacleCount,
-            BlockedCells = _flowBlockedCells,
-            GridOrigin = _flowGridOrigin,
-            InvCellSize = invCellSize,
-            GridDim = _flowGridDim,
-            ExtraPadding = flowFieldObstaclePadding
-        }.Schedule(clearGridHandle);
+            obstacleHandle = new RasterizeObstacleGridJob
+            {
+                Obstacles = _obstacles,
+                StartIndex = _staticObstacleCount,
+                ObstacleCount = _dynamicObstacleCount,
+                BlockedCells = _flowBlockedCells,
+                GridOrigin = _flowGridOrigin,
+                InvCellSize = invCellSize,
+                GridDim = _flowGridDim,
+                ExtraPadding = flowFieldObstaclePadding
+            }.Schedule(clearGridHandle);
+        }
 
         JobHandle densityHandle = new BuildEnemyDensityFieldJob
         {
@@ -2100,19 +2242,28 @@ public partial class RougeGameManager : MonoBehaviour
             RenderHeight = renderHeight
         }.ScheduleBatch(activeEnemyCount, simulationBatchSize, clearGridHandle);
 
-        int flowGoalIndex = ResolveFlowGoalIndex(playerPos, invCellSize);
+        // 4) 多目标解析：player + extraTargets + 运行时 AddTarget
+        int goalCount = ResolveFlowGoals(playerPos, invCellSize);
 
         JobHandle flowInitHandle = new InitializeFlowFieldJob
         {
             BlockedCells = _flowBlockedCells,
             FlowDistances = _flowDistanceField,
-            GridDim = _flowGridDim,
-            GoalIndex = flowGoalIndex
+            GridDim = _flowGridDim
         }.ScheduleBatch(_flowGridCellCount, gridBatchSize, obstacleHandle);
+
+        // 5) 把所有目标 cell 一次性置 0；后续 Relax 因 min 操作不会再抬升
+        JobHandle seedHandle = new SeedGoalCellsJob
+        {
+            GoalIndices = _flowGoalIndices,
+            GoalCount = goalCount,
+            FlowDistances = _flowDistanceField,
+            BlockedCells = _flowBlockedCells
+        }.Schedule(flowInitHandle);
 
         NativeArray<float> flowSource = _flowDistanceField;
         NativeArray<float> flowTarget = _flowDistanceScratch;
-        JobHandle flowRelaxHandle = flowInitHandle;
+        JobHandle flowRelaxHandle = seedHandle;
         for (int iteration = 0; iteration < flowIterationCount; iteration++)
         {
             flowRelaxHandle = new RelaxFlowFieldJob
@@ -2121,8 +2272,7 @@ public partial class RougeGameManager : MonoBehaviour
                 FlowDistancesIn = flowSource,
                 FlowDistancesOut = flowTarget,
                 GridDim = _flowGridDim,
-                CellSize = _flowFieldRuntimeCellSize,
-                GoalIndex = flowGoalIndex
+                CellSize = _flowFieldRuntimeCellSize
             }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowRelaxHandle);
 
             NativeArray<float> temp = flowSource;
@@ -2687,6 +2837,8 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _flowDistanceScratch);
         ReleaseNative(ref _flowDirectionField);
         ReleaseNative(ref _flowBlockedCells);
+        ReleaseNative(ref _staticBlockedCells);
+        ReleaseNative(ref _flowGoalIndices);
         ReleaseNative(ref _neighborOffsets);
         ReleaseNative(ref _histograms);
         ReleaseNative(ref _binTotals);

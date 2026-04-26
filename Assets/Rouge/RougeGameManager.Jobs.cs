@@ -6,12 +6,143 @@ using Unity.Mathematics;
 
 public struct RougeObstacle
 {
+    public const int BoxType = 0;
+    public const int CircleType = 1;
+
     public int Type;
     public float2 Min;
     public float2 Max;
     public float2 Center;
+    public float2 BoxAxisX;
+    public float2 BoxAxisY;
+    public float2 BoxHalfExtents;
     public float CircleRadius;
     public float Padding;
+}
+
+public static class RougeObstacleMath
+{
+    public static RougeObstacle CreateCircle(float2 center, float radius, float padding)
+    {
+        float safeRadius = math.max(radius, 0.05f);
+        return new RougeObstacle
+        {
+            Type = RougeObstacle.CircleType,
+            Center = center,
+            CircleRadius = safeRadius,
+            Min = center - new float2(safeRadius),
+            Max = center + new float2(safeRadius),
+            Padding = math.max(padding, 0f)
+        };
+    }
+
+    public static RougeObstacle CreateBox(float2 center, float2 axisX, float2 axisY, float2 halfExtents, float padding)
+    {
+        float2 safeAxisX = math.normalizesafe(axisX, new float2(1f, 0f));
+        float2 safeAxisY = math.normalizesafe(axisY, new float2(0f, 1f));
+        float2 safeHalfExtents = math.max(halfExtents, new float2(0.05f));
+        float2 aabbHalf = math.abs(safeAxisX) * safeHalfExtents.x + math.abs(safeAxisY) * safeHalfExtents.y;
+
+        return new RougeObstacle
+        {
+            Type = RougeObstacle.BoxType,
+            Center = center,
+            BoxAxisX = safeAxisX,
+            BoxAxisY = safeAxisY,
+            BoxHalfExtents = safeHalfExtents,
+            Min = center - aabbHalf,
+            Max = center + aabbHalf,
+            Padding = math.max(padding, 0f)
+        };
+    }
+
+    public static bool ContainsPoint(RougeObstacle obstacle, float2 point, float extraPadding)
+    {
+        if (obstacle.Type == RougeObstacle.CircleType)
+        {
+            float paddedRadius = obstacle.CircleRadius + math.max(extraPadding, 0f);
+            return math.lengthsq(point - obstacle.Center) <= paddedRadius * paddedRadius;
+        }
+
+        float2 minPadded = obstacle.Min - new float2(math.max(extraPadding, 0f));
+        float2 maxPadded = obstacle.Max + new float2(math.max(extraPadding, 0f));
+        if (point.x < minPadded.x || point.x > maxPadded.x || point.y < minPadded.y || point.y > maxPadded.y)
+        {
+            return false;
+        }
+
+        float2 delta = point - obstacle.Center;
+        float localX = math.dot(delta, obstacle.BoxAxisX);
+        float localY = math.dot(delta, obstacle.BoxAxisY);
+        float2 paddedHalf = obstacle.BoxHalfExtents + new float2(math.max(extraPadding, 0f));
+        return math.abs(localX) <= paddedHalf.x && math.abs(localY) <= paddedHalf.y;
+    }
+
+    public static float2 ClosestPoint(RougeObstacle obstacle, float2 point, float extraPadding)
+    {
+        if (obstacle.Type == RougeObstacle.CircleType)
+        {
+            float paddedRadius = obstacle.CircleRadius + math.max(extraPadding, 0f);
+            float2 delta = point - obstacle.Center;
+            float distSq = math.lengthsq(delta);
+            if (distSq <= 0.000001f)
+            {
+                return obstacle.Center + new float2(paddedRadius, 0f);
+            }
+
+            float invDist = math.rsqrt(distSq);
+            return obstacle.Center + delta * (paddedRadius * invDist);
+        }
+
+        float2 deltaBox = point - obstacle.Center;
+        float2 paddedHalf = obstacle.BoxHalfExtents + new float2(math.max(extraPadding, 0f));
+        float localX = math.dot(deltaBox, obstacle.BoxAxisX);
+        float localY = math.dot(deltaBox, obstacle.BoxAxisY);
+        float clampedX = math.clamp(localX, -paddedHalf.x, paddedHalf.x);
+        float clampedY = math.clamp(localY, -paddedHalf.y, paddedHalf.y);
+        return obstacle.Center + obstacle.BoxAxisX * clampedX + obstacle.BoxAxisY * clampedY;
+    }
+
+    public static float2 ResolvePointOutside(RougeObstacle obstacle, float2 point, float extraPadding)
+    {
+        if (obstacle.Type == RougeObstacle.CircleType)
+        {
+            float paddedRadius = obstacle.CircleRadius + math.max(extraPadding, 0f);
+            float2 delta = point - obstacle.Center;
+            float distSq = math.lengthsq(delta);
+            if (distSq >= paddedRadius * paddedRadius)
+            {
+                return point;
+            }
+
+            float dist = math.sqrt(math.max(distSq, 0f));
+            float2 direction = dist > 0.001f ? delta / dist : new float2(1f, 0f);
+            return obstacle.Center + direction * paddedRadius;
+        }
+
+        if (!ContainsPoint(obstacle, point, extraPadding))
+        {
+            return point;
+        }
+
+        float2 deltaBox = point - obstacle.Center;
+        float localX = math.dot(deltaBox, obstacle.BoxAxisX);
+        float localY = math.dot(deltaBox, obstacle.BoxAxisY);
+        float2 paddedHalf = obstacle.BoxHalfExtents + new float2(math.max(extraPadding, 0f));
+        float remainingX = paddedHalf.x - math.abs(localX);
+        float remainingY = paddedHalf.y - math.abs(localY);
+
+        if (remainingX <= remainingY)
+        {
+            localX = (localX >= 0f ? 1f : -1f) * paddedHalf.x;
+        }
+        else
+        {
+            localY = (localY >= 0f ? 1f : -1f) * paddedHalf.y;
+        }
+
+        return obstacle.Center + obstacle.BoxAxisX * localX + obstacle.BoxAxisY * localY;
+    }
 }
 
 public static class RougeMortonGridUtility
@@ -81,6 +212,24 @@ public unsafe struct ClearFlowFieldGridJob : IJobParallelForBatch
     }
 }
 
+// Per-frame: 把启动期一次性烘焙的静态阻挡 mask memcpy 到工作 buffer，省去每帧重新栅格化整个静态场景
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct CopyStaticBlockedMaskJob : IJobParallelForBatch
+{
+    [ReadOnly] public NativeArray<byte> StaticBlockedCells;
+    [NativeDisableParallelForRestriction] public NativeArray<byte> BlockedCells;
+    [NativeDisableParallelForRestriction] public NativeArray<int> DensityFieldFixed;
+
+    public void Execute(int startIndex, int count)
+    {
+        UnsafeUtility.MemClear((int*)DensityFieldFixed.GetUnsafePtr() + startIndex, count * sizeof(int));
+        UnsafeUtility.MemCpy(
+            (byte*)BlockedCells.GetUnsafePtr() + startIndex,
+            (byte*)StaticBlockedCells.GetUnsafeReadOnlyPtr() + startIndex,
+            count * sizeof(byte));
+    }
+}
+
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct ClearBulletGridHeadsJob : IJobParallelForBatch
 {
@@ -97,6 +246,7 @@ public unsafe struct RasterizeObstacleGridJob : IJob
 {
     [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
     [NativeDisableParallelForRestriction] public NativeArray<byte> BlockedCells;
+    public int StartIndex;
     public int ObstacleCount;
     public float2 GridOrigin;
     public float InvCellSize;
@@ -109,11 +259,12 @@ public unsafe struct RasterizeObstacleGridJob : IJob
         byte* blockedPtr = (byte*)BlockedCells.GetUnsafePtr();
         float cellSize = 1f / math.max(InvCellSize, 0.0001f);
 
-        for (int obstacleIndex = 0; obstacleIndex < ObstacleCount; obstacleIndex++)
+        int endIndex = StartIndex + ObstacleCount;
+        for (int obstacleIndex = StartIndex; obstacleIndex < endIndex; obstacleIndex++)
         {
             RougeObstacle obstacle = obstaclePtr[obstacleIndex];
             float navPadding = math.max(ExtraPadding, 0f);
-            if (obstacle.Type == 1)
+            if (obstacle.Type == RougeObstacle.CircleType)
             {
                 float paddedRadius = obstacle.CircleRadius + navPadding;
                 float2 min = obstacle.Center - paddedRadius;
@@ -147,7 +298,7 @@ public unsafe struct RasterizeObstacleGridJob : IJob
                 for (int x = minCellAabb.x; x <= maxCellAabb.x; x++)
                 {
                     float2 cellCenter = GridOrigin + (new float2(x + 0.5f, y + 0.5f) * cellSize);
-                    if (cellCenter.x >= minPadded.x && cellCenter.x <= maxPadded.x && cellCenter.y >= minPadded.y && cellCenter.y <= maxPadded.y)
+                    if (RougeObstacleMath.ContainsPoint(obstacle, cellCenter, navPadding))
                     {
                         blockedPtr[RougeMortonGridUtility.EncodeMorton(x, y)] = 1;
                     }
@@ -216,7 +367,6 @@ public unsafe struct InitializeFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<byte> BlockedCells;
     [NativeDisableParallelForRestriction] public NativeArray<float> FlowDistances;
     public int GridDim;
-    public int GoalIndex;
 
     public void Execute(int startIndex, int count)
     {
@@ -232,7 +382,34 @@ public unsafe struct InitializeFlowFieldJob : IJobParallelForBatch
                 break;
             }
 
-            distancePtr[i] = i == GoalIndex ? 0f : (blockedPtr[i] != 0 ? 1e20f : 1e18f);
+            distancePtr[i] = blockedPtr[i] != 0 ? 1e20f : 1e18f;
+        }
+    }
+}
+
+// 多目标支持：把所有目标 cell 一次性置 0；后续 RelaxFlowFieldJob 因为 min 操作天然不会再升回去，无需在 relax 中再单独判断
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct SeedGoalCellsJob : IJob
+{
+    [ReadOnly] public NativeArray<int> GoalIndices;
+    public int GoalCount;
+    [NativeDisableParallelForRestriction] public NativeArray<float> FlowDistances;
+    [NativeDisableParallelForRestriction] public NativeArray<byte> BlockedCells;
+
+    public void Execute()
+    {
+        int* goalPtr = (int*)GoalIndices.GetUnsafeReadOnlyPtr();
+        float* distancePtr = (float*)FlowDistances.GetUnsafePtr();
+        byte* blockedPtr = (byte*)BlockedCells.GetUnsafePtr();
+        int cellCount = FlowDistances.Length;
+
+        for (int i = 0; i < GoalCount; i++)
+        {
+            int idx = goalPtr[i];
+            if ((uint)idx >= (uint)cellCount) continue;
+            // 目标 cell 必然可通行（ResolveFlowGoalIndex 已找最近未阻挡 cell）
+            blockedPtr[idx] = 0;
+            distancePtr[idx] = 0f;
         }
     }
 }
@@ -245,7 +422,6 @@ public unsafe struct RelaxFlowFieldJob : IJobParallelForBatch
     [NativeDisableParallelForRestriction] public NativeArray<float> FlowDistancesOut;
     public int GridDim;
     public float CellSize;
-    public int GoalIndex;
 
     public void Execute(int startIndex, int count)
     {
@@ -263,15 +439,17 @@ public unsafe struct RelaxFlowFieldJob : IJobParallelForBatch
                 break;
             }
 
-            if (index == GoalIndex)
-            {
-                dstPtr[index] = 0f;
-                continue;
-            }
-
             if (blockedPtr[index] != 0)
             {
                 dstPtr[index] = 1e20f;
+                continue;
+            }
+
+            // 目标 cell 已被 SeedGoalCellsJob 置 0；min 操作保证它不会被抬升
+            float currentDist = srcPtr[index];
+            if (currentDist <= 0f)
+            {
+                dstPtr[index] = 0f;
                 continue;
             }
 
@@ -1461,60 +1639,29 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         for (int obstacleIndex = 0; obstacleIndex < obstacleCount; obstacleIndex++)
         {
             RougeObstacle obstacle = obstaclePtr[obstacleIndex];
-            if (obstacle.Type == 1)
-            {
-                float totalRadius = obstacle.CircleRadius + radius + obstacle.Padding;
-                float2 diff = pos.xz - obstacle.Center;
-                float distSq = math.lengthsq(diff);
-                if (distSq >= totalRadius * totalRadius)
-                {
-                    continue;
-                }
-
-                float2 normal = distSq > 0.0001f
-                    ? diff * math.rsqrt(distSq)
-                    : math.normalizesafe(pos.xz - PlayerPos, new float2(1f, 0f));
-                pos.x = obstacle.Center.x + normal.x * totalRadius;
-                pos.z = obstacle.Center.y + normal.y * totalRadius;
-                float2 planarVelocity = vel.xz;
-                RemoveInwardVelocity(ref planarVelocity, normal);
-                vel.xz = planarVelocity;
-                continue;
-            }
-
-            float2 minPadded = obstacle.Min - new float2(radius + obstacle.Padding);
-            float2 maxPadded = obstacle.Max + new float2(radius + obstacle.Padding);
-            bool isInside = pos.x >= minPadded.x && pos.x <= maxPadded.x && pos.z >= minPadded.y && pos.z <= maxPadded.y;
-            if (!isInside)
+            float2 currentPos = pos.xz;
+            float2 resolvedPos = RougeObstacleMath.ResolvePointOutside(obstacle, currentPos, radius + obstacle.Padding);
+            float2 pushDelta = resolvedPos - currentPos;
+            if (math.lengthsq(pushDelta) <= 0.000001f)
             {
                 continue;
             }
 
-            float dx1 = pos.x - minPadded.x;
-            float dx2 = maxPadded.x - pos.x;
-            float dy1 = pos.z - minPadded.y;
-            float dy2 = maxPadded.y - pos.z;
-            float minD = math.min(math.min(dx1, dx2), math.min(dy1, dy2));
-            if (minD == dx1)
+            float2 normal = math.normalizesafe(pushDelta, math.normalizesafe(currentPos - PlayerPos, new float2(1f, 0f)));
+            pos.x = resolvedPos.x;
+            pos.z = resolvedPos.y;
+            if (math.abs(normal.x) > math.abs(normal.y))
             {
-                pos.x = minPadded.x;
-                if (vel.x < 0f) vel.x = 0f;
-            }
-            else if (minD == dx2)
-            {
-                pos.x = maxPadded.x;
-                if (vel.x > 0f) vel.x = 0f;
-            }
-            else if (minD == dy1)
-            {
-                pos.z = minPadded.y;
-                if (vel.z < 0f) vel.z = 0f;
+                if (math.sign(vel.x) == math.sign(normal.x)) vel.x = 0f;
             }
             else
             {
-                pos.z = maxPadded.y;
-                if (vel.z > 0f) vel.z = 0f;
+                if (math.sign(vel.z) == math.sign(normal.y)) vel.z = 0f;
             }
+
+            float2 planarVelocity = vel.xz;
+            RemoveInwardVelocity(ref planarVelocity, normal);
+            vel.xz = planarVelocity;
         }
     }
 
@@ -2258,73 +2405,39 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             for (int obstacleIndex = 0; obstacleIndex < ObstacleCount; obstacleIndex++)
             {
                 RougeObstacle obstacle = obstaclePtr[obstacleIndex];
-                if (obstacle.Type == 1)
+                float extraPadding = radius + obstacle.Padding;
+                if (RougeObstacleMath.ContainsPoint(obstacle, pos.xz, extraPadding))
                 {
-                    float2 diff = pos.xz - obstacle.Center;
-                    float distSq = math.lengthsq(diff);
-                    float totalRadius = obstacle.CircleRadius + radius + obstacle.Padding;
-
-                    if (distSq < totalRadius * totalRadius && distSq > 0.0001f)
+                    float2 resolvedPos = RougeObstacleMath.ResolvePointOutside(obstacle, pos.xz, extraPadding);
+                    float2 pushVector = resolvedPos - pos.xz;
+                    float overlap = math.length(pushVector);
+                    if (overlap > 0.0001f)
                     {
-                        float invDist = math.rsqrt(distSq);
-                        float dist = distSq * invDist;
-                        float2 normal = diff * invDist;
-                        float overlap = totalRadius - dist;
+                        float2 normal = pushVector / overlap;
                         acceleration.xz += normal * (ObstacleRepulsion + overlap * 50f);
                     }
-                    else if (!isAirborne)
-                    {
-                        float invDist = math.rsqrt(math.max(distSq, 0.0001f));
-                        float dist = math.max(distSq, 0.0001f) * invDist;
-                        float edgeDist = dist - totalRadius;
-                        if (edgeDist >= 0f && edgeDist < ObstacleLookAhead)
-                        {
-                            float2 normal = diff * invDist;
-                            float weight = 1f - math.saturate(edgeDist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
-                            float2 tangent = new float2(-normal.y, normal.x);
-                            if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
-                        }
-                    }
                 }
-                else
+                else if (!isAirborne)
                 {
-                    float2 minPadded = obstacle.Min - new float2(radius + obstacle.Padding);
-                    float2 maxPadded = obstacle.Max + new float2(radius + obstacle.Padding);
-                    bool isInside = pos.x >= minPadded.x && pos.x <= maxPadded.x && pos.z >= minPadded.y && pos.z <= maxPadded.y;
-
-                    if (isInside)
+                    float2 closest = RougeObstacleMath.ClosestPoint(obstacle, pos.xz, extraPadding);
+                    float2 diff = pos.xz - closest;
+                    float distSq = math.lengthsq(diff);
+                    if (distSq >= ObstacleLookAhead * ObstacleLookAhead)
                     {
-                        float dx1 = pos.x - minPadded.x;
-                        float dx2 = maxPadded.x - pos.x;
-                        float dy1 = pos.z - minPadded.y;
-                        float dy2 = maxPadded.y - pos.z;
-                        float minD = math.min(math.min(dx1, dx2), math.min(dy1, dy2));
-                        float2 normal = minD == dx1 ? new float2(-1f, 0f)
-                            : minD == dx2 ? new float2(1f, 0f)
-                            : minD == dy1 ? new float2(0f, -1f)
-                            : new float2(0f, 1f);
-                        acceleration.xz += normal * (ObstacleRepulsion + minD * 50f);
+                        continue;
                     }
-                    else
-                    {
-                        float2 closest = math.clamp(pos.xz, minPadded, maxPadded);
-                        float2 diff = pos.xz - closest;
-                        float distSq = math.lengthsq(diff);
-                        if (distSq >= ObstacleLookAhead * ObstacleLookAhead) continue;
 
-                        if (!isAirborne)
-                        {
-                            float dist = math.sqrt(math.max(distSq, 0.0001f));
-                            float2 normal = diff / dist;
-                            float weight = 1f - math.saturate(dist / math.max(ObstacleLookAhead, 0.001f));
-                            acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
-                            float2 tangent = new float2(-normal.y, normal.x);
-                            if (math.dot(tangent, desired) < 0f) tangent = -tangent;
-                            acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
-                        }
+                    float dist = math.sqrt(math.max(distSq, 0.0001f));
+                    float2 normal = diff / dist;
+                    float weight = 1f - math.saturate(dist / math.max(ObstacleLookAhead, 0.001f));
+                    acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
+                    float2 tangent = new float2(-normal.y, normal.x);
+                    if (math.dot(tangent, desired) < 0f)
+                    {
+                        tangent = -tangent;
                     }
+
+                    acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
                 }
             }
 
