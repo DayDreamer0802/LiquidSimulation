@@ -1632,7 +1632,7 @@ MonoBehaviour:
   enemyMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   enemyMaterial: {fileID: 2100000, guid: 3ec7e767beccce043be7c3d1d3dda5ec, type: 2}
   laserBeamMaterial: {fileID: 2100000, guid: 6104fed70fe0b2247b5a136b93c7b514, type: 2}
-  enemyCount: 300000
+  enemyCount: 200000
   enemyMaxHealth: 24
   enemyRadius: 1.2
   enemyMaxSpeed: 7
@@ -1657,8 +1657,8 @@ MonoBehaviour:
   denseSeparationBoost: 1.25
   denseNeighborThreshold: 10
   flowFieldCellSize: 2
-  flowFieldIterations: 128
-  flowFieldMaxGridDim: 128
+  flowFieldIterations: 12
+  flowFieldMaxGridDim: 256
   densitySoftThreshold: 3
   densityRepulsionStrength: 10
   densityGradientClamp: 1.9

@@ -1601,6 +1601,22 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private void ProcessMelee(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 6f) return;
+        SkillHitEffectTag tags = (SkillHitEffectTag)skill.EffectFlags;
+        RougeSkillArea appliedSkill = skill;
+        if ((tags & SkillHitEffectTag.Launch) != 0)
+        {
+            bool launchAlreadyActive = tornadoMark > 2.5f
+                || vel.y > 0.05f
+                || pos.y > RenderHeight + 0.05f
+                || effects.LaunchMotionTimer > 0f;
+            if (launchAlreadyActive && effects.LaunchStackTimer <= 0f)
+            {
+                appliedSkill.EffectFlags = (int)(tags & ~SkillHitEffectTag.Launch);
+                appliedSkill.EffectLaunchHeight = 0f;
+                appliedSkill.EffectLaunchLandingRadius = 0f;
+            }
+        }
+
         float2 pToS = pos.xz - skill.Position;
         float distSq = math.lengthsq(pToS);
         if (distSq < skill.Radius * skill.Radius)
@@ -1619,7 +1635,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
                 acceleration.xz += dir * skill.PullForce * KnockbackResist;
                 vel.y = math.max(vel.y, skill.VerticalForce * KnockbackResist);
-                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, appliedSkill);
             }
         }
     }
@@ -2784,6 +2800,22 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     private void ProcessMelee(ref float3 acceleration, ref float3 vel, ref float health, ref float flashTimer, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 6f) return;
+        SkillHitEffectTag tags = (SkillHitEffectTag)skill.EffectFlags;
+        RougeSkillArea appliedSkill = skill;
+        if ((tags & SkillHitEffectTag.Launch) != 0)
+        {
+            bool launchAlreadyActive = tornadoMark > 2.5f
+                || vel.y > 0.05f
+                || pos.y > RenderHeight + 0.05f
+                || effects.LaunchMotionTimer > 0f;
+            if (launchAlreadyActive && effects.LaunchStackTimer <= 0f)
+            {
+                appliedSkill.EffectFlags = (int)(tags & ~SkillHitEffectTag.Launch);
+                appliedSkill.EffectLaunchHeight = 0f;
+                appliedSkill.EffectLaunchLandingRadius = 0f;
+            }
+        }
+
         float2 pToS = pos.xz - skill.Position;
         float distSq = math.lengthsq(pToS);
         if (distSq < skill.Radius * skill.Radius)
@@ -2802,7 +2834,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
                 acceleration.xz += dir * skill.PullForce * KnockbackResist;
                 vel.y = math.max(vel.y, skill.VerticalForce * KnockbackResist);
-                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+                ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, appliedSkill);
             }
         }
     }

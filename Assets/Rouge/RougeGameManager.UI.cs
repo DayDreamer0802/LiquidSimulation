@@ -4,27 +4,55 @@ using UnityEngine;
 
 public partial class RougeGameManager
 {
-    private void UpdateHud()
+    private const float HudRefreshInterval = 0.1f;
+
+    private readonly StringBuilder _hudBuilder = new StringBuilder(1024);
+    private float _hudRefreshTimer;
+    private string _lastHudText = string.Empty;
+
+    private void ResetHudRefreshState()
+    {
+        _hudRefreshTimer = 0f;
+        _lastHudText = string.Empty;
+    }
+
+    private void UpdateHudIfNeeded()
     {
         if (_uiText == null)
         {
             return;
         }
 
+        _hudRefreshTimer -= Time.unscaledDeltaTime;
+        if (_hudRefreshTimer > 0f)
+        {
+            return;
+        }
+
+        _hudRefreshTimer = HudRefreshInterval;
+
         int mm = Mathf.FloorToInt(_survivalTime / 60f);
         int ss = Mathf.FloorToInt(_survivalTime % 60f);
-        var sb = new StringBuilder(1024);
-        sb.AppendLine($"FPS: {Mathf.RoundToInt(_fps)}  |  SURVIVAL: {mm:D2}:{ss:D2}");
-        sb.AppendLine($"LEVEL: {currentLevel} | KILLS: {totalKills}");
-        sb.AppendLine($"ACTIVE ENEMIES: {_currentMaxEnemies} / {enemyCount}");
-        sb.AppendLine($"PLAYER HP: {Mathf.RoundToInt(playerHealth)} / {playerMaxHealth}");
-        sb.AppendLine($"VIEW ZOOM: {cameraZoomMultiplier:F2}x");
-        sb.AppendLine();
+        _hudBuilder.Clear();
+        _hudBuilder.AppendLine($"FPS: {Mathf.RoundToInt(_fps)}  |  SURVIVAL: {mm:D2}:{ss:D2}");
+        _hudBuilder.AppendLine($"LEVEL: {currentLevel} | KILLS: {totalKills}");
+        _hudBuilder.AppendLine($"ACTIVE ENEMIES: {_currentMaxEnemies} / {enemyCount}");
+        _hudBuilder.AppendLine($"PLAYER HP: {Mathf.RoundToInt(playerHealth)} / {playerMaxHealth}");
+        _hudBuilder.AppendLine($"VIEW ZOOM: {cameraZoomMultiplier:F2}x");
+        _hudBuilder.AppendLine();
 
-        AppendSkillProgressHud(sb);
-        sb.AppendLine();
-        AppendSkillHud(sb);
-        _uiText.text = sb.ToString();
+        AppendSkillProgressHud(_hudBuilder);
+        _hudBuilder.AppendLine();
+        AppendSkillHud(_hudBuilder);
+
+        string hudText = _hudBuilder.ToString();
+        if (hudText == _lastHudText)
+        {
+            return;
+        }
+
+        _lastHudText = hudText;
+        _uiText.text = hudText;
     }
 
     private void AppendSkillProgressHud(StringBuilder sb)

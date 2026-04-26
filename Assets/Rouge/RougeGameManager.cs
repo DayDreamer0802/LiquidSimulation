@@ -822,7 +822,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (_uiText != null)
         {
-            UpdateHud();
+            UpdateHudIfNeeded();
         }
     }
 
@@ -933,6 +933,7 @@ public partial class RougeGameManager : MonoBehaviour
         currentLevel = 1;
         _skillKillCounts = new NativeArray<int>(6, Allocator.Persistent);
         _survivalTime = 0f;
+        ResetHudRefreshState();
         System.Array.Clear(_skillTotalKills, 0, 6);
         System.Array.Clear(_skillLevels, 0, 6);
         for (int skillIndex = 0; skillIndex < _skillLevels.Length; skillIndex++)

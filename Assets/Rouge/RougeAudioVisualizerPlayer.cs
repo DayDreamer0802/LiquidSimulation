@@ -49,7 +49,9 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 
     [Header("Canvas")]
     [SerializeField] private bool _createOverlayCanvasIfMissing = true;
+    [SerializeField] private bool _useDedicatedOverlayCanvas = true;
     [SerializeField] private string _overlayCanvasName = "RougeAudioVisualizerCanvas";
+    [SerializeField, Range(10f, 60f)] private float _visualRefreshRate = 30f;
 
     private float[] _spectrum;
     private float[] _levels;
@@ -63,6 +65,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     private bool _ownsRuntimeCanvas;
     private Vector2 _cachedLeftSize;
     private Vector2 _cachedRightSize;
+    private float _visualRefreshTimer;
 
     public AudioSource Source => _audioSource;
     public bool IsPlaying => _audioSource != null && _audioSource.isPlaying;
@@ -118,7 +121,21 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         }
 
         UpdateCanvasAlpha(isPlaying, deltaTime);
+
+        if (!isPlaying && (_canvasGroup == null || _canvasGroup.alpha <= 0.001f))
+        {
+            return;
+        }
+
         UpdateBarLayoutIfNeeded();
+        _visualRefreshTimer += deltaTime;
+        float refreshInterval = 1f / Mathf.Max(1f, _visualRefreshRate);
+        if (_visualRefreshTimer < refreshInterval)
+        {
+            return;
+        }
+
+        _visualRefreshTimer = Mathf.Min(_visualRefreshTimer - refreshInterval, refreshInterval);
         UpdateBarHeights();
     }
 
@@ -298,6 +315,11 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
             }
         }
 
+        if (_useDedicatedOverlayCanvas)
+        {
+            return ResolveDedicatedOverlayCanvas();
+        }
+
         Canvas preferredCanvas = null;
         Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < canvases.Length; i++)
@@ -344,6 +366,51 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
             _ownsRuntimeCanvas = true;
         }
 
+        return _runtimeCanvas;
+    }
+
+    private Canvas ResolveDedicatedOverlayCanvas()
+    {
+        if (_runtimeCanvas != null)
+        {
+            return _runtimeCanvas;
+        }
+
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < canvases.Length; i++)
+        {
+            Canvas canvas = canvases[i];
+            if (canvas == null || !canvas.isActiveAndEnabled || canvas.renderMode == RenderMode.WorldSpace)
+            {
+                continue;
+            }
+
+            if (canvas.name != _overlayCanvasName)
+            {
+                continue;
+            }
+
+            _runtimeCanvas = canvas;
+            _ownsRuntimeCanvas = false;
+            return _runtimeCanvas;
+        }
+
+        if (!_createOverlayCanvasIfMissing)
+        {
+            return null;
+        }
+
+        GameObject canvasObject = new GameObject(_overlayCanvasName, typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        _runtimeCanvas = canvasObject.GetComponent<Canvas>();
+        _runtimeCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        _runtimeCanvas.sortingOrder = 1000;
+
+        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+        _ownsRuntimeCanvas = true;
         return _runtimeCanvas;
     }
 
