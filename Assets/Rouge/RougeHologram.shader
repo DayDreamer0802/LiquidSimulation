@@ -10,6 +10,10 @@ Shader "Rouge/Hologram"
         _FresnelPower("Fresnel Power", Range(0.5, 8)) = 2.4
         _GlowStrength("Glow Strength", Range(0, 8)) = 2.2
         _NoiseStrength("Noise Strength", Range(0, 1)) = 0.16
+        _DissolveProgress("Dissolve Progress", Range(0, 1)) = 1
+        _GridDensity("Grid Density", Range(2, 40)) = 9
+        _DissolveEdgeWidth("Dissolve Edge Width", Range(0.01, 0.45)) = 0.14
+        _DissolveGlow("Dissolve Glow", Range(0, 4)) = 1.45
     }
 
     SubShader
@@ -39,6 +43,10 @@ Shader "Rouge/Hologram"
             float _FresnelPower;
             float _GlowStrength;
             float _NoiseStrength;
+            float _DissolveProgress;
+            float _GridDensity;
+            float _DissolveEdgeWidth;
+            float _DissolveGlow;
             CBUFFER_END
 
             struct Attributes
@@ -87,11 +95,26 @@ Shader "Rouge/Hologram"
                 float noise = lerp(1.0, Hash21(noiseUv), _NoiseStrength);
                 float rimPulse = 0.72 + 0.28 * sin((_Time.y + input.positionOS.y) * 4.1);
 
+                float2 gridUv = input.uv * float2(_GridDensity, max(2.0, _GridDensity * 0.35));
+                float2 gridFrac = abs(frac(gridUv) - 0.5);
+                float latticeX = 1.0 - saturate(gridFrac.x / 0.16);
+                float latticeY = 1.0 - saturate(gridFrac.y / 0.16);
+                float lattice = saturate(max(latticeX, latticeY));
+                lattice = pow(lattice, 2.8);
+                float2 cellId = floor(gridUv);
+                float cellNoise = Hash21(cellId + float2(floor(abs(input.positionOS.y) * 3.0), floor(length(input.positionOS.xz) * 2.0)));
+                float edgeWidth = max(_DissolveEdgeWidth, 0.001);
+                float dissolve = smoothstep(cellNoise - edgeWidth, cellNoise + edgeWidth, saturate(_DissolveProgress));
+                float dissolveEdge = 1.0 - saturate(abs(saturate(_DissolveProgress) - cellNoise) / edgeWidth);
+                clip(dissolve - 0.02);
+
                 float glow = (0.35 + fresnel * _GlowStrength) * scanlines * rimPulse * noise;
                 float3 color = lerp(_BaseColor.rgb, _AccentColor.rgb, saturate(fresnel * 0.85 + scanlines * 0.25));
+                color += _AccentColor.rgb * (lattice * 0.32 + dissolveEdge * _DissolveGlow * (0.45 + lattice * 0.55));
                 color *= glow;
 
                 float alpha = _Alpha * saturate(0.25 + fresnel * 0.85) * saturate(0.75 + scanlines * 0.25);
+                alpha *= dissolve * saturate(0.82 + lattice * 0.18);
                 return half4(color, alpha);
             }
             ENDHLSL

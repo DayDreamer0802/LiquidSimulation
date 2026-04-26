@@ -411,6 +411,7 @@ public class LightPillarSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Light Pillar Strike", "Q", false, KeyCode.Q);
     public SkillHitEffectConfig Effects;
+    public Material BeamVisualMaterial;
     public Material ImpactRingMaterial;
     public float3 Cooldown = new float3(10f, 10f, 0f);
     public float3 StrikeCount = new float3(4f, 16f, 1f);
@@ -646,6 +647,7 @@ public class DashSkillConfig : LevelScaledSkillConfig
 {
     public SkillPresentationConfig Presentation = new SkillPresentationConfig("Whirlwind", "L-SHIFT", false, KeyCode.LeftShift);
     public SkillHitEffectConfig Effects;
+    public Material BladeVisualMaterial;
     public float3 Cooldown = new float3(3f, 3f, 0f);
     public float3 Duration = new float3(1.5f, 1.8f, 2f);
     public float3 Distance = new float3(21f, 28f, 2f);

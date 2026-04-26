@@ -978,6 +978,7 @@ public partial class RougeGameManager
                 _meleeVisual.transform.position = center;
                 _meleeVisual.transform.rotation = Quaternion.LookRotation(new Vector3(swingDirection.x, 0f, swingDirection.y));
                 _meleeVisual.transform.localScale = scale;
+                ApplyHologramLifecycle(_meleeVisual, progress, 0.24f);
             }
 
             TryAddSkillArea(new RougeSkillArea
@@ -1058,6 +1059,7 @@ public partial class RougeGameManager
             _meleeFinisherVisual.transform.position = slamPosition;
             _meleeFinisherVisual.transform.rotation = slamRotation;
             _meleeFinisherVisual.transform.localScale = new Vector3(meleeFinisherSlamWidth * arcScaleBoost, meleeFinisherSlamThickness, meleeFinisherSlamLength * arcScaleBoost);
+            ApplyHologramLifecycle(_meleeFinisherVisual, progress, 0.26f);
         }
 
         if (_meleeFinisherSlamTimer > 0f)
@@ -1856,7 +1858,10 @@ public partial class RougeGameManager
         }
 
         float2 endPos = new float2(player.transform.position.x, player.transform.position.z);
-        SpawnImpact(endPos, dashImpactRadius, dashImpactRadius, dashRingDuration, new Color(1f, 0.75f, 0.15f, 1f));
+        if (!isSkateboardWhirlwind)
+        {
+            SpawnImpact(endPos, dashImpactRadius, dashImpactRadius, dashRingDuration, new Color(1f, 0.75f, 0.15f, 1f));
+        }
         TryAddCircularSkillArea(endPos, dashImpactRadius, dashImpactDamage, math.abs(dashPullForce), dashVerticalForce, activeDashEffects);
 
         if (isSkateboardWhirlwind)
@@ -2201,7 +2206,7 @@ public partial class RougeGameManager
             _ownsSkateboardMat = boardVisualMaterial == null;
             _skateBoardMat = boardVisualMaterial != null
                 ? boardVisualMaterial
-                : CreateFallbackHologramMaterial(new Color(0.18f, 0.82f, 1f, 1f), new Color(0.92f, 0.98f, 1f, 1f), 0.72f, 18f, 2.15f);
+                : CreateFallbackTechPanelMaterial(new Color(0.18f, 0.72f, 0.92f, 1f), new Color(0.9f, 0.98f, 1f, 1f), 0.52f, 16f, 1.1f);
             _skateBoardVisual.SetActive(false);
         }
 

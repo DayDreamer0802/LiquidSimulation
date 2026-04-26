@@ -37,15 +37,15 @@ Material:
     - _VeryNearPlayerDistance: 12
     m_Colors:
     - _AirborneColor: {r: 0.37023848, g: 0.5259286, b: 0.6037736, a: 0.23137255}
-    - _BaseColor: {r: 0.27058825, g: 0.44205016, b: 0.53333336, a: 1}
+    - _BaseColor: {r: 1, g: 0.33146626, b: 0.3050313, a: 1}
     - _BottomTint: {r: 0.72641504, g: 0.8037326, b: 1, a: 1}
     - _DeadColor: {r: 0.17722793, g: 0.17980891, b: 0.18238991, a: 0.92}
     - _FlashColor: {r: 0.8459119, g: 0.9584078, b: 1, a: 1}
     - _NearPlayerColor: {r: 1, g: 0.62, b: 0.22, a: 0.35}
-    - _PlayerFocusPosition: {r: 41.060825, g: 1.5, b: 163.19434, a: 0}
+    - _PlayerFocusPosition: {r: 235.49545, g: 1.5, b: -49.465, a: 0}
     - _RimColor: {r: 0.76415086, g: 0.91640794, b: 1, a: 1}
     - _ShieldColor: {r: 0, g: 0, b: 0, a: 1}
-    - _TopTint: {r: 0.33588457, g: 0.6392362, b: 0.6981132, a: 1}
+    - _TopTint: {r: 0.42808822, g: 0.65408736, b: 0.6981132, a: 1}
     - _VeryNearPlayerColor: {r: 1, g: 0.18, b: 0.12, a: 0.72}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

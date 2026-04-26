@@ -21,11 +21,13 @@ public partial class RougeGameManager : MonoBehaviour
     private static readonly int BreakupStrengthId = Shader.PropertyToID("_BreakupStrength");
     private static readonly int PlayerFocusPositionId = Shader.PropertyToID("_PlayerFocusPosition");
     private static readonly int ShaderRenderHeightId = Shader.PropertyToID("_RenderHeight");
+    private static readonly int HologramDissolveProgressId = Shader.PropertyToID("_DissolveProgress");
 
     [Header("References")]
     [SerializeField] private PlayerBase player;
     [SerializeField] private Mesh enemyMesh;
     [SerializeField] private Material enemyMaterial;
+    [SerializeField] private Material lightPillarBeamMaterial;
     [SerializeField] private Material laserBeamMaterial;
 
     private Mesh _bulletMesh;
@@ -203,6 +205,8 @@ public partial class RougeGameManager : MonoBehaviour
 
     private GameObject _tornadoVisual;
     private Material _tornadoMat;
+    private bool _ownsTornadoMat;
+    private MaterialPropertyBlock _hologramPropertyBlock;
     
     // Tornado VFX data
     private const int MaxTornados = 16;
@@ -360,6 +364,7 @@ public partial class RougeGameManager : MonoBehaviour
     private float2 _pendingPlayerHitRepulsePosition;
     private GameObject _dashVisual;
     private Material _dashMat;
+    private bool _ownsDashMat;
 
     // --- Skateboard skill state ---
     private float _skateCooldownTimer;
@@ -435,7 +440,7 @@ public partial class RougeGameManager : MonoBehaviour
     private readonly int[] _skillLevels = new int[6];
     private float _survivalTime;
 
-    // AOE Ring VFX (shader-based hollow cylinder)
+    // AOE Ring VFX (shader-based flat ring)
     private const int MaxAOERings = 32;
     private int _aoeRingCount;
     private GameObject[] _aoeRingVisuals = new GameObject[MaxAOERings];
@@ -446,9 +451,10 @@ public partial class RougeGameManager : MonoBehaviour
     private Color[] _aoeRingColors = new Color[MaxAOERings];
     private Material[] _aoeRingMaterials = new Material[MaxAOERings];
     private bool[] _aoeRingUseMaterialColor = new bool[MaxAOERings];
-    private Material _aoeRingMat;
+    [SerializeField] private Material _aoeRingMat;
     private MaterialPropertyBlock _aoeRingPropertyBlock;
-    private Mesh _cylinderMesh;
+    private Mesh _aoeRingMesh;
+    private bool _ownsAoeRingMesh;
 
     // Shockwave multi-ring system
     private const int ShockwaveRingCount = 5;
@@ -1015,10 +1021,23 @@ public partial class RougeGameManager : MonoBehaviour
         
         if (_tornadoMat == null)
         {
-            Shader tsh = Shader.Find("Rouge/VFXInstanced");
-            _tornadoMat = new Material(tsh);
-            _tornadoMat.SetColor("_BaseColor", new Color(1f, 0.98f, 0.86f, 0.82f));
-            _tornadoMat.enableInstancing = true;
+            Material resolvedLightPillarBeamMaterial = lightPillarBeamMaterial != null
+                ? lightPillarBeamMaterial
+                : skillConfig != null && skillConfig.LightPillar != null
+                    ? skillConfig.LightPillar.BeamVisualMaterial
+                    : null;
+            _ownsTornadoMat = resolvedLightPillarBeamMaterial == null;
+            if (resolvedLightPillarBeamMaterial != null)
+            {
+                _tornadoMat = resolvedLightPillarBeamMaterial;
+            }
+            else
+            {
+                Shader tsh = Shader.Find("Rouge/VFXInstanced");
+                _tornadoMat = new Material(tsh);
+                _tornadoMat.SetColor("_BaseColor", new Color(1f, 0.98f, 0.86f, 0.82f));
+                _tornadoMat.enableInstancing = true;
+            }
         }
 
         // AOE Ring material
@@ -1038,11 +1057,10 @@ public partial class RougeGameManager : MonoBehaviour
             _aoeRingPropertyBlock = new MaterialPropertyBlock();
         }
 
-        if (_cylinderMesh == null)
+        if (_aoeRingMesh == null)
         {
-            GameObject tmpCyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            _cylinderMesh = tmpCyl.GetComponent<MeshFilter>().sharedMesh;
-            Destroy(tmpCyl);
+            _aoeRingMesh = CreateAoERingMesh(96);
+            _ownsAoeRingMesh = true;
         }
 
         // Shockwave ring material (yellow-orange glow)
@@ -1408,7 +1426,13 @@ public partial class RougeGameManager : MonoBehaviour
             _dashVisual = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(_dashVisual.GetComponent<Collider>());
             _dashVisual.name = "Whirlwind Visual";
-            _dashMat = CreateFallbackHologramMaterial(new Color(1f, 0.72f, 0.22f, 1f), new Color(1f, 0.97f, 0.82f, 1f), 0.76f, 14f, 2.65f);
+            Material dashVisualMaterial = skillConfig != null && skillConfig.Dash != null
+                ? skillConfig.Dash.BladeVisualMaterial
+                : null;
+            _ownsDashMat = dashVisualMaterial == null;
+            _dashMat = dashVisualMaterial != null
+                ? dashVisualMaterial
+                : CreateFallbackTechPanelMaterial(new Color(0.2f, 0.86f, 1f, 1f), new Color(0.88f, 0.98f, 1f, 1f), 0.62f, 18f, 1.35f);
             _dashVisual.GetComponent<MeshRenderer>().sharedMaterial = _dashMat;
             _dashVisual.SetActive(false);
         }
@@ -2569,7 +2593,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void RenderAOERings()
     {
-        if (_cylinderMesh == null || _aoeRingMat == null || _aoeRingPropertyBlock == null)
+        if (_aoeRingMesh == null || _aoeRingMat == null || _aoeRingPropertyBlock == null)
         {
             return;
         }
@@ -2589,9 +2613,9 @@ public partial class RougeGameManager : MonoBehaviour
 
             float progress = 1f - math.max(0f, _aoeRingTimers[i] / math.max(0.01f, _aoeRingMaxTimes[i]));
             float travel = progress * progress * (3f - 2f * progress);
-            float currentRadius = _aoeRingMaxRadius[i] * math.lerp(0.12f, 1f, travel);
-            float ringHeight = math.lerp(0.1f, 0.28f, math.sin(progress * math.PI * 0.5f));
-            float alpha = math.saturate(1f - progress * progress * 0.92f);
+            float currentRadius = _aoeRingMaxRadius[i] * math.lerp(0.72f, 1f, travel);
+            float ringHeight = math.lerp(0.08f, 0.2f, math.sin(progress * math.PI * 0.5f));
+            float alpha = math.saturate((1f - progress * progress * 0.82f) * (0.72f + travel * 0.28f));
             Vector3 center = _aoeRingPositions[i];
             center.y = math.max(center.y, renderHeight + 0.045f);
             Matrix4x4 matrix = Matrix4x4.TRS(center, Quaternion.identity, new Vector3(currentRadius * 2f, ringHeight, currentRadius * 2f));
@@ -2599,7 +2623,7 @@ public partial class RougeGameManager : MonoBehaviour
             _aoeRingPropertyBlock.Clear();
             if (ringMaterial.HasProperty("_InnerRadiusRatio"))
             {
-                _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.82f, 0.94f, progress));
+                _aoeRingPropertyBlock.SetFloat("_InnerRadiusRatio", math.lerp(0.9f, 0.965f, progress));
             }
 
             Color color = _aoeRingColors[i];
@@ -2616,7 +2640,7 @@ public partial class RougeGameManager : MonoBehaviour
                 _aoeRingPropertyBlock.SetColor("_Color", color);
             }
 
-            Graphics.DrawMesh(_cylinderMesh, matrix, ringMaterial, gameObject.layer, null, 0, _aoeRingPropertyBlock, UnityEngine.Rendering.ShadowCastingMode.Off, false, null, false);
+            Graphics.DrawMesh(_aoeRingMesh, matrix, ringMaterial, gameObject.layer, null, 0, _aoeRingPropertyBlock, UnityEngine.Rendering.ShadowCastingMode.Off, false, null, false);
         }
     }
 
@@ -2755,7 +2779,7 @@ public partial class RougeGameManager : MonoBehaviour
         if (_laserExtraVisuals != null)
             for (int li = 0; li < _laserExtraVisuals.Length; li++)
                 if (_laserExtraVisuals[li] != null) { Destroy(_laserExtraVisuals[li]); _laserExtraVisuals[li] = null; }
-        if (_tornadoMat) Destroy(_tornadoMat);
+        if (_tornadoMat && _ownsTornadoMat) Destroy(_tornadoMat);
         if (_laserMat && _ownsLaserMat) Destroy(_laserMat);
         if (_meleeMat && _ownsMeleeMat) Destroy(_meleeMat);
         if (_meleeVisual) Destroy(_meleeVisual);
@@ -2777,7 +2801,8 @@ public partial class RougeGameManager : MonoBehaviour
         if (_iceZoneVisual) Destroy(_iceZoneVisual);
         if (_iceZoneMat) Destroy(_iceZoneMat);
         if (_dashVisual) Destroy(_dashVisual);
-        if (_dashMat) Destroy(_dashMat);
+        if (_dashMat && _ownsDashMat) Destroy(_dashMat);
+        if (_aoeRingMesh && _ownsAoeRingMesh) Destroy(_aoeRingMesh);
         if (_skateBoardMat && _ownsSkateboardMat) Destroy(_skateBoardMat);
         if (_skateBoardVisual) Destroy(_skateBoardVisual);
         if (_poisonBottleMat) Destroy(_poisonBottleMat);
@@ -2921,6 +2946,10 @@ public partial class RougeGameManager : MonoBehaviour
             material.SetFloat("_FresnelPower", 2.4f);
             material.SetFloat("_GlowStrength", glowStrength);
             material.SetFloat("_NoiseStrength", 0.16f);
+            material.SetFloat("_DissolveProgress", 1f);
+            material.SetFloat("_GridDensity", 9f);
+            material.SetFloat("_DissolveEdgeWidth", 0.14f);
+            material.SetFloat("_DissolveGlow", 1.45f);
             return material;
         }
 
@@ -2932,6 +2961,70 @@ public partial class RougeGameManager : MonoBehaviour
         material.SetFloat("_Surface", 1f);
         material.SetColor("_EmissionColor", accentColor * math.max(1f, glowStrength));
         return material;
+    }
+
+    private static Material CreateFallbackTechPanelMaterial(Color baseColor, Color accentColor, float alpha, float lineDensity, float glowStrength)
+    {
+        Shader shader = Shader.Find("Rouge/TechPanel");
+        Material material;
+        if (shader != null)
+        {
+            material = new Material(shader)
+            {
+                hideFlags = HideFlags.DontSave
+            };
+            material.SetColor("_BaseColor", baseColor);
+            material.SetColor("_EdgeColor", accentColor);
+            material.SetFloat("_Alpha", alpha);
+            material.SetFloat("_LineDensity", lineDensity);
+            material.SetFloat("_SweepSpeed", 1.5f);
+            material.SetFloat("_FresnelPower", 2.1f);
+            material.SetFloat("_GlowStrength", glowStrength);
+            material.SetFloat("_NoiseStrength", 0.1f);
+            return material;
+        }
+
+        material = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+        {
+            hideFlags = HideFlags.DontSave
+        };
+        material.SetColor("_BaseColor", new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
+        material.SetFloat("_Surface", 1f);
+        material.SetColor("_EmissionColor", accentColor * math.max(1f, glowStrength));
+        return material;
+    }
+
+    private static float EvaluateHologramReveal(float normalizedProgress, float fadeWindow)
+    {
+        float safeFadeWindow = math.max(0.01f, fadeWindow);
+        float progress = math.saturate(normalizedProgress);
+        float fadeIn = math.saturate(progress / safeFadeWindow);
+        float fadeOut = math.saturate((1f - progress) / safeFadeWindow);
+        float reveal = math.min(fadeIn, fadeOut);
+        return reveal * reveal * (3f - 2f * reveal);
+    }
+
+    private void ApplyHologramLifecycle(GameObject visual, float normalizedProgress, float fadeWindow = 0.22f)
+    {
+        if (visual == null)
+        {
+            return;
+        }
+
+        Renderer renderer = visual.GetComponent<Renderer>();
+        if (renderer == null || renderer.sharedMaterial == null || !renderer.sharedMaterial.HasProperty(HologramDissolveProgressId))
+        {
+            return;
+        }
+
+        if (_hologramPropertyBlock == null)
+        {
+            _hologramPropertyBlock = new MaterialPropertyBlock();
+        }
+
+        renderer.GetPropertyBlock(_hologramPropertyBlock);
+        _hologramPropertyBlock.SetFloat(HologramDissolveProgressId, EvaluateHologramReveal(normalizedProgress, fadeWindow));
+        renderer.SetPropertyBlock(_hologramPropertyBlock);
     }
 
     private static Mesh CreateConeMesh(int segmentCount = 20)
@@ -2992,6 +3085,60 @@ public partial class RougeGameManager : MonoBehaviour
             triangles[triangleIndex++] = 1;
             triangles[triangleIndex++] = capCurrent;
             triangles[triangleIndex++] = capNext;
+        }
+
+        mesh.vertices = vertices;
+        mesh.normals = normals;
+        mesh.uv = uv;
+        mesh.triangles = triangles;
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    private static Mesh CreateAoERingMesh(int segmentCount = 64)
+    {
+        int safeSegmentCount = Mathf.Max(8, segmentCount);
+        Mesh mesh = new Mesh
+        {
+            name = "RougeAoERing"
+        };
+
+        Vector3[] vertices = new Vector3[safeSegmentCount * 2];
+        Vector3[] normals = new Vector3[vertices.Length];
+        Vector2[] uv = new Vector2[vertices.Length];
+        int[] triangles = new int[safeSegmentCount * 6];
+
+        for (int i = 0; i < safeSegmentCount; i++)
+        {
+            float angle = i / (float)safeSegmentCount * math.PI * 2f;
+            float x = math.cos(angle);
+            float z = math.sin(angle);
+            int outerIndex = i * 2;
+            int innerIndex = outerIndex + 1;
+
+            vertices[outerIndex] = new Vector3(x * 0.5f, 0f, z * 0.5f);
+            vertices[innerIndex] = new Vector3(x * 0.02f, 0f, z * 0.02f);
+            normals[outerIndex] = Vector3.up;
+            normals[innerIndex] = Vector3.up;
+            uv[outerIndex] = new Vector2((x + 1f) * 0.5f, (z + 1f) * 0.5f);
+            uv[innerIndex] = new Vector2(0.5f, 0.5f);
+        }
+
+        int triangleIndex = 0;
+        for (int i = 0; i < safeSegmentCount; i++)
+        {
+            int next = (i + 1) % safeSegmentCount;
+            int outerCurrent = i * 2;
+            int innerCurrent = outerCurrent + 1;
+            int outerNext = next * 2;
+            int innerNext = outerNext + 1;
+
+            triangles[triangleIndex++] = outerCurrent;
+            triangles[triangleIndex++] = outerNext;
+            triangles[triangleIndex++] = innerNext;
+            triangles[triangleIndex++] = outerCurrent;
+            triangles[triangleIndex++] = innerNext;
+            triangles[triangleIndex++] = innerCurrent;
         }
 
         mesh.vertices = vertices;

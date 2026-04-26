@@ -44,6 +44,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     [SerializeField, Range(0.15f, 1f)] private float _coreWidthMultiplier = 0.22f;
     [SerializeField, Range(0.05f, 0.5f)] private float _highlightHeightRatio = 0.1f;
     [SerializeField] private float _highlightMaxHeight = 10f;
+    [SerializeField] private bool _showEdgeAura;
     [SerializeField] private float _edgeAuraWidth = 8f;
     [SerializeField] private float _edgeAuraAlpha = 0.035f;
 
@@ -431,7 +432,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 
     private void CreateEdgeAura(RectTransform parent, bool alignRight)
     {
-        if (_edgeAuraWidth <= 0f || _edgeAuraAlpha <= 0f)
+        if (!_showEdgeAura || _edgeAuraWidth <= 0f || _edgeAuraAlpha <= 0f)
         {
             return;
         }
