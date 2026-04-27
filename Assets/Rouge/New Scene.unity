@@ -1531,7 +1531,15 @@ MonoBehaviour:
   enemyMaterial: {fileID: 2100000, guid: 3ec7e767beccce043be7c3d1d3dda5ec, type: 2}
   lightPillarBeamMaterial: {fileID: 0}
   laserBeamMaterial: {fileID: 2100000, guid: 6104fed70fe0b2247b5a136b93c7b514, type: 2}
-  enemyCount: 500000
+  indirectInstancedShader: {fileID: 0}
+  vfxInstancedShader: {fileID: 4800000, guid: faa051fb2b158044e81af5224eb1097a, type: 3}
+  aoeRingShader: {fileID: 4800000, guid: c1044b71751c5ee41869fd09649335c7, type: 3}
+  groundZoneShader: {fileID: 4800000, guid: 9ccdddfacc2305e439f7fe48407b428f, type: 3}
+  hologramShader: {fileID: 4800000, guid: 7422d013edeeb1f44854e6faccc25ae6, type: 3}
+  techPanelShader: {fileID: 4800000, guid: b4ba5ac408e2f8c438946b210d667e04, type: 3}
+  laserBeamShader: {fileID: 4800000, guid: e021425b141e2b74c9ac24c0919cd339, type: 3}
+  urpLitShader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
+  enemyCount: 400000
   enemyMaxHealth: 24
   enemyRadius: 1.2
   enemyMaxSpeed: 7

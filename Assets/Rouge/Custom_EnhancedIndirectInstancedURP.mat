@@ -25,27 +25,27 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _AirborneHeightThreshold: 0.77
+    - _AirborneHeightThreshold: 0.57
     - _BreakupScale: 3.8
     - _BreakupStrength: 0.16
-    - _FresnelPower: 2.23
+    - _FresnelPower: 1.9
     - _NearPlayerDistance: 24
     - _RenderHeight: 0.25
-    - _RimStrength: 0.6
+    - _RimStrength: 1.197
     - _ScaleMultiplier: 1
     - _VariationStrength: 0.18
     - _VeryNearPlayerDistance: 12
     m_Colors:
-    - _AirborneColor: {r: 0.37023848, g: 0.5259286, b: 0.6037736, a: 0.23137255}
-    - _BaseColor: {r: 1, g: 0.33146626, b: 0.3050313, a: 1}
-    - _BottomTint: {r: 0.72641504, g: 0.8037326, b: 1, a: 1}
-    - _DeadColor: {r: 0.17722793, g: 0.17980891, b: 0.18238991, a: 0.92}
-    - _FlashColor: {r: 0.8459119, g: 0.9584078, b: 1, a: 1}
-    - _NearPlayerColor: {r: 1, g: 0.62, b: 0.22, a: 0.35}
-    - _PlayerFocusPosition: {r: -131.75758, g: 1.5, b: 456.19778, a: 0}
-    - _RimColor: {r: 0.76415086, g: 0.91640794, b: 1, a: 1}
+    - _AirborneColor: {r: 0.75786155, g: 0.9509594, b: 1, a: 0.5372549}
+    - _BaseColor: {r: 0.504707, g: 0.88094896, b: 0.9496855, a: 1}
+    - _BottomTint: {r: 0.30386448, g: 0.3817792, b: 0.57861626, a: 1}
+    - _DeadColor: {r: 0.20754719, g: 0.20754719, b: 0.20754719, a: 0.92}
+    - _FlashColor: {r: 0.7987421, g: 0.7987421, b: 0.7987421, a: 1}
+    - _NearPlayerColor: {r: 1, g: 0.62, b: 0.22, a: 0.5411765}
+    - _PlayerFocusPosition: {r: -313.13226, g: 1.5, b: 170.75078, a: 0}
+    - _RimColor: {r: 0.78301877, g: 1, b: 0.9993327, a: 1}
     - _ShieldColor: {r: 0, g: 0, b: 0, a: 1}
-    - _TopTint: {r: 0.42808822, g: 0.65408736, b: 0.6981132, a: 1}
-    - _VeryNearPlayerColor: {r: 1, g: 0.18, b: 0.12, a: 0.72}
+    - _TopTint: {r: 0.40548226, g: 0.7748395, b: 0.84276724, a: 1}
+    - _VeryNearPlayerColor: {r: 1, g: 0.06696429, b: 0, a: 0.7490196}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

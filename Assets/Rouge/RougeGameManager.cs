@@ -5,7 +5,6 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEditor.SearchService;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -29,6 +28,16 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private Material enemyMaterial;
     [SerializeField] private Material lightPillarBeamMaterial;
     [SerializeField] private Material laserBeamMaterial;
+
+    [Header("Shader References")]
+    [SerializeField] private Shader indirectInstancedShader;
+    [SerializeField] private Shader vfxInstancedShader;
+    [SerializeField] private Shader aoeRingShader;
+    [SerializeField] private Shader groundZoneShader;
+    [SerializeField] private Shader hologramShader;
+    [SerializeField] private Shader techPanelShader;
+    [SerializeField] private Shader laserBeamShader;
+    [SerializeField] private Shader urpLitShader;
 
     private Mesh _bulletMesh;
     private Material _bulletMaterial;
@@ -477,6 +486,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void OnValidate()
     {
+        EnsureShaderReferenceDefaults();
         ApplySkillConfigValues();
     }
 
@@ -877,8 +887,8 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (_bulletMaterial == null)
         {
-            _bulletMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _bulletMaterial.SetColor("_BaseColor", Color.yellow);
+            _bulletMaterial = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Bullet Material", true);
+            ApplyBaseColor(_bulletMaterial, Color.yellow);
             _bulletMaterial.enableInstancing = true;
         }
 
@@ -1010,17 +1020,15 @@ public partial class RougeGameManager : MonoBehaviour
         
         if (_vfxExplosionMat == null)
         {
-            Shader sh = Shader.Find("Rouge/VFXInstanced");
-            _vfxExplosionMat = new Material(sh);
-            _vfxExplosionMat.SetColor("_BaseColor", new Color(1f, 0.4f, 0.1f, 0.7f));
+            _vfxExplosionMat = CreateRuntimeMaterial("Rouge/VFXInstanced", "Explosion VFX", true);
+            ApplyBaseColor(_vfxExplosionMat, new Color(1f, 0.4f, 0.1f, 0.7f));
             _vfxExplosionMat.enableInstancing = true;
         }
 
         if (_vfxDeathMat == null)
         {
-            Shader sh = Shader.Find("Rouge/VFXInstanced");
-            _vfxDeathMat = new Material(sh);
-            _vfxDeathMat.SetColor("_BaseColor", new Color(1f, 0.92f, 0.84f, 0.42f));
+            _vfxDeathMat = CreateRuntimeMaterial("Rouge/VFXInstanced", "Death VFX", true);
+            ApplyBaseColor(_vfxDeathMat, new Color(1f, 0.92f, 0.84f, 0.42f));
             _vfxDeathMat.enableInstancing = true;
         }
         
@@ -1038,9 +1046,8 @@ public partial class RougeGameManager : MonoBehaviour
             }
             else
             {
-                Shader tsh = Shader.Find("Rouge/VFXInstanced");
-                _tornadoMat = new Material(tsh);
-                _tornadoMat.SetColor("_BaseColor", new Color(1f, 0.98f, 0.86f, 0.82f));
+                _tornadoMat = CreateRuntimeMaterial("Rouge/VFXInstanced", "Light Pillar Tornado", true);
+                ApplyBaseColor(_tornadoMat, new Color(1f, 0.98f, 0.86f, 0.82f));
                 _tornadoMat.enableInstancing = true;
             }
         }
@@ -1129,8 +1136,8 @@ public partial class RougeGameManager : MonoBehaviour
                 }
                 else
                 {
-                    _bombVisuals[b].GetComponent<MeshRenderer>().material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-                    _bombVisuals[b].GetComponent<MeshRenderer>().sharedMaterial.color = Color.red;
+                    _bombVisuals[b].GetComponent<MeshRenderer>().material = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Bomb Visual", false);
+                    ApplyBaseColor(_bombVisuals[b].GetComponent<MeshRenderer>().sharedMaterial, Color.red);
                 }
                 _bombVisuals[b].SetActive(false);
             }
@@ -1171,12 +1178,12 @@ public partial class RougeGameManager : MonoBehaviour
             }
             else
             {
-                _laserMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                _laserMat = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Laser Beam Fallback", false);
                 _ownsLaserMat = true;
-                _laserMat.color = new Color(0.1f, 1f, 1f, 0.9f);
-                _laserMat.SetFloat("_Surface", 1f);
-                _laserMat.SetFloat("_Blend", 0f);
-                _laserMat.SetColor("_EmissionColor", new Color(0.2f, 0.8f, 1f, 1f) * 4f);
+                ApplyBaseColor(_laserMat, new Color(0.1f, 1f, 1f, 0.9f));
+                ApplyFloatIfPresent(_laserMat, "_Surface", 1f);
+                ApplyFloatIfPresent(_laserMat, "_Blend", 0f);
+                ApplyEmissionColor(_laserMat, new Color(0.2f, 0.8f, 1f, 1f) * 4f);
             }
 
             _laserVisual.GetComponent<MeshRenderer>().sharedMaterial = _laserMat;
@@ -1288,10 +1295,10 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (_orbitMat == null)
         {
-            _orbitMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _orbitMat.color = new Color(0.8f, 0.1f, 0.8f, 0.8f);
-            _orbitMat.SetFloat("_Surface", 1f); // Transparent
-            _orbitMat.SetColor("_EmissionColor", new Color(0.8f, 0.1f, 0.8f, 1f) * 2f);
+            _orbitMat = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Orbit Ball", false);
+            ApplyBaseColor(_orbitMat, new Color(0.8f, 0.1f, 0.8f, 0.8f));
+            ApplyFloatIfPresent(_orbitMat, "_Surface", 1f);
+            ApplyEmissionColor(_orbitMat, new Color(0.8f, 0.1f, 0.8f, 1f) * 2f);
         }
 
         if (_shockwaveVisual == null)
@@ -1299,10 +1306,10 @@ public partial class RougeGameManager : MonoBehaviour
             _shockwaveVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             Destroy(_shockwaveVisual.GetComponent<Collider>());
             _shockwaveVisual.name = "Shockwave Visual";
-            _shockwaveMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _shockwaveMat.color = new Color(1f, 0.6f, 0.0f, 0.5f);
-            _shockwaveMat.SetFloat("_Surface", 1f);
-            _shockwaveMat.SetColor("_EmissionColor", new Color(1f, 0.6f, 0.0f, 1f) * 3f);
+            _shockwaveMat = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Shockwave", false);
+            ApplyBaseColor(_shockwaveMat, new Color(1f, 0.6f, 0.0f, 0.5f));
+            ApplyFloatIfPresent(_shockwaveMat, "_Surface", 1f);
+            ApplyEmissionColor(_shockwaveMat, new Color(1f, 0.6f, 0.0f, 1f) * 3f);
             _shockwaveVisual.GetComponent<MeshRenderer>().material = _shockwaveMat;
             _shockwaveVisual.SetActive(false);
         }
@@ -1312,7 +1319,7 @@ public partial class RougeGameManager : MonoBehaviour
             _iceZoneVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             Destroy(_iceZoneVisual.GetComponent<Collider>());
             _iceZoneVisual.name = "Ice Zone Visual";
-            _iceZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
+            _iceZoneMat = CreateRuntimeMaterial("Rouge/GroundZone", "Ice Zone", false);
             ConfigureGroundZoneMaterial(
                 _iceZoneMat,
                 new Color(0.35f, 0.82f, 1f, 0.78f),
@@ -1331,15 +1338,15 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (_poisonBottleMat == null)
         {
-            _poisonBottleMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-            _poisonBottleMat.color = new Color(0.25f, 0.95f, 0.25f, 0.85f);
-            _poisonBottleMat.SetFloat("_Surface", 1f);
-            _poisonBottleMat.SetColor("_EmissionColor", new Color(0.2f, 1f, 0.3f, 1f) * 2.5f);
+            _poisonBottleMat = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Poison Bottle", false);
+            ApplyBaseColor(_poisonBottleMat, new Color(0.25f, 0.95f, 0.25f, 0.85f));
+            ApplyFloatIfPresent(_poisonBottleMat, "_Surface", 1f);
+            ApplyEmissionColor(_poisonBottleMat, new Color(0.2f, 1f, 0.3f, 1f) * 2.5f);
         }
 
         if (_poisonZoneMat == null)
         {
-            _poisonZoneMat = new Material(Shader.Find("Rouge/GroundZone"));
+            _poisonZoneMat = CreateRuntimeMaterial("Rouge/GroundZone", "Poison Zone", false);
             ConfigureGroundZoneMaterial(
                 _poisonZoneMat,
                 new Color(0.26f, 1f, 0.36f, 0.78f),
@@ -1356,7 +1363,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (_burnPatchMat == null)
         {
-            _burnPatchMat = new Material(Shader.Find("Rouge/GroundZone"));
+            _burnPatchMat = CreateRuntimeMaterial("Rouge/GroundZone", "Burn Patch", false);
             ConfigureGroundZoneMaterial(
                 _burnPatchMat,
                 new Color(1f, 0.48f, 0.08f, 0.85f),
@@ -1450,9 +1457,9 @@ public partial class RougeGameManager : MonoBehaviour
 
 
 
-        Material meteorMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        meteorMat.color = new Color(1f, 0.3f, 0.0f, 0.9f);
-        meteorMat.SetColor("_EmissionColor", new Color(1f, 0.4f, 0.0f, 1f) * 5f);
+        Material meteorMat = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Meteor", false);
+        ApplyBaseColor(meteorMat, new Color(1f, 0.3f, 0.0f, 0.9f));
+        ApplyEmissionColor(meteorMat, new Color(1f, 0.4f, 0.0f, 1f) * 5f);
         for (int mi = 0; mi < MeteorVisualMax; mi++)
         {
             if (_meteorVisuals[mi] == null)
@@ -2955,25 +2962,148 @@ public partial class RougeGameManager : MonoBehaviour
         return mesh;
     }
 
-    private static Material CreateFallbackMaterial()
+    private void EnsureShaderReferenceDefaults()
     {
-        Shader shader = Shader.Find("Rouge/IndirectInstancedURP");
-        if (shader == null)
-        {
-            throw new InvalidOperationException("Missing Rouge/IndirectInstancedURP shader.");
-        }
+        AssignShaderReferenceIfMissing(ref indirectInstancedShader, "Rouge/IndirectInstancedURP");
+        AssignShaderReferenceIfMissing(ref vfxInstancedShader, "Rouge/VFXInstanced");
+        AssignShaderReferenceIfMissing(ref aoeRingShader, "Rouge/AOERing");
+        AssignShaderReferenceIfMissing(ref groundZoneShader, "Rouge/GroundZone");
+        AssignShaderReferenceIfMissing(ref hologramShader, "Rouge/Hologram");
+        AssignShaderReferenceIfMissing(ref techPanelShader, "Rouge/TechPanel");
+        AssignShaderReferenceIfMissing(ref laserBeamShader, "Rouge/LaserBeam");
+        AssignShaderReferenceIfMissing(ref urpLitShader, "Universal Render Pipeline/Lit");
+    }
 
-        Material material = new Material(shader)
+    private static void AssignShaderReferenceIfMissing(ref Shader shaderField, string shaderName)
+    {
+        if (shaderField == null)
         {
-            enableInstancing = true,
-            hideFlags = HideFlags.DontSave
-        };
+            shaderField = Shader.Find(shaderName);
+        }
+    }
+
+    private Material CreateFallbackMaterial()
+    {
+        Material material = CreateRuntimeMaterial("Rouge/IndirectInstancedURP", "Enemy Fallback", true);
+        material.enableInstancing = true;
+        material.hideFlags = HideFlags.DontSave;
         return material;
     }
 
-    private static Material CreateFallbackHologramMaterial(Color baseColor, Color accentColor, float alpha, float scanlineDensity, float glowStrength)
+    private Material CreateRuntimeMaterial(string preferredShaderName, string context, bool enableInstancing)
     {
-        Shader shader = Shader.Find("Rouge/Hologram");
+        Shader shader = ResolveRuntimeShader(preferredShaderName, context);
+        Material material = new Material(shader)
+        {
+            hideFlags = HideFlags.DontSave
+        };
+        material.enableInstancing = enableInstancing;
+        return material;
+    }
+
+    private Shader ResolveRuntimeShader(string preferredShaderName, string context)
+    {
+        Shader shader = FindRuntimeShader(preferredShaderName);
+        if (shader != null)
+        {
+            return shader;
+        }
+
+        string[] fallbacks =
+        {
+            "Universal Render Pipeline/Lit",
+            "Universal Render Pipeline/Simple Lit",
+            "Standard",
+            "Sprites/Default",
+            "Unlit/Color"
+        };
+
+        for (int i = 0; i < fallbacks.Length; i++)
+        {
+            shader = FindRuntimeShader(fallbacks[i]);
+            if (shader != null)
+            {
+                Debug.LogWarning($"[RougeGameManager] Missing shader '{preferredShaderName}' for {context}. Fallback to '{fallbacks[i]}'.");
+                return shader;
+            }
+        }
+
+        throw new InvalidOperationException($"No runtime shader available for {context}. Preferred shader: {preferredShaderName}");
+    }
+
+    private Shader FindRuntimeShader(string shaderName)
+    {
+        if (string.IsNullOrEmpty(shaderName))
+        {
+            return null;
+        }
+
+        Shader configuredShader = GetConfiguredShader(shaderName);
+        return configuredShader != null ? configuredShader : Shader.Find(shaderName);
+    }
+
+    private Shader GetConfiguredShader(string shaderName)
+    {
+        switch (shaderName)
+        {
+            case "Rouge/IndirectInstancedURP":
+                return indirectInstancedShader;
+            case "Rouge/VFXInstanced":
+                return vfxInstancedShader;
+            case "Rouge/AOERing":
+                return aoeRingShader;
+            case "Rouge/GroundZone":
+                return groundZoneShader;
+            case "Rouge/Hologram":
+                return hologramShader;
+            case "Rouge/TechPanel":
+                return techPanelShader;
+            case "Rouge/LaserBeam":
+                return laserBeamShader;
+            case "Universal Render Pipeline/Lit":
+                return urpLitShader;
+            default:
+                return null;
+        }
+    }
+
+    private static void ApplyBaseColor(Material material, Color color)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        if (material.HasProperty("_BaseColor"))
+        {
+            material.SetColor("_BaseColor", color);
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            material.SetColor("_Color", color);
+        }
+    }
+
+    private static void ApplyEmissionColor(Material material, Color color)
+    {
+        if (material != null && material.HasProperty("_EmissionColor"))
+        {
+            material.SetColor("_EmissionColor", color);
+        }
+    }
+
+    private static void ApplyFloatIfPresent(Material material, string propertyName, float value)
+    {
+        if (material != null && material.HasProperty(propertyName))
+        {
+            material.SetFloat(propertyName, value);
+        }
+    }
+
+    private Material CreateFallbackHologramMaterial(Color baseColor, Color accentColor, float alpha, float scanlineDensity, float glowStrength)
+    {
+        Shader shader = FindRuntimeShader("Rouge/Hologram");
         Material material;
         if (shader != null)
         {
@@ -2996,19 +3126,16 @@ public partial class RougeGameManager : MonoBehaviour
             return material;
         }
 
-        material = new Material(Shader.Find("Universal Render Pipeline/Lit"))
-        {
-            hideFlags = HideFlags.DontSave
-        };
-        material.SetColor("_BaseColor", new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
-        material.SetFloat("_Surface", 1f);
-        material.SetColor("_EmissionColor", accentColor * math.max(1f, glowStrength));
+        material = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Hologram Fallback", false);
+        ApplyBaseColor(material, new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
+        ApplyFloatIfPresent(material, "_Surface", 1f);
+        ApplyEmissionColor(material, accentColor * math.max(1f, glowStrength));
         return material;
     }
 
-    private static Material CreateFallbackTechPanelMaterial(Color baseColor, Color accentColor, float alpha, float lineDensity, float glowStrength)
+    private Material CreateFallbackTechPanelMaterial(Color baseColor, Color accentColor, float alpha, float lineDensity, float glowStrength)
     {
-        Shader shader = Shader.Find("Rouge/TechPanel");
+        Shader shader = FindRuntimeShader("Rouge/TechPanel");
         Material material;
         if (shader != null)
         {
@@ -3027,13 +3154,10 @@ public partial class RougeGameManager : MonoBehaviour
             return material;
         }
 
-        material = new Material(Shader.Find("Universal Render Pipeline/Lit"))
-        {
-            hideFlags = HideFlags.DontSave
-        };
-        material.SetColor("_BaseColor", new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
-        material.SetFloat("_Surface", 1f);
-        material.SetColor("_EmissionColor", accentColor * math.max(1f, glowStrength));
+        material = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Tech Panel Fallback", false);
+        ApplyBaseColor(material, new Color(baseColor.r, baseColor.g, baseColor.b, alpha));
+        ApplyFloatIfPresent(material, "_Surface", 1f);
+        ApplyEmissionColor(material, accentColor * math.max(1f, glowStrength));
         return material;
     }
 
