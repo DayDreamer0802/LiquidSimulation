@@ -34,7 +34,7 @@ public partial class RougeGameManager : MonoBehaviour
     private Material _bulletMaterial;
 
     [Header("Population")]
-    [SerializeField, Range(1000, 300000)] private int enemyCount = 200000;
+    [SerializeField, Range(1000, 500000)] private int enemyCount = 200000;
     [SerializeField] private float enemyMaxHealth = 20f;
     [SerializeField] private float enemyRadius = 0.3f;
     [SerializeField] private float enemyMaxSpeed = 7f;
@@ -150,6 +150,9 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _bulletCellHeads;
     private NativeArray<int> _bulletCellEntries;
     private NativeArray<int> _bulletCellNext;
+    private NativeArray<int> _skillCellHeads;
+    private NativeArray<int> _skillCellEntries;
+    private NativeArray<int> _skillCellNext;
     private NativeArray<int> _densityFieldFixed;
     private NativeArray<float> _flowDistanceField;
     private NativeArray<float> _flowDistanceScratch;
@@ -909,6 +912,7 @@ public partial class RougeGameManager : MonoBehaviour
         _cellOffsets = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _cellCounts = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _bulletCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _skillCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _neighborOffsets = new NativeArray<int2>(9, Allocator.Persistent);
         _histograms = new NativeArray<int>(math.max(_chunkCount * 256, 256), Allocator.Persistent);
         _binTotals = new NativeArray<int>(256, Allocator.Persistent);
@@ -944,6 +948,7 @@ public partial class RougeGameManager : MonoBehaviour
         SeedEnemies();
 
         _skillAreasDb = new NativeArray<RougeSkillArea>(1024, Allocator.Persistent);
+        ResizeSkillAreaGridStorage(_skillAreasDb.Length);
 
         _positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, UnsafeUtility.SizeOf<float4>());
         _stateBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, UnsafeUtility.SizeOf<float4>());
@@ -1979,6 +1984,15 @@ public partial class RougeGameManager : MonoBehaviour
         _bulletCellNext = new NativeArray<int>(entryCapacity, Allocator.Persistent);
     }
 
+    private void ResizeSkillAreaGridStorage(int skillAreaCapacity)
+    {
+        int entryCapacity = math.max(skillAreaCapacity * math.max(_flowGridDim, 16), _flowGridCellCount);
+        ReleaseNative(ref _skillCellEntries);
+        ReleaseNative(ref _skillCellNext);
+        _skillCellEntries = new NativeArray<int>(entryCapacity, Allocator.Persistent);
+        _skillCellNext = new NativeArray<int>(entryCapacity, Allocator.Persistent);
+    }
+
     private void UpdateBullets(float dt)
     {
         if (!IsSkillEnabled(PlayerSkillType.AutoShoot))
@@ -2331,6 +2345,24 @@ public partial class RougeGameManager : MonoBehaviour
             TargetRadiusPadding = math.max(enemyRadius * 2f, 0.5f)
         }.Schedule(clearBulletHandle);
 
+        JobHandle clearSkillHandle = new ClearBulletGridHeadsJob
+        {
+            CellHeads = _skillCellHeads
+        }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
+
+        JobHandle skillAreaHandle = new BuildSkillAreaGridJob
+        {
+            SkillAreas = _skillAreasDb,
+            SkillAreaCount = _skillAreaCount,
+            CellHeads = _skillCellHeads,
+            CellEntries = _skillCellEntries,
+            CellNext = _skillCellNext,
+            EntryCapacity = _skillCellEntries.Length,
+            GridOrigin = _flowGridOrigin,
+            InvCellSize = invCellSize,
+            GridDim = _flowGridDim
+        }.Schedule(clearSkillHandle);
+
         JobHandle handle = new SimulateEnemiesFlowFieldJob
         {
             PositionScaleIn = _positionsA,
@@ -2347,6 +2379,9 @@ public partial class RougeGameManager : MonoBehaviour
             BulletCellHeads = _bulletCellHeads,
             BulletCellEntries = _bulletCellEntries,
             BulletCellNext = _bulletCellNext,
+            SkillCellHeads = _skillCellHeads,
+            SkillCellEntries = _skillCellEntries,
+            SkillCellNext = _skillCellNext,
             BulletCount = _activeBulletCount,
             Obstacles = _obstacles,
             ObstacleCount = _obstacleCount,
@@ -2401,7 +2436,12 @@ public partial class RougeGameManager : MonoBehaviour
             MeleeDmgMult  = math.clamp(0.3f + _skillLevels[3] * 0.035f, 0.3f, 2.0f),
             OrbitDmgMult  = math.clamp(2.0f + _skillLevels[4] * 0.5f, 2.0f, 15.0f),
             BulletDmgMult = math.clamp(0.3f + _skillLevels[5] * 0.035f, 0.3f, 2.0f)
-        }.ScheduleBatch(activeEnemyCount, simulationBatchSize, JobHandle.CombineDependencies(densityHandle, flowDirectionHandle, bulletHandle));
+        }.ScheduleBatch(
+            activeEnemyCount,
+            simulationBatchSize,
+            JobHandle.CombineDependencies(
+                JobHandle.CombineDependencies(densityHandle, flowDirectionHandle),
+                JobHandle.CombineDependencies(bulletHandle, skillAreaHandle)));
 
         _simulationHandle = handle;
         _simulationResultBackBufferReady = true;
@@ -2857,6 +2897,9 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _bulletCellHeads);
         ReleaseNative(ref _bulletCellEntries);
         ReleaseNative(ref _bulletCellNext);
+        ReleaseNative(ref _skillCellHeads);
+        ReleaseNative(ref _skillCellEntries);
+        ReleaseNative(ref _skillCellNext);
         ReleaseNative(ref _densityFieldFixed);
         ReleaseNative(ref _flowDistanceField);
         ReleaseNative(ref _flowDistanceScratch);

@@ -1531,7 +1531,7 @@ MonoBehaviour:
   enemyMaterial: {fileID: 2100000, guid: 3ec7e767beccce043be7c3d1d3dda5ec, type: 2}
   lightPillarBeamMaterial: {fileID: 0}
   laserBeamMaterial: {fileID: 2100000, guid: 6104fed70fe0b2247b5a136b93c7b514, type: 2}
-  enemyCount: 200000
+  enemyCount: 500000
   enemyMaxHealth: 24
   enemyRadius: 1.2
   enemyMaxSpeed: 7
@@ -1539,7 +1539,7 @@ MonoBehaviour:
   enemyVariationStrength: 0.18
   enemyBreakupScale: 3.8
   enemyBreakupStrength: 0.16
-  arenaHalfExtent: 256
+  arenaHalfExtent: 512
   spawnRadiusMin: 50
   spawnRadiusMax: 180
   despawnDistance: 260

@@ -931,6 +931,77 @@ public unsafe struct BuildBulletGridJob : IJob
 }
 
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct BuildSkillAreaGridJob : IJob
+{
+    [ReadOnly] public NativeArray<RougeSkillArea> SkillAreas;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellHeads;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellEntries;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellNext;
+    public int SkillAreaCount;
+    public int EntryCapacity;
+    public float2 GridOrigin;
+    public float InvCellSize;
+    public int GridDim;
+
+    public void Execute()
+    {
+        RougeSkillArea* skillPtr = (RougeSkillArea*)SkillAreas.GetUnsafeReadOnlyPtr();
+        int* headPtr = (int*)CellHeads.GetUnsafePtr();
+        int* entryPtr = (int*)CellEntries.GetUnsafePtr();
+        int* nextPtr = (int*)CellNext.GetUnsafePtr();
+        float cellSize = 1f / math.max(InvCellSize, 0.0001f);
+        float2 gridMax = GridOrigin + GridDim * cellSize;
+        int entryIndex = 0;
+
+        for (int skillIndex = 0; skillIndex < SkillAreaCount; skillIndex++)
+        {
+            RougeSkillArea skill = skillPtr[skillIndex];
+            ComputeSkillBounds(skill, out float2 min, out float2 max);
+            if (max.x < GridOrigin.x || max.y < GridOrigin.y || min.x > gridMax.x || min.y > gridMax.y)
+            {
+                continue;
+            }
+
+            int2 minCell = RougeMortonGridUtility.WorldToGrid(min, GridOrigin, InvCellSize, GridDim);
+            int2 maxCell = RougeMortonGridUtility.WorldToGrid(max, GridOrigin, InvCellSize, GridDim);
+            for (int cellY = minCell.y; cellY <= maxCell.y; cellY++)
+            {
+                for (int cellX = minCell.x; cellX <= maxCell.x; cellX++)
+                {
+                    if (entryIndex >= EntryCapacity)
+                    {
+                        return;
+                    }
+
+                    int hash = RougeMortonGridUtility.EncodeMorton(cellX, cellY);
+                    entryPtr[entryIndex] = skillIndex;
+                    nextPtr[entryIndex] = headPtr[hash];
+                    headPtr[hash] = entryIndex;
+                    entryIndex++;
+                }
+            }
+        }
+    }
+
+    private static void ComputeSkillBounds(RougeSkillArea skill, out float2 min, out float2 max)
+    {
+        float radius = math.max(skill.Radius, 0f);
+        if (skill.Type == 3)
+        {
+            float2 end = skill.Position + skill.Direction * math.max(skill.Length, 0f);
+            float2 extent = new float2(radius, radius);
+            min = math.min(skill.Position, end) - extent;
+            max = math.max(skill.Position, end) + extent;
+            return;
+        }
+
+        float2 circleExtent = new float2(radius, radius);
+        min = skill.Position - circleExtent;
+        max = skill.Position + circleExtent;
+    }
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 {
     private const float VisualStateFlagStep = 10f;
@@ -962,6 +1033,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<int> BulletCellHeads;
     [ReadOnly] public NativeArray<int> BulletCellEntries;
     [ReadOnly] public NativeArray<int> BulletCellNext;
+    [ReadOnly] public NativeArray<int> SkillCellHeads;
+    [ReadOnly] public NativeArray<int> SkillCellEntries;
+    [ReadOnly] public NativeArray<int> SkillCellNext;
     [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
     [NativeDisableParallelForRestriction] public NativeArray<int> PlayerDamageCount;
     [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
@@ -1034,6 +1108,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         int* bulletHeadPtr = (int*)BulletCellHeads.GetUnsafeReadOnlyPtr();
         int* bulletEntryPtr = (int*)BulletCellEntries.GetUnsafeReadOnlyPtr();
         int* bulletNextPtr = (int*)BulletCellNext.GetUnsafeReadOnlyPtr();
+        int* skillHeadPtr = (int*)SkillCellHeads.GetUnsafeReadOnlyPtr();
+        int* skillEntryPtr = (int*)SkillCellEntries.GetUnsafeReadOnlyPtr();
+        int* skillNextPtr = (int*)SkillCellNext.GetUnsafeReadOnlyPtr();
         RougeObstacle* obstaclePtr = (RougeObstacle*)Obstacles.GetUnsafeReadOnlyPtr();
         float4* posOutPtr = (float4*)PositionScaleOut.GetUnsafePtr();
         float4* velOutPtr = (float4*)VelocityOut.GetUnsafePtr();
@@ -1198,28 +1275,34 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 }
             }
 
-            for (int s = 0; s < SkillAreaCount; s++)
+            if (SkillAreaCount > 0)
             {
-                RougeSkillArea skill = SkillAreas[s];
-                float2 skillDelta = pos.xz - skill.Position;
-                float skillPreR = skill.Radius + math.max(0f, skill.Length) + radius;
-                if (math.abs(skillDelta.x) > skillPreR || math.abs(skillDelta.y) > skillPreR) continue;
-                switch (skill.Type)
+                int skillCell = RougeMortonGridUtility.EncodeMortonFromWorld(pos.xz, GridOrigin, GridInvCellSize, GridDim);
+                for (int entryIndex = skillHeadPtr[skillCell]; entryIndex >= 0; entryIndex = skillNextPtr[entryIndex])
                 {
-                    case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 2: ProcessBomb(ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 3: ProcessLaser(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 4: ProcessMelee(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 5: ProcessOrbit(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 6: ProcessSpike(ref acceleration, ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 7: ProcessShockwave(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
-                    case 8: ProcessIceZone(ref acceleration, ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill); break;
-                    case 9:
-                    case 10:
-                    case 11:
-                    case 12:
-                        ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
-                        break;
+                    int skillIndex = skillEntryPtr[entryIndex];
+                    RougeSkillArea skill = SkillAreas[skillIndex];
+                    float2 skillDelta = pos.xz - skill.Position;
+                    float skillPreR = skill.Radius + math.max(0f, skill.Length) + radius;
+                    if (math.abs(skillDelta.x) > skillPreR || math.abs(skillDelta.y) > skillPreR) continue;
+
+                    switch (skill.Type)
+                    {
+                        case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 2: ProcessBomb(ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 3: ProcessLaser(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 4: ProcessMelee(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 5: ProcessOrbit(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 6: ProcessSpike(ref acceleration, ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 7: ProcessShockwave(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
+                        case 8: ProcessIceZone(ref acceleration, ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill); break;
+                        case 9:
+                        case 10:
+                        case 11:
+                        case 12:
+                            ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
+                            break;
+                    }
                 }
             }
 
