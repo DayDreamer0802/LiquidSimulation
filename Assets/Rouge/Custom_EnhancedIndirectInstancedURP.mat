@@ -42,7 +42,7 @@ Material:
     - _DeadColor: {r: 0.20754719, g: 0.20754719, b: 0.20754719, a: 0.92}
     - _FlashColor: {r: 0.7987421, g: 0.7987421, b: 0.7987421, a: 1}
     - _NearPlayerColor: {r: 1, g: 0.62, b: 0.22, a: 0.5411765}
-    - _PlayerFocusPosition: {r: -313.13226, g: 1.5, b: 170.75078, a: 0}
+    - _PlayerFocusPosition: {r: 6.636996, g: 1.5, b: 28.425, a: 0}
     - _RimColor: {r: 0.78301877, g: 1, b: 0.9993327, a: 1}
     - _ShieldColor: {r: 0, g: 0, b: 0, a: 1}
     - _TopTint: {r: 0.40548226, g: 0.7748395, b: 0.84276724, a: 1}

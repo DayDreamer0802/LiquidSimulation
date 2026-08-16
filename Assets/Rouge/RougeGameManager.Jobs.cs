@@ -199,6 +199,152 @@ public static class RougeMortonGridUtility
     }
 }
 
+public struct RougeTowerTargetRequest
+{
+    public float2 Position;
+    public float Range;
+    public int TargetCount;
+    public int PriorityMode;
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
+{
+    [ReadOnly] public NativeArray<float4> Positions;
+    [ReadOnly] public NativeArray<float4> States;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellHeads;
+    [NativeDisableParallelForRestriction] public NativeArray<int> CellNext;
+    public float2 GridOrigin;
+    public float InvCellSize;
+    public int GridDim;
+
+    public void Execute(int startIndex, int count)
+    {
+        float4* positionPtr = (float4*)Positions.GetUnsafeReadOnlyPtr();
+        float4* statePtr = (float4*)States.GetUnsafeReadOnlyPtr();
+        int* headPtr = (int*)CellHeads.GetUnsafePtr();
+        int* nextPtr = (int*)CellNext.GetUnsafePtr();
+        int end = startIndex + count;
+        for (int i = startIndex; i < end; i++)
+        {
+            nextPtr[i] = -1;
+            if (statePtr[i].x <= 0f) continue;
+            int cell = RougeMortonGridUtility.EncodeMortonFromWorld(
+                positionPtr[i].xz, GridOrigin, InvCellSize, GridDim);
+            nextPtr[i] = System.Threading.Interlocked.Exchange(ref headPtr[cell], i);
+        }
+    }
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct FindTowerTargetsJob : IJobParallelFor
+{
+    public const int MaxTargetsPerTower = 30;
+
+    [ReadOnly] public NativeArray<RougeTowerTargetRequest> Requests;
+    [ReadOnly] public NativeArray<float4> EnemyPositions;
+    [ReadOnly] public NativeArray<float4> EnemyStates;
+    [ReadOnly] public NativeArray<byte> EnemyKinds;
+    [ReadOnly] public NativeArray<float> FlowDistances;
+    [ReadOnly] public NativeArray<int> CellHeads;
+    [ReadOnly] public NativeArray<int> CellNext;
+    [NativeDisableParallelForRestriction] public NativeArray<int> ResultIndices;
+    [NativeDisableParallelForRestriction] public NativeArray<float> ResultDistances;
+    public float2 GridOrigin;
+    public float InvCellSize;
+    public int GridDim;
+
+    public void Execute(int towerIndex)
+    {
+        RougeTowerTargetRequest request = Requests[towerIndex];
+        int resultStart = towerIndex * MaxTargetsPerTower;
+        int resultCapacity = math.clamp(request.TargetCount, 0, MaxTargetsPerTower);
+        int* resultPtr = (int*)ResultIndices.GetUnsafePtr() + resultStart;
+        float* distancePtr = (float*)ResultDistances.GetUnsafePtr() + resultStart;
+        for (int i = 0; i < MaxTargetsPerTower; i++)
+        {
+            resultPtr[i] = -1;
+            distancePtr[i] = float.MaxValue;
+        }
+
+        if (resultCapacity <= 0 || request.Range <= 0f) return;
+
+        float4* enemyPositionPtr = (float4*)EnemyPositions.GetUnsafeReadOnlyPtr();
+        float4* enemyStatePtr = (float4*)EnemyStates.GetUnsafeReadOnlyPtr();
+        float* flowDistancePtr = (float*)FlowDistances.GetUnsafeReadOnlyPtr();
+        int* headPtr = (int*)CellHeads.GetUnsafeReadOnlyPtr();
+        int* nextPtr = (int*)CellNext.GetUnsafeReadOnlyPtr();
+        float2 extent = new float2(request.Range);
+        int2 minCell = RougeMortonGridUtility.WorldToGrid(
+            request.Position - extent, GridOrigin, InvCellSize, GridDim);
+        int2 maxCell = RougeMortonGridUtility.WorldToGrid(
+            request.Position + extent, GridOrigin, InvCellSize, GridDim);
+        float rangeSq = request.Range * request.Range;
+        bool bossFirst = request.PriorityMode == (int)RougeTowerTargetPriority.BossFirst;
+        int found = 0;
+
+        for (int y = minCell.y; y <= maxCell.y; y++)
+        {
+            for (int x = minCell.x; x <= maxCell.x; x++)
+            {
+                int cell = RougeMortonGridUtility.EncodeMorton(x, y);
+                for (int enemyIndex = headPtr[cell]; enemyIndex >= 0; enemyIndex = nextPtr[enemyIndex])
+                {
+                    if (enemyStatePtr[enemyIndex].x <= 0f) continue;
+                    float distanceSq = math.lengthsq(enemyPositionPtr[enemyIndex].xz - request.Position);
+                    if (distanceSq > rangeSq) continue;
+                    int candidatePriority = bossFirst ? GetTargetPriority(EnemyKinds[enemyIndex]) : 0;
+                    float candidateSortDistance = distanceSq;
+                    if (!bossFirst)
+                    {
+                        // EncodeMortonFromWorld floors X/Z to one integer cell, so this is
+                        // just one lookup in the shared global flow field (no tower pathfinding).
+                        int flowCell = RougeMortonGridUtility.EncodeMortonFromWorld(
+                            enemyPositionPtr[enemyIndex].xz, GridOrigin, InvCellSize, GridDim);
+                        candidateSortDistance = flowDistancePtr[flowCell];
+                    }
+                    int insertion = math.min(found, resultCapacity);
+                    int sortedCount = math.min(found, resultCapacity);
+                    for (int sorted = 0; sorted < sortedCount; sorted++)
+                    {
+                        int existingIndex = resultPtr[sorted];
+                        int existingPriority = bossFirst && existingIndex >= 0
+                            ? GetTargetPriority(EnemyKinds[existingIndex])
+                            : 0;
+                        bool equalFlowCloserToTower = !bossFirst &&
+                            candidateSortDistance == distancePtr[sorted] && existingIndex >= 0 &&
+                            distanceSq < math.lengthsq(enemyPositionPtr[existingIndex].xz - request.Position);
+                        if (candidatePriority > existingPriority ||
+                            (candidatePriority == existingPriority && candidateSortDistance < distancePtr[sorted]) ||
+                            equalFlowCloserToTower)
+                        {
+                            insertion = sorted;
+                            break;
+                        }
+                    }
+                    if (insertion >= resultCapacity) continue;
+
+                    int moveEnd = math.min(found, resultCapacity - 1);
+                    for (int move = moveEnd; move > insertion; move--)
+                    {
+                        resultPtr[move] = resultPtr[move - 1];
+                        distancePtr[move] = distancePtr[move - 1];
+                    }
+                    resultPtr[insertion] = enemyIndex;
+                    distancePtr[insertion] = candidateSortDistance;
+                    if (found < resultCapacity) found++;
+                }
+            }
+        }
+    }
+
+    private static int GetTargetPriority(byte kind)
+    {
+        if ((kind & 0x80) != 0) return 2;
+        return (kind & 0x40) != 0 ? 1 : 0;
+    }
+}
+
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct ClearFlowFieldGridJob : IJobParallelForBatch
 {
@@ -501,18 +647,17 @@ public unsafe struct RelaxFlowFieldJob : IJobParallelForBatch
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct SolveFlowFieldJob : IJob
 {
-    [ReadOnly] public NativeArray<byte> BlockedCells;
+    [NativeDisableParallelForRestriction] public NativeArray<byte> BlockedCells;
     [NativeDisableParallelForRestriction] public NativeArray<float> FlowDistances;
-    public float2 PlayerPos;
-    public float2 GridOrigin;
-    public float InvCellSize;
+    [ReadOnly] public NativeArray<int> GoalIndices;
+    public int GoalCount;
     public int GridDim;
     public float CellSize;
     public int IterationCount;
 
     public void Execute()
     {
-        byte* blockedPtr = (byte*)BlockedCells.GetUnsafeReadOnlyPtr();
+        byte* blockedPtr = (byte*)BlockedCells.GetUnsafePtr();
         float* distancePtr = (float*)FlowDistances.GetUnsafePtr();
         int cellCount = GridDim * GridDim;
         for (int i = 0; i < cellCount; i++)
@@ -520,9 +665,15 @@ public unsafe struct SolveFlowFieldJob : IJob
             distancePtr[i] = blockedPtr[i] != 0 ? 1e20f : 1e18f;
         }
 
-        int2 goalCell = RougeMortonGridUtility.WorldToGrid(PlayerPos, GridOrigin, InvCellSize, GridDim);
-        int goalIndex = RougeMortonGridUtility.EncodeMorton(goalCell.x, goalCell.y);
-        distancePtr[goalIndex] = 0f;
+        int* goalPtr = (int*)GoalIndices.GetUnsafeReadOnlyPtr();
+        int validGoalCount = math.min(math.max(GoalCount, 0), GoalIndices.Length);
+        for (int i = 0; i < validGoalCount; i++)
+        {
+            int goalIndex = goalPtr[i];
+            if ((uint)goalIndex >= (uint)cellCount) continue;
+            blockedPtr[goalIndex] = 0;
+            distancePtr[goalIndex] = 0f;
+        }
 
         float diagonalStep = CellSize * 1.41421356f;
         int iterationBudget = math.max(IterationCount, 1);
@@ -575,6 +726,13 @@ public unsafe struct SolveFlowFieldJob : IJob
                             continue;
                         }
 
+                        if (offsetX != 0 && offsetY != 0)
+                        {
+                            int sideX = RougeMortonGridUtility.EncodeMorton(x + offsetX, y);
+                            int sideY = RougeMortonGridUtility.EncodeMorton(x, y + offsetY);
+                            if (blockedPtr[sideX] != 0 || blockedPtr[sideY] != 0) continue;
+                        }
+
                         float stepCost = (offsetX == 0 || offsetY == 0) ? CellSize : diagonalStep;
                         best = math.min(best, distancePtr[neighborIndex] + stepCost);
                     }
@@ -610,20 +768,38 @@ public unsafe struct BuildFlowFieldDirectionsJob : IJobParallelForBatch
                 continue;
             }
 
-            float left = SampleDistance(cell.x - 1, cell.y, cell.x, cell.y, distancePtr);
-            float right = SampleDistance(cell.x + 1, cell.y, cell.x, cell.y, distancePtr);
-            float down = SampleDistance(cell.x, cell.y - 1, cell.x, cell.y, distancePtr);
-            float up = SampleDistance(cell.x, cell.y + 1, cell.x, cell.y, distancePtr);
-            float2 gradient = new float2(right - left, up - down);
-            directionPtr[i] = math.normalizesafe(-gradient, float2.zero);
-        }
-    }
+            float bestDistance = distancePtr[i];
+            int2 bestOffset = int2.zero;
+            for (int offsetY = -1; offsetY <= 1; offsetY++)
+            {
+                int neighborY = cell.y + offsetY;
+                if (neighborY < 0 || neighborY >= GridDim) continue;
+                for (int offsetX = -1; offsetX <= 1; offsetX++)
+                {
+                    if (offsetX == 0 && offsetY == 0) continue;
+                    int neighborX = cell.x + offsetX;
+                    if (neighborX < 0 || neighborX >= GridDim) continue;
+                    int neighborIndex = RougeMortonGridUtility.EncodeMorton(neighborX, neighborY);
+                    if (blockedPtr[neighborIndex] != 0) continue;
 
-    private float SampleDistance(int x, int y, int fallbackX, int fallbackY, float* distancePtr)
-    {
-        int sampleX = x < 0 || x >= GridDim ? fallbackX : x;
-        int sampleY = y < 0 || y >= GridDim ? fallbackY : y;
-        return distancePtr[RougeMortonGridUtility.EncodeMorton(sampleX, sampleY)];
+                    // Match the solver's no-corner-cutting rule. The previous central
+                    // gradient could point diagonally through a blocked corner even though
+                    // the distance field itself correctly routed around it.
+                    if (offsetX != 0 && offsetY != 0)
+                    {
+                        int sideX = RougeMortonGridUtility.EncodeMorton(cell.x + offsetX, cell.y);
+                        int sideY = RougeMortonGridUtility.EncodeMorton(cell.x, cell.y + offsetY);
+                        if (blockedPtr[sideX] != 0 || blockedPtr[sideY] != 0) continue;
+                    }
+
+                    float neighborDistance = distancePtr[neighborIndex];
+                    if (neighborDistance + 0.0001f >= bestDistance) continue;
+                    bestDistance = neighborDistance;
+                    bestOffset = new int2(offsetX, offsetY);
+                }
+            }
+            directionPtr[i] = math.normalizesafe(new float2(bestOffset.x, bestOffset.y), float2.zero);
+        }
     }
 }
 
@@ -986,7 +1162,7 @@ public unsafe struct BuildSkillAreaGridJob : IJob
     private static void ComputeSkillBounds(RougeSkillArea skill, out float2 min, out float2 max)
     {
         float radius = math.max(skill.Radius, 0f);
-        if (skill.Type == 3)
+        if (skill.Type == 3 || skill.Type == 15 || skill.Type == 16 || skill.Type == 19)
         {
             float2 end = skill.Position + skill.Direction * math.max(skill.Length, 0f);
             float2 extent = new float2(radius, radius);
@@ -1008,6 +1184,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const int CurseVisualFlag = 1;
     private const int DeadVisualFlag = 2;
     private const int BufferedLaunchVisualFlag = 4;
+    private const int SlowVisualFlag = 8;
     private const float LaunchMotionDuration = 0.22f;
     private const float LaunchStackDuration = 0.12f;
     private const float LaunchPlanarImpulseFactor = 1.05f;
@@ -1038,7 +1215,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<int> SkillCellNext;
     [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
     [NativeDisableParallelForRestriction] public NativeArray<int> PlayerDamageCount;
+    [NativeDisableParallelForRestriction] public NativeArray<int> MainTowerDamageCount;
     [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
+    [ReadOnly] public NativeArray<byte> EnemyKinds;
+    [NativeDisableParallelForRestriction] public NativeArray<int> TowerDefenseGoldEarned;
+    [ReadOnly] public NativeArray<float> TowerLaserDamage;
+    [ReadOnly] public NativeArray<int> TowerLaserDamageFrames;
+    [ReadOnly] public NativeArray<float> TowerDamageByType;
+    [ReadOnly] public NativeArray<int> TowerDamageByTypeFrames;
+    [NativeDisableParallelForRestriction] public NativeArray<long> TowerDamageTotalsFixed;
     [NativeDisableParallelForRestriction] public NativeArray<float4> PositionScaleOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> VelocityOut;
     [NativeDisableParallelForRestriction] public NativeArray<float4> StateOut;
@@ -1047,6 +1232,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public int BulletCount;
     public int ObstacleCount;
     public float2 PlayerPos;
+    public float2 GoalPos;
+    public float2 SpawnCenter;
     public float EnemyMaxHealth;
     public float EnemyRadius;
     public float EnemyMaxSpeed;
@@ -1070,9 +1257,23 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public bool PlayerContactEnabled;
     public bool DefeatEnemyOnPlayerContact;
     public float PlayerContactPadding;
+    public bool MainTowerContactEnabled;
+    public float MainTowerContactRadius;
+    public bool ExternalSpawning;
     [WriteOnly] public NativeQueue<float2>.ParallelWriter ExplosionQueue;
     [WriteOnly] public NativeQueue<RougeSkillEvent>.ParallelWriter SkillEventQueue;
     public int CurrentMaxEnemies;
+    public int TowerLaserDamageFrame;
+    public bool BossShieldActive;
+    public float2 BossShieldPosition;
+    public float BossShieldRadius;
+    public float BossShieldDamageMultiplier;
+    public float BossShieldMinimumDamage;
+    public int BossEnemyIndex;
+    public float BossNavigationRadius;
+    public bool TowerDefenseRewardsEnabled;
+    public int NormalKillGold;
+    public int EliteKillGold;
     [ReadOnly] public NativeArray<RougeSkillArea> SkillAreas;
     public int SkillAreaCount;
     public float RenderHeight;
@@ -1156,7 +1357,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 health = 1f;
             }
 
-            if (math.lengthsq(pos.xz - PlayerPos) > DespawnDistanceSq)
+            // Tower-defense spawn points are allowed anywhere inside the arena. The old
+            // survival-mode despawn rule used the goal as its centre, which immediately
+            // teleported enemies spawned by distant scene spawn points.
+            if (!ExternalSpawning && math.lengthsq(pos.xz - GoalPos) > DespawnDistanceSq)
             {
                 Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref effects);
                 posOutPtr[sourceIndex] = pos4;
@@ -1177,13 +1381,22 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     flashTimer = math.max(0f, flashTimer - DeltaTime * DeadFlashDecayRate);
                 }
 
-                if (isDeadVisual && flashTimer <= 0f)
+                if (isDeadVisual && flashTimer <= 0f && !ExternalSpawning)
                 {
                     Respawn(sourceIndex, ref pos4, ref vel4, ref state4, ref effects);
                     posOutPtr[sourceIndex] = pos4;
                     velOutPtr[sourceIndex] = vel4;
                     stateOutPtr[sourceIndex] = state4;
                     effectOutPtr[sourceIndex] = effects;
+                    continue;
+                }
+
+                if (isDeadVisual && flashTimer <= 0f && ExternalSpawning)
+                {
+                    posOutPtr[sourceIndex] = new float4(99999f, -9999f, 99999f, 0f);
+                    velOutPtr[sourceIndex] = float4.zero;
+                    stateOutPtr[sourceIndex] = new float4(-1f, 0f, 0f, DeadVisualFlag * VisualStateFlagStep);
+                    effectOutPtr[sourceIndex] = default;
                     continue;
                 }
 
@@ -1195,9 +1408,24 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true, false));
+                    EncodeVisualState(flashTimer, false, true, false, false));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
+            }
+
+            float healthBeforeShieldedDamage = health;
+            float* towerDamageByType = stackalloc float[7];
+            for (int towerType = 0; towerType < 7; towerType++)
+            {
+                int damageEntry = sourceIndex * 7 + towerType;
+                towerDamageByType[towerType] = TowerDamageByTypeFrames[damageEntry] == TowerLaserDamageFrame
+                    ? TowerDamageByType[damageEntry]
+                    : 0f;
+            }
+            if (TowerLaserDamageFrames[sourceIndex] == TowerLaserDamageFrame)
+            {
+                health -= TowerLaserDamage[sourceIndex];
+                flashTimer = math.max(flashTimer, 0.2f);
             }
 
             if (effects.LaunchMotionTimer > 0f)
@@ -1216,17 +1444,21 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 if (effects.SlowTimer <= 0f)
                 {
                     effects.SlowPercent = 0f;
+                    effects.SlowStacks = 0f;
                 }
             }
             else
             {
                 effects.SlowPercent = 0f;
+                effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
+            float slowMoveFactor = math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
-            float2 directToPlayer = distToPlayerSq > 0.0001f ? toPlayer * math.rsqrt(distToPlayerSq) : new float2(0f, 1f);
+            float2 toGoal = GoalPos - pos.xz;
+            float distToGoalSq = math.lengthsq(toGoal);
+            float2 directToPlayer = distToGoalSq > 0.0001f ? toGoal * math.rsqrt(distToGoalSq) : new float2(0f, 1f);
             bool isAirborne = tornadoMark > 2.5f
                 || vel.y > 0.05f
                 || pos.y > RenderHeight + 0.05f
@@ -1245,15 +1477,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 }
 
                 float snapRadius = math.max(GridCellSize * 1.35f, radius * 4f + 0.35f);
-                float snapWeight = distToPlayerSq > 0.0001f
-                    ? 1f - math.saturate(math.sqrt(distToPlayerSq) / math.max(snapRadius, 0.001f))
+                float snapWeight = distToGoalSq > 0.0001f
+                    ? 1f - math.saturate(math.sqrt(distToGoalSq) / math.max(snapRadius, 0.001f))
                     : 1f;
                 if (snapWeight > 0f)
                 {
                     desired = math.normalizesafe(math.lerp(desired, directToPlayer, snapWeight), directToPlayer);
                 }
 
-                acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor);
+                acceleration.xz += desired * ChaseAcceleration;
 
                 float unitVariation = Hash01((uint)sourceIndex + 1u);
                 float signedVariation = unitVariation * 2f - 1f;
@@ -1286,6 +1518,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     float skillPreR = skill.Radius + math.max(0f, skill.Length) + radius;
                     if (math.abs(skillDelta.x) > skillPreR || math.abs(skillDelta.y) > skillPreR) continue;
 
+                    float healthBeforeTowerSkill = health;
                     switch (skill.Type)
                     {
                         case 1: ProcessTornado(ref acceleration, ref vel, ref health, ref flashTimer, ref tornadoMark, ref effects, pos, skill); break;
@@ -1302,6 +1535,28 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                         case 12:
                             ProcessTaggedArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
                             break;
+                        case 13:
+                        case 14:
+                            ProcessTowerArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
+                            break;
+                        case 15:
+                        case 16:
+                            ProcessTowerLaser(ref health, ref flashTimer, pos, skill);
+                            break;
+                        case 17:
+                            ProcessTacticalDamageArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
+                            break;
+                        case 18:
+                            ProcessTacticalBlackHole(ref vel, pos, skill);
+                            break;
+                        case 19:
+                            ProcessTowerLaser(ref health, ref flashTimer, pos, skill);
+                            break;
+                    }
+                    int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
+                    if ((uint)sourceTowerType < 7u && health < healthBeforeTowerSkill)
+                    {
+                        towerDamageByType[sourceTowerType] += healthBeforeTowerSkill - health;
                     }
                 }
             }
@@ -1424,8 +1679,42 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 }
             }
 
+            float incomingDamage = healthBeforeShieldedDamage - health;
+            if (BossShieldActive && incomingDamage > 0f &&
+                math.lengthsq(pos.xz - BossShieldPosition) <= BossShieldRadius * BossShieldRadius)
+            {
+                float reducedDamage = math.max(BossShieldMinimumDamage,
+                    incomingDamage * BossShieldDamageMultiplier);
+                health = healthBeforeShieldedDamage - reducedDamage;
+            }
+
+            if (incomingDamage > 0f)
+            {
+                float appliedDamage = math.min(math.max(healthBeforeShieldedDamage, 0f),
+                    math.max(healthBeforeShieldedDamage - health, 0f));
+                float attributionScale = appliedDamage / incomingDamage;
+                long* totalDamagePtr = (long*)TowerDamageTotalsFixed.GetUnsafePtr();
+                for (int towerType = 0; towerType < 7; towerType++)
+                {
+                    long fixedDamage = (long)math.round(math.max(0f, towerDamageByType[towerType]) *
+                        attributionScale * 1000f);
+                    if (fixedDamage > 0)
+                    {
+                        System.Threading.Interlocked.Add(ref totalDamagePtr[towerType], fixedDamage);
+                    }
+                }
+            }
+
             bool hitPlayer = false;
-            if (PlayerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
+            float towerContactDistance = radius + MainTowerContactRadius;
+            if (MainTowerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToGoalSq < towerContactDistance * towerContactDistance)
+            {
+                System.Threading.Interlocked.Increment(ref ((int*)MainTowerDamageCount.GetUnsafePtr())[0]);
+                health = -1f;
+                hitPlayer = true;
+            }
+
+            if (!hitPlayer && PlayerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToPlayerSq < (radius + PlayerContactPadding) * (radius + PlayerContactPadding))
             {
                 System.Threading.Interlocked.Increment(ref ((int*)PlayerDamageCount.GetUnsafePtr())[0]);
                 if (DefeatEnemyOnPlayerContact)
@@ -1452,22 +1741,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             vel += acceleration * DeltaTime;
             if (!isAirborne)
             {
-                if (effects.SlowTimer > 0f)
-                {
-                    if (slowMoveFactor >= 0f)
-                    {
-                        vel.xz *= math.saturate(slowMoveFactor);
-                    }
-                    else
-                    {
-                        vel.xz = -vel.xz * math.min(math.abs(slowMoveFactor), 2f);
-                    }
-                }
-
+                float effectiveMaxSpeed = maxSpeed * slowMoveFactor;
                 float speedSq = math.lengthsq(vel.xz);
-                if (speedSq > maxSpeed * maxSpeed)
+                if (speedSq > effectiveMaxSpeed * effectiveMaxSpeed)
                 {
-                    vel.xz *= maxSpeed * math.rsqrt(speedSq);
+                    vel.xz *= effectiveMaxSpeed * math.rsqrt(speedSq);
                 }
 
                 vel.xz *= VelocityDamping;
@@ -1529,7 +1807,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 vel.y = 0f;
                 effects.LaunchMotionTimer = 0f;
                 effects.LaunchStackTimer = 0f;
-                ResolveObstaclePenetration(ref pos, ref vel, radius, obstaclePtr, ObstacleCount);
+                float navigationRadius = sourceIndex == BossEnemyIndex
+                    ? math.min(radius, math.max(0.1f, BossNavigationRadius))
+                    : radius;
+                ResolveObstaclePenetration(ref pos, ref vel, navigationRadius, obstaclePtr, ObstacleCount);
             }
 
             launchKillPending = tornadoMark > 2.5f || vel.y > 0.05f || pos.y > RenderHeight + 0.45f || effects.LaunchLandingRadius > 0f || effects.LaunchLandingDamage > 0f;
@@ -1577,6 +1858,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 });
 
                 System.Threading.Interlocked.Increment(ref ((int*)EnemyKillCount.GetUnsafePtr())[0]);
+                if (TowerDefenseRewardsEnabled)
+                {
+                    byte enemyKind = EnemyKinds[sourceIndex];
+                    int reward = (enemyKind & 0x80) != 0
+                        ? 0
+                        : (enemyKind & 0x40) != 0 ? EliteKillGold : NormalKillGold;
+                    if (reward > 0)
+                        System.Threading.Interlocked.Add(ref ((int*)TowerDefenseGoldEarned.GetUnsafePtr())[0], reward);
+                }
                 flashTimer = math.max(flashTimer, 0.99f);
                 effects = default;
             }
@@ -1595,7 +1885,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     flashTimer,
                     effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
                     health <= 0f,
-                    bufferedLaunchDeath && launchKillPending && health > 0f));
+                    bufferedLaunchDeath && launchKillPending && health > 0f,
+                    effects.SlowTimer > 0f && effects.SlowPercent > 0f));
             effectOutPtr[sourceIndex] = effects;
         }
     }
@@ -1605,7 +1896,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         return (int)math.floor(math.max(encodedValue, 0f) / VisualStateFlagStep + 0.0001f);
     }
 
-    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual, bool isBufferedLaunchVisual)
+    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual,
+        bool isBufferedLaunchVisual, bool isSlowedVisual)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -1621,6 +1913,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (isBufferedLaunchVisual)
         {
             flags |= BufferedLaunchVisualFlag;
+        }
+
+        if (isSlowedVisual)
+        {
+            flags |= SlowVisualFlag;
         }
 
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
@@ -1669,16 +1966,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
     private float2 SampleFlowDirection(float2 worldPos, float2* flowPtr)
     {
-        float2 gridPos = (worldPos - GridOrigin) * GridInvCellSize - 0.5f;
-        int2 baseCell = (int2)math.floor(gridPos);
-        float2 frac = math.saturate(gridPos - baseCell);
-        float2 d00 = SampleFlowCell(baseCell.x, baseCell.y, flowPtr);
-        float2 d10 = SampleFlowCell(baseCell.x + 1, baseCell.y, flowPtr);
-        float2 d01 = SampleFlowCell(baseCell.x, baseCell.y + 1, flowPtr);
-        float2 d11 = SampleFlowCell(baseCell.x + 1, baseCell.y + 1, flowPtr);
-        float2 dirX0 = math.lerp(d00, d10, frac.x);
-        float2 dirX1 = math.lerp(d01, d11, frac.x);
-        return math.normalizesafe(math.lerp(dirX0, dirX1, frac.y), float2.zero);
+        // Use the containing integer cell directly. Blending four discrete path
+        // choices can cancel opposite directions on obstacle corners and leave an
+        // enemy with a zero vector even though its own cell has a valid route.
+        int2 cell = RougeMortonGridUtility.WorldToGrid(
+            worldPos, GridOrigin, GridInvCellSize, GridDim);
+        return flowPtr[RougeMortonGridUtility.EncodeMorton(cell.x, cell.y)];
     }
 
     private float SampleDensity(float2 worldPos, int* densityPtr)
@@ -2010,6 +2303,67 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
     }
 
+    private void ProcessTowerArea(ref float health, ref float flashTimer, ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 diff = pos.xz - skill.Position;
+        if (math.lengthsq(diff) > skill.Radius * skill.Radius) return;
+
+        if (skill.Damage > 0f)
+        {
+            health -= skill.Type == 14 ? skill.Damage * DeltaTime : skill.Damage;
+            flashTimer = math.max(flashTimer, skill.Type == 14 ? 0.2f : 0.8f);
+        }
+
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+    }
+
+    private void ProcessTowerLaser(ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 fromStart = pos.xz - skill.Position;
+        float along = math.dot(fromStart, skill.Direction);
+        if (along < 0f || along > skill.Length) return;
+        float2 closest = skill.Position + skill.Direction * along;
+        if (math.lengthsq(pos.xz - closest) > skill.Radius * skill.Radius) return;
+        health -= skill.Type == 16 ? skill.Damage * DeltaTime : skill.Damage;
+        flashTimer = math.max(flashTimer, skill.Type == 16 ? 0.2f : 0.9f);
+    }
+
+    private void ProcessTacticalDamageArea(ref float health, ref float flashTimer, ref float3 vel,
+        ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 difference = pos.xz - skill.Position;
+        if (math.lengthsq(difference) > skill.Radius * skill.Radius) return;
+
+        float previousHealth = health;
+        health -= skill.Damage;
+        flashTimer = math.max(flashTimer, 0.9f);
+        if (skill.AuxA <= 0f || previousHealth <= 0f || health > 0f) return;
+
+        float launchHeight = math.max(1f, skill.EffectLaunchHeight);
+        float2 launchDirection = math.normalizesafe(difference, new float2(0f, 1f));
+        vel.y = math.max(vel.y, launchHeight * KnockbackResist);
+        vel.xz += launchDirection * (launchHeight * LaunchPlanarImpulseFactor * KnockbackResist);
+        tornadoMark = 3f;
+        effects.LaunchMotionTimer = math.max(effects.LaunchMotionTimer, LaunchMotionDuration);
+        effects.LaunchStackTimer = math.max(effects.LaunchStackTimer, LaunchStackDuration);
+        // Tactical kills are already dead; the airborne state is presentation only.
+        // Explicitly clear landing payload so touching down can never create another AOE.
+        effects.LaunchLandingDamage = 0f;
+        effects.LaunchLandingRadius = 0f;
+    }
+
+    private void ProcessTacticalBlackHole(ref float3 vel, float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 toCenter = skill.Position - pos.xz;
+        float distanceSq = math.lengthsq(toCenter);
+        if (distanceSq <= 0.0001f || distanceSq > skill.Radius * skill.Radius) return;
+        vel.xz += toCenter * math.rsqrt(distanceSq) * skill.PullForce;
+    }
+
     private static float SamplePoisonNoise(float2 center, float2 offset, float noiseScale, float seed)
     {
         float angle = math.atan2(offset.y, offset.x);
@@ -2072,7 +2426,16 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
         if ((tags & SkillHitEffectTag.Slow) != 0)
         {
-            effects.SlowPercent = skill.EffectSlowPercent;
+            if (skill.Type == 13)
+            {
+                effects.SlowStacks = 1f;
+                effects.SlowPercent = math.max(0f, skill.EffectSlowPercent);
+            }
+            else
+            {
+                effects.SlowStacks = 0f;
+                effects.SlowPercent = skill.EffectSlowPercent;
+            }
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
         }
 
@@ -2140,11 +2503,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     {
         uint hash = math.hash(new uint2((uint)index + FrameSeed, FrameSeed ^ 0xA511E9B3u));
         float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
-        float safeSpawnRadius = math.max(SpawnRadiusMin, math.min(SpawnRadiusMax, math.max(8f, math.min(ArenaHalfExtent - math.abs(PlayerPos.x) - 2f, ArenaHalfExtent - math.abs(PlayerPos.y) - 2f))));
+        float safeSpawnRadius = math.max(SpawnRadiusMin, math.min(SpawnRadiusMax, math.max(8f, math.min(ArenaHalfExtent - math.abs(SpawnCenter.x) - 2f, ArenaHalfExtent - math.abs(SpawnCenter.y) - 2f))));
         float safeSpawnRadiusMin = math.min(SpawnRadiusMin, safeSpawnRadius * 0.78f);
         float distance = math.lerp(safeSpawnRadiusMin, safeSpawnRadius, ((hash >> 16) & 0xFFFFu) / 65535f);
         float speedScale = math.lerp(0.9f, 1.15f, ((hash >> 8) & 0xFFu) / 255f);
-        float2 spawn = PlayerPos + new float2(math.cos(angle), math.sin(angle)) * distance;
+        float2 spawn = SpawnCenter + new float2(math.cos(angle), math.sin(angle)) * distance;
         spawn.x = math.clamp(spawn.x, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
         spawn.y = math.clamp(spawn.y, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
         pos4 = new float4(spawn.x, RenderHeight, spawn.y, EnemyRadius);
@@ -2171,6 +2534,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
     private const int CurseVisualFlag = 1;
     private const int DeadVisualFlag = 2;
     private const int BufferedLaunchVisualFlag = 4;
+    private const int SlowVisualFlag = 8;
     private const float LaunchMotionDuration = 0.22f;
     private const float LaunchStackDuration = 0.12f;
     private const float LaunchPlanarImpulseFactor = 1.05f;
@@ -2356,7 +2720,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true, false));
+                    EncodeVisualState(flashTimer, false, true, false, false));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
             }
@@ -2393,14 +2757,16 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 if (effects.SlowTimer <= 0f)
                 {
                     effects.SlowPercent = 0f;
+                    effects.SlowStacks = 0f;
                 }
             }
             else
             {
                 effects.SlowPercent = 0f;
+                effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = 1f - effects.SlowPercent * 0.01f;
+            float slowMoveFactor = math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 desired = math.normalizesafe(toPlayer);
@@ -2423,7 +2789,7 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     chaseWeight = math.lerp(1f, 0.35f, centerWeight);
                 }
 
-                acceleration.xz += desired * (ChaseAcceleration * slowMoveFactor * chaseWeight);
+                acceleration.xz += desired * (ChaseAcceleration * chaseWeight);
             }
 
             float2 separation = float2.zero;
@@ -2513,14 +2879,14 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     float dist = math.sqrt(math.max(distSq, 0.0001f));
                     float2 normal = diff / dist;
                     float weight = 1f - math.saturate(dist / math.max(ObstacleLookAhead, 0.001f));
-                    acceleration.xz += normal * (ObstacleRepulsion * weight * math.max(math.abs(slowMoveFactor), 0.25f));
+                    acceleration.xz += normal * (ObstacleRepulsion * weight);
                     float2 tangent = new float2(-normal.y, normal.x);
                     if (math.dot(tangent, desired) < 0f)
                     {
                         tangent = -tangent;
                     }
 
-                    acceleration.xz += tangent * (ObstacleOrbitStrength * weight * math.max(math.abs(slowMoveFactor), 0.25f));
+                    acceleration.xz += tangent * (ObstacleOrbitStrength * weight);
                 }
             }
 
@@ -2718,22 +3084,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             vel += acceleration * DeltaTime;
             if (!isAirborne)
             {
-                if (effects.SlowTimer > 0f)
-                {
-                    if (slowMoveFactor >= 0f)
-                    {
-                        vel.xz *= math.saturate(slowMoveFactor);
-                    }
-                    else
-                    {
-                        vel.xz = -vel.xz * math.min(math.abs(slowMoveFactor), 2f);
-                    }
-                }
-
+                float effectiveMaxSpeed = maxSpeed * slowMoveFactor;
                 float speedSq = math.lengthsq(vel.xz);
-                if (speedSq > maxSpeed * maxSpeed)
+                if (speedSq > effectiveMaxSpeed * effectiveMaxSpeed)
                 {
-                    vel.xz *= maxSpeed * math.rsqrt(speedSq);
+                    vel.xz *= effectiveMaxSpeed * math.rsqrt(speedSq);
                 }
 
                 vel.xz *= VelocityDamping;
@@ -2860,7 +3215,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     flashTimer,
                     effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
                     health <= 0f,
-                    bufferedLaunchDeath && launchKillPending && health > 0f));
+                    bufferedLaunchDeath && launchKillPending && health > 0f,
+                    effects.SlowTimer > 0f && effects.SlowPercent > 0f));
             effectOutPtr[sourceIndex] = effects;
         }
     }
@@ -2870,7 +3226,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         return (int)math.floor(math.max(encodedValue, 0f) / VisualStateFlagStep + 0.0001f);
     }
 
-    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual, bool isBufferedLaunchVisual)
+    private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual,
+        bool isBufferedLaunchVisual, bool isSlowedVisual)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -2886,6 +3243,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
         if (isBufferedLaunchVisual)
         {
             flags |= BufferedLaunchVisualFlag;
+        }
+
+        if (isSlowedVisual)
+        {
+            flags |= SlowVisualFlag;
         }
 
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
@@ -3237,7 +3599,16 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
 
         if ((tags & SkillHitEffectTag.Slow) != 0)
         {
-            effects.SlowPercent = skill.EffectSlowPercent;
+            if (skill.Type == 13)
+            {
+                effects.SlowStacks = 1f;
+                effects.SlowPercent = math.max(0f, skill.EffectSlowPercent);
+            }
+            else
+            {
+                effects.SlowStacks = 0f;
+                effects.SlowPercent = skill.EffectSlowPercent;
+            }
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
         }
 

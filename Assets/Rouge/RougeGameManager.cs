@@ -26,6 +26,8 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private PlayerBase player;
     [SerializeField] private Mesh enemyMesh;
     [SerializeField] private Material enemyMaterial;
+    private bool _ownsEnemyBillboardMaterial;
+    private bool _ownsEnemyBillboardMesh;
     [SerializeField] private Material lightPillarBeamMaterial;
     [SerializeField] private Material laserBeamMaterial;
 
@@ -41,12 +43,13 @@ public partial class RougeGameManager : MonoBehaviour
 
     private Mesh _bulletMesh;
     private Material _bulletMaterial;
+    private bool _ownsBulletMaterial;
 
     [Header("Population")]
     [SerializeField, Range(1000, 500000)] private int enemyCount = 200000;
-    [SerializeField] private float enemyMaxHealth = 20f;
+    [SerializeField] private float enemyMaxHealth = 10f;
     [SerializeField] private float enemyRadius = 0.3f;
-    [SerializeField] private float enemyMaxSpeed = 7f;
+    [SerializeField] private float enemyMaxSpeed = 6f;
     [SerializeField] private float enemyVisualScale = 1.35f;
     [SerializeField, Range(0f, 0.4f)] private float enemyVariationStrength = 0.18f;
     [SerializeField, Range(0.5f, 8f)] private float enemyBreakupScale = 3.8f;
@@ -60,7 +63,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float renderHeight = 0f;
 
     [Header("Camera")]
-    [SerializeField, Range(0.5f, 3f)] private float cameraZoomMultiplier = 1f;
+    [SerializeField, Range(0.5f, 5f)] private float cameraZoomMultiplier = 1f;
     [SerializeField, Range(0.02f, 0.5f)] private float cameraZoomScrollStep = 0.15f;
 
     [Header("Steering")]
@@ -74,8 +77,9 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField, Range(0f, 4f)] private float denseSeparationBoost = 1.25f;
     [SerializeField, Range(1, 32)] private int denseNeighborThreshold = 6;
     [SerializeField] private float flowFieldCellSize = 1.5f;
-    [SerializeField, Range(2, 128)] private int flowFieldIterations = 6;
-    [SerializeField, Range(64, 256)] private int flowFieldMaxGridDim = 256;
+    [SerializeField, Range(1, 4)] private int flowFieldIterations = 3;
+    [SerializeField, Range(64, 512)] private int flowFieldMaxGridDim = 512;
+    [SerializeField, Range(0.05f, 2f)] private float flowFieldRefreshInterval = 0.5f;
     [SerializeField] private float densitySoftThreshold = 1.35f;
     [SerializeField] private float densityRepulsionStrength = 18f;
     [SerializeField] private float densityGradientClamp = 2.5f;
@@ -162,6 +166,11 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _skillCellHeads;
     private NativeArray<int> _skillCellEntries;
     private NativeArray<int> _skillCellNext;
+    private NativeArray<int> _enemyTargetCellHeads;
+    private NativeArray<int> _enemyTargetCellNext;
+    private NativeArray<RougeTowerTargetRequest> _towerTargetRequests;
+    private NativeArray<int> _towerTargetResultIndices;
+    private NativeArray<float> _towerTargetResultDistances;
     private NativeArray<int> _densityFieldFixed;
     private NativeArray<float> _flowDistanceField;
     private NativeArray<float> _flowDistanceScratch;
@@ -176,6 +185,7 @@ public partial class RougeGameManager : MonoBehaviour
     private static readonly List<RougeDynamicObstacle> s_dynamicObstacles = new List<RougeDynamicObstacle>();
     private readonly List<Transform> _runtimeExtraTargets = new List<Transform>();
     private NativeArray<int> _playerDamageCount;
+    private NativeArray<int> _mainTowerDamageCount;
     private NativeArray<int> _enemyKillCount;
     private NativeQueue<float2> _explosionQueue;
     private NativeQueue<RougeSkillEvent> _skillEventQueue;
@@ -188,6 +198,8 @@ public partial class RougeGameManager : MonoBehaviour
 
     private GraphicsBuffer _positionBuffer;
     private GraphicsBuffer _stateBuffer;
+    private GraphicsBuffer _velocityRenderBuffer;
+    private GraphicsBuffer _enemyKindRenderBuffer;
     private GraphicsBuffer _argsBuffer;
     private readonly uint[] _drawArgs = new uint[5];
 
@@ -200,9 +212,23 @@ public partial class RougeGameManager : MonoBehaviour
     private int _flowGridCellCount;
     private float2 _flowGridOrigin;
     private float _flowFieldRuntimeCellSize;
+    private float _flowFieldRefreshCountdown;
+    private bool _flowFieldReady;
     private int _activeBulletCount;
     private float _fireTimer;
     private bool _simulationResultBackBufferReady;
+    private const int MaxJobifiedTowerCount = 1024;
+    private int _towerTargetRequestCount;
+    private int _towerTargetScheduledCount;
+    private NativeArray<float> _towerLaserDamage;
+    private NativeArray<int> _towerLaserDamageFrames;
+    private NativeArray<byte> _towerDefenseEnemyKinds;
+    private NativeArray<int> _enemyRenderKinds;
+    private NativeArray<int> _towerDefenseGoldEarned;
+    private NativeArray<float> _towerDamageByType;
+    private NativeArray<int> _towerDamageByTypeFrames;
+    private NativeArray<long> _towerDamageTotalsFixed;
+    private int _towerLaserDamageFrame = 1;
 
     private int _obstacleCount;
 
@@ -466,6 +492,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private Material _aoeRingMat;
     private MaterialPropertyBlock _aoeRingPropertyBlock;
     private Mesh _aoeRingMesh;
+    private bool _ownsAoeRingMaterial;
     private bool _ownsAoeRingMesh;
 
     // Shockwave multi-ring system
@@ -476,25 +503,33 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void OnEnable()
     {
+        if (!Application.isPlaying) return;
         Initialize();
     }
 
     private void OnDisable()
     {
-        Dispose();
+        if (_initialized) Dispose();
     }
 
     private void OnValidate()
     {
         EnsureShaderReferenceDefaults();
         ApplySkillConfigValues();
+        EnsureTowerDefenseConfigDefaults();
     }
 
     private UnityEngine.UI.Text _uiText;
 
     private void LateUpdate()
     {
-        if (!_initialized || player == null) return;
+        if (!_initialized) return;
+        if (UsesTowerDefenseSpawners())
+        {
+            ApplyCameraEffects();
+            return;
+        }
+        if (player == null) return;
         Vector3 pos = player.transform.position;
         
         // Boundary
@@ -542,7 +577,10 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void Update()
     {
-        _fps = math.lerp(_fps, 1f / Time.deltaTime, 5f * Time.deltaTime);
+        if (Time.unscaledDeltaTime > 0.00001f)
+        {
+            _fps = math.lerp(_fps, 1f / Time.unscaledDeltaTime, 5f * Time.unscaledDeltaTime);
+        }
 
         if (!_initialized)
         {
@@ -551,6 +589,8 @@ public partial class RougeGameManager : MonoBehaviour
 
         _simulationHandle.Complete();
         FinalizeCompletedSimulationBuffers();
+        EnsureTowerDefenseInitialized();
+        UpdateTowerDefenseInput(Time.unscaledDeltaTime);
 
         if (_enemyKillCount.IsCreated)
         {
@@ -558,6 +598,7 @@ public partial class RougeGameManager : MonoBehaviour
             if (recentKills > 0)
             {
                 totalKills += recentKills;
+                AddTowerDefenseGoldForKills(recentKills);
                 _enemyKillCount[0] = 0;
                 int nextLevel = 1 + (totalKills / 300);
                 if (nextLevel > currentLevel)
@@ -604,6 +645,7 @@ public partial class RougeGameManager : MonoBehaviour
         int damage = _playerDamageCount[0];
         if (damage > 0)
         {
+            RemoveTowerDefenseAliveEstimate(damage);
             if (IsPlayerContactEnabled() && _jumpState == 0 && _invincibilityTimer <= 0f)
             {
                 playerHealth -= playerContactDamage;
@@ -619,10 +661,22 @@ public partial class RougeGameManager : MonoBehaviour
             _playerDamageCount[0] = 0;
         }
 
-        if (playerHealth <= 0f)
+        ApplyMainTowerContactDamage();
+
+        if ((!UsesTowerDefenseSpawners() && playerHealth <= 0f) || IsMainTowerDestroyed())
         {
-            Dispose();
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            TriggerTowerDefenseGameOver(!UsesTowerDefenseSpawners() && playerHealth <= 0f
+                ? "PLAYER DOWN"
+                : "MAIN TOWER DESTROYED");
+            return;
+        }
+
+        if (IsTowerDefenseSimulationPaused())
+        {
+            RenderEnemies();
+            RenderOrbitSphereVisuals();
+            RenderTowerDefensePausedFrame();
+            UpdateHudIfNeeded();
             return;
         }
 
@@ -640,7 +694,7 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         _spawnTimer += dt;
-        if (_spawnTimer > 1f)
+        if (!UsesTowerDefenseSpawners() && _spawnTimer > 1f)
         {
             _spawnTimer = 0f;
             if (_currentMaxEnemies < enemyCount)
@@ -651,8 +705,18 @@ public partial class RougeGameManager : MonoBehaviour
             }
         }
 
-        UpdateSkills(dt);
-        ApplyPendingPlayerContactSkill();
+        if (UsesTowerDefenseSpawners())
+        {
+            _skillAreaCount = 0;
+            _activeBulletCount = 0;
+            _bulletMin = float2.zero;
+            _bulletMax = float2.zero;
+        }
+        else
+        {
+            UpdateSkills(dt);
+            ApplyPendingPlayerContactSkill();
+        }
 
         while (_explosionQueue.TryDequeue(out float2 expPos))
         {
@@ -818,10 +882,12 @@ public partial class RougeGameManager : MonoBehaviour
         }
 
         UpdateAOERings(dt);
+        UpdateTowerDefenseSimulation(dt);
         UpdateBullets(dt);
         RenderBullets();
         RenderAOERings();
         RenderEnemies();
+        RenderOrbitSphereVisuals();
         RenderExplosions();
         RenderDeathBursts();
         RenderTornados();
@@ -874,29 +940,25 @@ public partial class RougeGameManager : MonoBehaviour
         maxBullets = Mathf.Max(maxBullets, 1);
         spawnRadiusMax = Mathf.Max(spawnRadiusMax, spawnRadiusMin + 1f);
         despawnDistance = Mathf.Max(despawnDistance, spawnRadiusMax + 20f);
-        enemyMesh = enemyMesh != null ? enemyMesh : CreateFallbackQuad();
-        enemyMaterial = enemyMaterial != null ? enemyMaterial : CreateFallbackMaterial();
-        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier, 0.5f, 3f);
+        enemyMesh = CreateFallbackQuad();
+        _ownsEnemyBillboardMesh = true;
+        enemyMaterial = CreateRuntimeMaterial("Rouge/EnemyBillboard", "Enemy 2D Billboard", true);
+        _ownsEnemyBillboardMaterial = true;
+        ApplyEnemySpriteSheetTextures();
+        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier, 0.5f, 5f);
 
-        if (_bulletMesh == null)
-        {
-            GameObject tempSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _bulletMesh = tempSphere.GetComponent<MeshFilter>().sharedMesh;
-            Destroy(tempSphere);
-        }
-
-        if (_bulletMaterial == null)
-        {
-            _bulletMaterial = CreateRuntimeMaterial("Universal Render Pipeline/Lit", "Bullet Material", true);
-            ApplyBaseColor(_bulletMaterial, Color.yellow);
-            _bulletMaterial.enableInstancing = true;
-        }
+        _bulletMesh = enemyMesh;
+        _bulletMaterial = CreateRuntimeMaterial("Rouge/SpriteInstanced", "Bullet 2D Sprite", true);
+        _ownsBulletMaterial = true;
+        _bulletMaterial.SetTexture("_MainTex", Resources.Load<Texture2D>("Sprites/projectile_energy"));
+        ApplyBaseColor(_bulletMaterial, Color.white);
+        _bulletMaterial.enableInstancing = true;
 
         _hashSize = Mathf.NextPowerOfTwo(Mathf.Max(enemyCount * 2, 65536));
         _hashMask = _hashSize - 1;
         _chunkCount = Mathf.CeilToInt(enemyCount / (float)sortBatchSize);
         _flowFieldRuntimeCellSize = math.max(flowFieldCellSize, 0.5f);
-        int maxFlowGridDim = math.clamp(flowFieldMaxGridDim, 64, 256);
+        int maxFlowGridDim = math.clamp(flowFieldMaxGridDim, 64, 512);
         int computedFlowGridDim = Mathf.NextPowerOfTwo(Mathf.CeilToInt((arenaHalfExtent * 2f + _flowFieldRuntimeCellSize * 2f) / _flowFieldRuntimeCellSize));
         while (computedFlowGridDim > maxFlowGridDim)
         {
@@ -923,6 +985,21 @@ public partial class RougeGameManager : MonoBehaviour
         _cellCounts = new NativeArray<int>(_hashSize, Allocator.Persistent);
         _bulletCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _skillCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _enemyTargetCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _enemyTargetCellNext = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerTargetRequests = new NativeArray<RougeTowerTargetRequest>(MaxJobifiedTowerCount, Allocator.Persistent);
+        _towerTargetResultIndices = new NativeArray<int>(
+            MaxJobifiedTowerCount * FindTowerTargetsJob.MaxTargetsPerTower, Allocator.Persistent);
+        _towerTargetResultDistances = new NativeArray<float>(
+            MaxJobifiedTowerCount * FindTowerTargetsJob.MaxTargetsPerTower, Allocator.Persistent);
+        _towerLaserDamage = new NativeArray<float>(enemyCount, Allocator.Persistent);
+        _towerLaserDamageFrames = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerDefenseEnemyKinds = new NativeArray<byte>(enemyCount, Allocator.Persistent);
+        _enemyRenderKinds = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerDefenseGoldEarned = new NativeArray<int>(1, Allocator.Persistent);
+        _towerDamageByType = new NativeArray<float>(enemyCount * TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
+        _towerDamageByTypeFrames = new NativeArray<int>(enemyCount * TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
+        _towerDamageTotalsFixed = new NativeArray<long>(TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
         _neighborOffsets = new NativeArray<int2>(9, Allocator.Persistent);
         _histograms = new NativeArray<int>(math.max(_chunkCount * 256, 256), Allocator.Persistent);
         _binTotals = new NativeArray<int>(256, Allocator.Persistent);
@@ -935,6 +1012,7 @@ public partial class RougeGameManager : MonoBehaviour
         _flowGoalIndices = new NativeArray<int>(MaxFlowGoalCount, Allocator.Persistent);
         ResizeBulletStorage(maxBullets);
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
+        _mainTowerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
         _explosionQueue = new NativeQueue<float2>(Allocator.Persistent);
         _skillEventQueue = new NativeQueue<RougeSkillEvent>(Allocator.Persistent);
@@ -943,6 +1021,8 @@ public partial class RougeGameManager : MonoBehaviour
         currentLevel = 1;
         _skillKillCounts = new NativeArray<int>(6, Allocator.Persistent);
         _survivalTime = 0f;
+        _flowFieldRefreshCountdown = 0f;
+        _flowFieldReady = false;
         ResetHudRefreshState();
         System.Array.Clear(_skillTotalKills, 0, 6);
         System.Array.Clear(_skillLevels, 0, 6);
@@ -953,6 +1033,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         playerHealth = playerMaxHealth;
 
+        PrepareTowerDefenseSceneBeforeNavigation();
         CaptureObstacles();
         BuildNeighborOffsets();
         SeedEnemies();
@@ -962,6 +1043,8 @@ public partial class RougeGameManager : MonoBehaviour
 
         _positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, UnsafeUtility.SizeOf<float4>());
         _stateBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, UnsafeUtility.SizeOf<float4>());
+        _velocityRenderBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, UnsafeUtility.SizeOf<float4>());
+        _enemyKindRenderBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, enemyCount, sizeof(int));
         _argsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.IndirectArguments, 1, sizeof(uint) * 5);
         _drawArgs[0] = enemyMesh.GetIndexCount(0);
         _drawArgs[1] = (uint)enemyCount;
@@ -1059,6 +1142,7 @@ public partial class RougeGameManager : MonoBehaviour
             if (ringShader != null)
             {
                 _aoeRingMat = new Material(ringShader);
+                _ownsAoeRingMaterial = true;
                 _aoeRingMat.SetColor("_Color", new Color(1f, 0.5f, 0.1f, 0.8f));
                 _aoeRingMat.renderQueue = 2450;
             }
@@ -1472,8 +1556,9 @@ public partial class RougeGameManager : MonoBehaviour
             _meteorVisualTimers[mi] = 0f;
         }
 
+        InitializeTowerDefense();
         _initialized = true;
-        _currentMaxEnemies = 10;
+        _currentMaxEnemies = UsesTowerDefenseSpawners() ? 0 : 10;
         _spawnTimer = 0f;
         ScheduleSimulation(0.016f);
     }
@@ -1576,7 +1661,7 @@ public partial class RougeGameManager : MonoBehaviour
             return;
         }
 
-        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier - scroll * cameraZoomScrollStep, 0.5f, 3f);
+        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier - scroll * cameraZoomScrollStep, 0.5f, 5f);
     }
 
     private int GetInitialSkillProgressionLevel(int progressionIndex)
@@ -1668,6 +1753,15 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void CaptureObstacles()
     {
+        RougeDynamicObstacle[] dynamicObstacles = UnityEngine.Object.FindObjectsByType<RougeDynamicObstacle>(FindObjectsSortMode.None);
+        for (int i = 0; i < dynamicObstacles.Length; i++)
+        {
+            if (dynamicObstacles[i] != null && dynamicObstacles[i].isActiveAndEnabled)
+            {
+                RegisterDynamicObstacle(dynamicObstacles[i]);
+            }
+        }
+
         Collider[] colliders = UnityEngine.Object.FindObjectsByType<Collider>(FindObjectsSortMode.None);
         float capturedObstaclePadding = math.min(math.max(obstaclePadding, 0f), 0.18f);
         int count = 0;
@@ -1675,6 +1769,7 @@ public partial class RougeGameManager : MonoBehaviour
         {
             Collider collider = colliders[i];
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
+            if (collider.GetComponentInParent<RougeMainTower>() != null) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
             if (collider.bounds.size.y < 0.2f) continue;
@@ -1696,6 +1791,7 @@ public partial class RougeGameManager : MonoBehaviour
         {
             Collider collider = colliders[i];
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
+            if (collider.GetComponentInParent<RougeMainTower>() != null) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
             if (collider.bounds.size.y < 0.2f || collider.bounds.size.x > 80f) continue;
@@ -1773,6 +1869,7 @@ public partial class RougeGameManager : MonoBehaviour
         {
             RougeDynamicObstacle src = s_dynamicObstacles[i];
             if (src == null || !src.isActiveAndEnabled) continue;
+            if (src.GetComponentInParent<RougeMainTower>() != null) continue;
             _obstacles[_staticObstacleCount + written] = src.Snapshot();
             written++;
         }
@@ -1787,12 +1884,14 @@ public partial class RougeGameManager : MonoBehaviour
         if (!_initialized) return;
         if (_obstacles.IsCreated) _obstacles.Dispose();
         CaptureObstacles();
+        _flowFieldReady = false;
     }
 
     /// <summary>由 RougeDynamicObstacle.OnEnable 调用。</summary>
     public static void RegisterDynamicObstacle(RougeDynamicObstacle obstacle)
     {
         if (obstacle == null) return;
+        if (obstacle.GetComponentInParent<RougeMainTower>() != null) return;
         if (!s_dynamicObstacles.Contains(obstacle))
         {
             s_dynamicObstacles.Add(obstacle);
@@ -1824,12 +1923,17 @@ public partial class RougeGameManager : MonoBehaviour
     }
 
     /// <summary>把 player + extraTargets + 运行时目标解析为非阻挡 cell index 写入 _flowGoalIndices；返回有效目标数。</summary>
-    private int ResolveFlowGoals(float2 playerPos, float invCellSize)
+    private int ResolveFlowGoals(float2 playerPos, float invCellSize, bool primaryOnly = false)
     {
         int written = 0;
 
         // 主目标 = player
         _flowGoalIndices[written++] = ResolveFlowGoalIndex(playerPos, invCellSize);
+
+        if (primaryOnly)
+        {
+            return written;
+        }
 
         // serialized extraTargets
         if (extraTargets != null)
@@ -1959,6 +2063,7 @@ public partial class RougeGameManager : MonoBehaviour
             _velocitiesA[i] = float4.zero;
             _stateA[i] = new float4(enemyMaxHealth, enemyRadius, enemyMaxSpeed * speedScale, 0f);
             _effectStateA[i] = default;
+            if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[i] = 0;
         }
     }
 
@@ -2002,7 +2107,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void UpdateBullets(float dt)
     {
-        if (!IsSkillEnabled(PlayerSkillType.AutoShoot))
+        if (UsesTowerDefenseSpawners() || !IsSkillEnabled(PlayerSkillType.AutoShoot))
         {
             _fireTimer = 0f;
             _activeBulletCount = 0;
@@ -2065,6 +2170,11 @@ public partial class RougeGameManager : MonoBehaviour
     {
         if (_activeBulletCount <= 0 || _bulletMesh == null || _bulletMaterial == null) return;
 
+        Camera camera = RougeCameraFollow.ResolveCamera();
+        Quaternion facing = camera != null
+            ? Quaternion.LookRotation(-camera.transform.forward, camera.transform.up)
+            : Quaternion.Euler(90f, 0f, 0f);
+
         for (int startIndex = 0; startIndex < _activeBulletCount; startIndex += _bulletRenderMatrices.Length)
         {
             int batchCount = Mathf.Min(_bulletRenderMatrices.Length, _activeBulletCount - startIndex);
@@ -2072,8 +2182,12 @@ public partial class RougeGameManager : MonoBehaviour
             {
                 RougeBullet bullet = _bullets[startIndex + i];
                 Vector3 pos = new Vector3(bullet.Current.x, renderHeight + 0.5f, bullet.Current.y);
-                Vector3 scale = Vector3.one * (bullet.Radius * 2f);
-                _bulletRenderMatrices[i] = Matrix4x4.TRS(pos, Quaternion.identity, scale);
+                Vector3 worldDirection = new Vector3(bullet.Velocity.x, 0f, bullet.Velocity.y);
+                Vector3 localDirection = Quaternion.Inverse(facing) * worldDirection;
+                float angle = Mathf.Atan2(-localDirection.x, localDirection.y) * Mathf.Rad2Deg;
+                Quaternion rotation = facing * Quaternion.Euler(0f, 0f, angle);
+                Vector3 scale = new Vector3(bullet.Radius * 3.2f, bullet.Radius * 5.5f, 1f);
+                _bulletRenderMatrices[i] = Matrix4x4.TRS(pos, rotation, scale);
             }
 
             Graphics.DrawMeshInstanced(_bulletMesh, 0, _bulletMaterial, _bulletRenderMatrices, batchCount);
@@ -2202,9 +2316,13 @@ public partial class RougeGameManager : MonoBehaviour
 
         _positionBuffer.SetData(_positionsA, 0, 0, drawCount);
         _stateBuffer.SetData(_stateA, 0, 0, drawCount);
+        _velocityRenderBuffer.SetData(_velocitiesA, 0, 0, drawCount);
+        _enemyKindRenderBuffer.SetData(_enemyRenderKinds, 0, 0, drawCount);
 
         enemyMaterial.SetBuffer(PositionScaleBufferId, _positionBuffer);
         enemyMaterial.SetBuffer("_StateBuffer", _stateBuffer);
+        enemyMaterial.SetBuffer("_VelocityBuffer", _velocityRenderBuffer);
+        enemyMaterial.SetBuffer("_EnemyKindBuffer", _enemyKindRenderBuffer);
        // enemyMaterial.SetColor(BaseColorId, new Color(0.88f, 0.18f, 0.18f, 1f));
         enemyMaterial.SetFloat(ScaleMultiplierId, enemyVisualScale);
         enemyMaterial.SetFloat(VariationStrengthId, enemyVariationStrength);
@@ -2235,18 +2353,38 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void ScheduleSimulation(float dt)
     {
+        if (_bossDeathSequenceActive)
+        {
+            _simulationHandle = default;
+            _simulationResultBackBufferReady = false;
+            _towerTargetScheduledCount = 0;
+            return;
+        }
         int activeEnemyCount = Mathf.Clamp(_currentMaxEnemies, 0, enemyCount);
         if (activeEnemyCount <= 0)
         {
             _simulationHandle = default;
             _simulationResultBackBufferReady = false;
+            _towerTargetScheduledCount = 0;
             return;
         }
 
         float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
         int gridBatchSize = 1024;
-        int flowIterationCount = math.clamp(flowFieldIterations, 2, 8);
+        int flowIterationCount = math.clamp(flowFieldIterations, 1, 4);
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
+        float2 enemyGoalPos = GetEnemyTowerDefenseGoal(playerPos);
+        float2 enemySpawnCenter = GetEnemyTowerDefenseSpawnCenter(playerPos);
+        _flowFieldRefreshCountdown -= math.max(dt, 0f);
+        bool refreshFlowField = !_flowFieldReady || _flowFieldRefreshCountdown <= 0f;
+        if (refreshFlowField)
+        {
+            _flowFieldReady = true;
+            float effectiveRefreshInterval = UsesTowerDefenseSpawners()
+                ? math.max(flowFieldRefreshInterval, 1f)
+                : math.max(flowFieldRefreshInterval, 0.05f);
+            _flowFieldRefreshCountdown = effectiveRefreshInterval;
+        }
 
         // 1) 把动态障碍快照刷到 _obstacles 后缀；每帧仅 List<Transform> 走读，不做 FindObjectsByType
         RefreshDynamicObstacleSnapshot();
@@ -2261,7 +2399,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         // 3) 仅栅格化动态障碍段（_dynamicObstacleCount 通常很小）
         JobHandle obstacleHandle = clearGridHandle;
-        if (_dynamicObstacleCount > 0)
+        if (refreshFlowField && _dynamicObstacleCount > 0)
         {
             obstacleHandle = new RasterizeObstacleGridJob
             {
@@ -2287,51 +2425,32 @@ public partial class RougeGameManager : MonoBehaviour
             RenderHeight = renderHeight
         }.ScheduleBatch(activeEnemyCount, simulationBatchSize, clearGridHandle);
 
-        // 4) 多目标解析：player + extraTargets + 运行时 AddTarget
-        int goalCount = ResolveFlowGoals(playerPos, invCellSize);
-
-        JobHandle flowInitHandle = new InitializeFlowFieldJob
+        JobHandle flowDirectionHandle = default;
+        if (refreshFlowField)
         {
-            BlockedCells = _flowBlockedCells,
-            FlowDistances = _flowDistanceField,
-            GridDim = _flowGridDim
-        }.ScheduleBatch(_flowGridCellCount, gridBatchSize, obstacleHandle);
+            // 塔防模式下所有怪物以主塔为唯一目标。
+            int goalCount = ResolveFlowGoals(enemyGoalPos, invCellSize, UsesTowerDefenseSpawners());
 
-        // 5) 把所有目标 cell 一次性置 0；后续 Relax 因 min 操作不会再抬升
-        JobHandle seedHandle = new SeedGoalCellsJob
-        {
-            GoalIndices = _flowGoalIndices,
-            GoalCount = goalCount,
-            FlowDistances = _flowDistanceField,
-            BlockedCells = _flowBlockedCells
-        }.Schedule(flowInitHandle);
-
-        NativeArray<float> flowSource = _flowDistanceField;
-        NativeArray<float> flowTarget = _flowDistanceScratch;
-        JobHandle flowRelaxHandle = seedHandle;
-        for (int iteration = 0; iteration < flowIterationCount; iteration++)
-        {
-            flowRelaxHandle = new RelaxFlowFieldJob
+            // Fast sweeping propagates the goal distance across the entire grid each pass.
+            JobHandle flowSolveHandle = new SolveFlowFieldJob
             {
                 BlockedCells = _flowBlockedCells,
-                FlowDistancesIn = flowSource,
-                FlowDistancesOut = flowTarget,
+                FlowDistances = _flowDistanceField,
+                GoalIndices = _flowGoalIndices,
+                GoalCount = goalCount,
                 GridDim = _flowGridDim,
-                CellSize = _flowFieldRuntimeCellSize
-            }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowRelaxHandle);
+                CellSize = _flowFieldRuntimeCellSize,
+                IterationCount = flowIterationCount
+            }.Schedule(obstacleHandle);
 
-            NativeArray<float> temp = flowSource;
-            flowSource = flowTarget;
-            flowTarget = temp;
+            flowDirectionHandle = new BuildFlowFieldDirectionsJob
+            {
+                BlockedCells = _flowBlockedCells,
+                FlowDistances = _flowDistanceField,
+                FlowDirections = _flowDirectionField,
+                GridDim = _flowGridDim
+            }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowSolveHandle);
         }
-
-        JobHandle flowDirectionHandle = new BuildFlowFieldDirectionsJob
-        {
-            BlockedCells = _flowBlockedCells,
-            FlowDistances = flowSource,
-            FlowDirections = _flowDirectionField,
-            GridDim = _flowGridDim
-        }.ScheduleBatch(_flowGridCellCount, gridBatchSize, flowRelaxHandle);
 
         JobHandle clearBulletHandle = new ClearBulletGridHeadsJob
         {
@@ -2393,13 +2512,34 @@ public partial class RougeGameManager : MonoBehaviour
             Obstacles = _obstacles,
             ObstacleCount = _obstacleCount,
             PlayerPos = playerPos,
+            GoalPos = enemyGoalPos,
+            SpawnCenter = enemySpawnCenter,
             PlayerDamageCount = _playerDamageCount,
+            MainTowerDamageCount = _mainTowerDamageCount,
             EnemyKillCount = _enemyKillCount,
+            EnemyKinds = _towerDefenseEnemyKinds,
+            TowerDefenseGoldEarned = _towerDefenseGoldEarned,
+            TowerDefenseRewardsEnabled = UsesTowerDefenseSpawners(),
+            NormalKillGold = Mathf.Max(0, enemyBalance.normalKillGold),
+            EliteKillGold = Mathf.Max(0, enemyBalance.eliteKillGold),
+            TowerLaserDamage = _towerLaserDamage,
+            TowerLaserDamageFrames = _towerLaserDamageFrames,
+            TowerLaserDamageFrame = _towerLaserDamageFrame,
+            TowerDamageByType = _towerDamageByType,
+            TowerDamageByTypeFrames = _towerDamageByTypeFrames,
+            TowerDamageTotalsFixed = _towerDamageTotalsFixed,
+            BossShieldActive = _bossSpawned && _bossShieldActive,
+            BossShieldPosition = new float2(_bossWorldPosition.x, _bossWorldPosition.z),
+            BossShieldRadius = Mathf.Max(0f, bossBalance.shieldRadius),
+            BossShieldDamageMultiplier = Mathf.Clamp(bossBalance.shieldDamageMultiplier, 0.01f, 1f),
+            BossShieldMinimumDamage = Mathf.Max(1f, bossBalance.minimumShieldedDamage),
+            BossEnemyIndex = _bossSpawned ? _bossEnemyIndex : -1,
+            BossNavigationRadius = Mathf.Max(0.1f, bossBalance.navigationRadius),
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
-            EnemyMaxHealth = enemyMaxHealth * (1f + currentLevel * 0.15f),
+            EnemyMaxHealth = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemyHealth() : enemyMaxHealth * (1f + currentLevel * 0.15f),
             EnemyRadius = Mathf.Min(enemyRadius*2f, enemyRadius * (0.8f+ currentLevel * 0.0001f)),
-            EnemyMaxSpeed = enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
+            EnemyMaxSpeed = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemySpeed() : enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
             ArenaHalfExtent = arenaHalfExtent,
             SpawnRadiusMin = spawnRadiusMin,
             SpawnRadiusMax = spawnRadiusMax,
@@ -2418,9 +2558,12 @@ public partial class RougeGameManager : MonoBehaviour
             ObstacleRepulsion = obstacleRepulsion,
             ObstacleOrbitStrength = obstacleOrbitStrength,
             KnockbackResist = math.max(0.1f, 1f - currentLevel * 0.0002f),
-            PlayerContactEnabled = IsPlayerContactEnabled(),
+            PlayerContactEnabled = !UsesTowerDefenseSpawners() && IsPlayerContactEnabled(),
             DefeatEnemyOnPlayerContact = _playerContactDefeatEnemyOnContact,
             PlayerContactPadding = playerContactPadding,
+            MainTowerContactRadius = GetMainTowerContactRadius(),
+            MainTowerContactEnabled = HasLivingMainTower(),
+            ExternalSpawning = UsesTowerDefenseSpawners(),
             SkillAreas = _skillAreasDb,
             SkillAreaCount = _skillAreaCount,
             BulletMin = _bulletMin,
@@ -2450,6 +2593,46 @@ public partial class RougeGameManager : MonoBehaviour
                 JobHandle.CombineDependencies(densityHandle, flowDirectionHandle),
                 JobHandle.CombineDependencies(bulletHandle, skillAreaHandle)));
 
+        int scheduledTowerCount = math.min(_towerTargetRequestCount, MaxJobifiedTowerCount);
+        if (scheduledTowerCount > 0)
+        {
+            JobHandle clearEnemyTargetGridHandle = new ClearBulletGridHeadsJob
+            {
+                CellHeads = _enemyTargetCellHeads
+            }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
+
+            JobHandle buildEnemyTargetGridHandle = new BuildEnemyTargetGridJob
+            {
+                Positions = _positionsB,
+                States = _stateB,
+                CellHeads = _enemyTargetCellHeads,
+                CellNext = _enemyTargetCellNext,
+                GridOrigin = _flowGridOrigin,
+                InvCellSize = invCellSize,
+                GridDim = _flowGridDim
+            }.ScheduleBatch(
+                activeEnemyCount,
+                simulationBatchSize,
+                JobHandle.CombineDependencies(handle, clearEnemyTargetGridHandle));
+
+            handle = new FindTowerTargetsJob
+            {
+                Requests = _towerTargetRequests,
+                EnemyPositions = _positionsB,
+                EnemyStates = _stateB,
+                EnemyKinds = _towerDefenseEnemyKinds,
+                FlowDistances = _flowDistanceField,
+                CellHeads = _enemyTargetCellHeads,
+                CellNext = _enemyTargetCellNext,
+                ResultIndices = _towerTargetResultIndices,
+                ResultDistances = _towerTargetResultDistances,
+                GridOrigin = _flowGridOrigin,
+                InvCellSize = invCellSize,
+                GridDim = _flowGridDim
+            }.Schedule(scheduledTowerCount, 1, buildEnemyTargetGridHandle);
+        }
+
+        _towerTargetScheduledCount = scheduledTowerCount;
         _simulationHandle = handle;
         _simulationResultBackBufferReady = true;
     }
@@ -2812,6 +2995,7 @@ public partial class RougeGameManager : MonoBehaviour
         _simulationHandle.Complete();
         FinalizeCompletedSimulationBuffers();
         _simulationHandle = default;
+        DisposeTowerDefense();
         _initialized = false;
         _activeBulletCount = 0;
         _hasActiveSustainedSkill = false;
@@ -2861,7 +3045,9 @@ public partial class RougeGameManager : MonoBehaviour
             if (_poisonZoneVisuals[i] != null) { Destroy(_poisonZoneVisuals[i]); _poisonZoneVisuals[i] = null; }
         for (int i = 0; i < MaxBurnPatches; i++)
             if (_burnPatchVisuals[i] != null) { Destroy(_burnPatchVisuals[i]); _burnPatchVisuals[i] = null; }
-        if (_aoeRingMat) Destroy(_aoeRingMat);
+        if (_aoeRingMat && _ownsAoeRingMaterial) Destroy(_aoeRingMat);
+        if (_ownsAoeRingMaterial) _aoeRingMat = null;
+        _ownsAoeRingMaterial = false;
         if (_shockwaveRingMat) Destroy(_shockwaveRingMat);
         for (int ri = 0; ri < MaxAOERings; ri++)
             if (_aoeRingVisuals[ri] != null) { Destroy(_aoeRingVisuals[ri]); _aoeRingVisuals[ri] = null; }
@@ -2869,6 +3055,17 @@ public partial class RougeGameManager : MonoBehaviour
             if (_shockwaveRingVisuals[si] != null) { Destroy(_shockwaveRingVisuals[si]); _shockwaveRingVisuals[si] = null; }
         for (int mi = 0; mi < MeteorVisualMax; mi++)
             if (_meteorVisuals[mi] != null) { Destroy(_meteorVisuals[mi]); _meteorVisuals[mi] = null; }
+
+        if (_ownsBulletMaterial && _bulletMaterial != null) Destroy(_bulletMaterial);
+        _bulletMaterial = null;
+        _ownsBulletMaterial = false;
+        _bulletMesh = null;
+        if (_ownsEnemyBillboardMaterial && enemyMaterial != null) Destroy(enemyMaterial);
+        enemyMaterial = null;
+        _ownsEnemyBillboardMaterial = false;
+        if (_ownsEnemyBillboardMesh && enemyMesh != null) Destroy(enemyMesh);
+        enemyMesh = null;
+        _ownsEnemyBillboardMesh = false;
 
         ReleaseNative(ref _expPosData);
         ReleaseNative(ref _expStateData);
@@ -2907,6 +3104,19 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _skillCellHeads);
         ReleaseNative(ref _skillCellEntries);
         ReleaseNative(ref _skillCellNext);
+        ReleaseNative(ref _enemyTargetCellHeads);
+        ReleaseNative(ref _enemyTargetCellNext);
+        ReleaseNative(ref _towerTargetRequests);
+        ReleaseNative(ref _towerTargetResultIndices);
+        ReleaseNative(ref _towerTargetResultDistances);
+        ReleaseNative(ref _towerLaserDamage);
+        ReleaseNative(ref _towerLaserDamageFrames);
+        ReleaseNative(ref _towerDefenseEnemyKinds);
+        ReleaseNative(ref _enemyRenderKinds);
+        ReleaseNative(ref _towerDefenseGoldEarned);
+        ReleaseNative(ref _towerDamageByType);
+        ReleaseNative(ref _towerDamageByTypeFrames);
+        ReleaseNative(ref _towerDamageTotalsFixed);
         ReleaseNative(ref _densityFieldFixed);
         ReleaseNative(ref _flowDistanceField);
         ReleaseNative(ref _flowDistanceScratch);
@@ -2920,6 +3130,7 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _bullets);
         ReleaseNative(ref _obstacles);
         ReleaseNative(ref _playerDamageCount);
+        ReleaseNative(ref _mainTowerDamageCount);
         ReleaseNative(ref _enemyKillCount);
         if (_explosionQueue.IsCreated) _explosionQueue.Dispose();
         if (_skillEventQueue.IsCreated) _skillEventQueue.Dispose();
@@ -2928,6 +3139,10 @@ public partial class RougeGameManager : MonoBehaviour
         _positionBuffer = null;
         _stateBuffer?.Release();
         _stateBuffer = null;
+        _velocityRenderBuffer?.Release();
+        _velocityRenderBuffer = null;
+        _enemyKindRenderBuffer?.Release();
+        _enemyKindRenderBuffer = null;
         _argsBuffer?.Release();
         _argsBuffer = null;
     }
@@ -2944,20 +3159,24 @@ public partial class RougeGameManager : MonoBehaviour
     {
         Mesh mesh = new Mesh
         {
-            name = "RougeQuad"
+            name = "RougeSpriteQuad"
         };
         Vector3[] vertices = {
-            new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, -0.5f), new Vector3(0.5f, 0.5f, -0.5f), new Vector3(-0.5f, 0.5f, -0.5f),
-            new Vector3(-0.5f, -0.5f, 0.5f), new Vector3(0.5f, -0.5f, 0.5f), new Vector3(0.5f, 0.5f, 0.5f), new Vector3(-0.5f, 0.5f, 0.5f) 
+            new Vector3(-0.5f, -0.5f, 0f),
+            new Vector3(0.5f, -0.5f, 0f),
+            new Vector3(0.5f, 0.5f, 0f),
+            new Vector3(-0.5f, 0.5f, 0f)
         };
-        int[] triangles = {
-            0, 2, 1, 0, 3, 2,  2, 3, 6, 3, 7, 6,
-            1, 2, 5, 2, 6, 5,  0, 1, 4, 1, 5, 4,
-            0, 4, 3, 4, 7, 3,  5, 6, 4, 6, 7, 4 
-        };
+        int[] triangles = { 0, 2, 1, 0, 3, 2 };
         mesh.vertices = vertices;
         mesh.triangles = triangles;
-        mesh.RecalculateNormals();
+        mesh.uv = new[]
+        {
+            new Vector2(0f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(1f, 1f),
+            new Vector2(0f, 1f)
+        };
         mesh.RecalculateBounds();
         return mesh;
     }
@@ -3464,6 +3683,7 @@ public struct RougeSkillArea
     public float EffectCurseExplosionRadius;
     public float EffectBurnDamage;
     public float EffectBurnDuration;
+    public int SourceTowerTypePlusOne;
 }
 
 public struct RougeEnemyEffectState
@@ -3473,6 +3693,7 @@ public struct RougeEnemyEffectState
     public float PoisonSpreadRadius;
     public float SlowPercent;
     public float SlowTimer;
+    public float SlowStacks;
     public float BurnTimer;
     public float BurnTickTimer;
     public float BurnDamage;

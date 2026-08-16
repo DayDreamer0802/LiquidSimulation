@@ -11,6 +11,7 @@ public class PlayerBase : MonoBehaviour
 
     private Vector3 _velocity;
     private Vector3 _aimDirection = Vector3.forward;
+    private GameObject _spriteVisual;
 
     public Vector3 Velocity => _velocity;
     public Vector3 AimDirection => _aimDirection;
@@ -25,6 +26,35 @@ public class PlayerBase : MonoBehaviour
         {
             aimCamera = RougeCameraFollow.ResolveCamera();
         }
+
+        EnsureSpriteVisual();
+    }
+
+    private void EnsureSpriteVisual()
+    {
+        if (_spriteVisual != null) return;
+
+        Renderer[] existingRenderers = GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < existingRenderers.Length; i++)
+        {
+            if (existingRenderers[i] is MeshRenderer || existingRenderers[i] is SkinnedMeshRenderer)
+            {
+                existingRenderers[i].enabled = false;
+            }
+        }
+
+        _spriteVisual = new GameObject("Player 2D Billboard");
+        _spriteVisual.transform.SetParent(transform, false);
+        _spriteVisual.transform.localPosition = new Vector3(0f, 2.35f, 0f);
+        _spriteVisual.AddComponent<RougeBillboard>();
+        RougeSpriteAssets.CreateRenderer(
+            "Player Sprite",
+            _spriteVisual.transform,
+            RougeSpriteAssets.Load("Sprites/player_hero"),
+            Vector3.zero,
+            1.05f,
+            30,
+            Color.white);
     }
 
     private void Update()
