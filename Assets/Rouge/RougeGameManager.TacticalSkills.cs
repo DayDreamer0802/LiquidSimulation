@@ -12,8 +12,7 @@ public partial class RougeGameManager
         WindmillPoint,
         WindmillDirection,
         BlackHolePoint,
-        OverclockTower,
-        OverclockDirection
+        MissileBarragePoint
     }
 
     private struct ActiveWindmillSkill
@@ -38,6 +37,22 @@ public partial class RougeGameManager
         public float DamageMultiplier;
     }
 
+    private struct ActiveMissileBarrageSkill
+    {
+        public float2 Position;
+        public float Remaining;
+        public float SpawnTimer;
+    }
+
+    private struct ActiveFallingMissile
+    {
+        public Vector3 Start;
+        public Vector3 End;
+        public float Elapsed;
+        public float Duration;
+        public GameObject Visual;
+    }
+
     private TacticalSkillSelectionState _tacticalSkillSelection;
     private float2 _tacticalSkillPoint;
     private bool _tacticalSkillPointValid;
@@ -47,13 +62,15 @@ public partial class RougeGameManager
     private float _windmillSkillCooldown;
     private float _blackHoleSkillCooldown;
     private float _overclockSkillCooldown;
+    private float _missileBarrageSkillCooldown;
     private float _windmillDamageMultiplier;
     private float _blackHoleDamageMultiplier;
-    private RougeDefenseTower _overclockDirectionTower;
     private LineRenderer _tacticalSkillCircle;
     private LineRenderer _tacticalSkillDirection;
     private readonly List<ActiveWindmillSkill> _activeWindmillSkills = new List<ActiveWindmillSkill>();
     private readonly List<ActiveBlackHoleSkill> _activeBlackHoleSkills = new List<ActiveBlackHoleSkill>();
+    private readonly List<ActiveMissileBarrageSkill> _activeMissileBarrageSkills = new List<ActiveMissileBarrageSkill>();
+    private readonly List<ActiveFallingMissile> _activeFallingMissiles = new List<ActiveFallingMissile>();
     private readonly Button[] _tacticalSkillButtons = new Button[4];
     private readonly Text[] _tacticalSkillButtonTexts = new Text[4];
     private Material _tacticalBlackHoleMaterial;
@@ -71,10 +88,10 @@ public partial class RougeGameManager
         _windmillSkillCooldown = 0f;
         _blackHoleSkillCooldown = 0f;
         _overclockSkillCooldown = 0f;
+        _missileBarrageSkillCooldown = 0f;
         _windmillDamageMultiplier = 1f;
         _blackHoleDamageMultiplier = 1f;
         _tacticalSkillSelection = TacticalSkillSelectionState.None;
-        _overclockDirectionTower = null;
         EnsureTacticalSkillIndicators();
         HideTacticalSkillIndicators();
     }
@@ -92,6 +109,12 @@ public partial class RougeGameManager
             if (_activeBlackHoleSkills[i].Visual != null) Destroy(_activeBlackHoleSkills[i].Visual);
         }
         _activeBlackHoleSkills.Clear();
+        _activeMissileBarrageSkills.Clear();
+        for (int i = 0; i < _activeFallingMissiles.Count; i++)
+        {
+            if (_activeFallingMissiles[i].Visual != null) Destroy(_activeFallingMissiles[i].Visual);
+        }
+        _activeFallingMissiles.Clear();
         if (_tacticalSkillCircle != null) Destroy(_tacticalSkillCircle.gameObject);
         if (_tacticalSkillDirection != null) Destroy(_tacticalSkillDirection.gameObject);
         _tacticalSkillCircle = null;
@@ -159,7 +182,13 @@ public partial class RougeGameManager
     {
         if (_towerDefenseGameOver || _overclockSkillCooldown > 0f ||
             _towerDefenseGold < _overclockSkillCost) return;
-        BeginTacticalSkillSelection(TacticalSkillSelectionState.OverclockTower);
+        CastOverclockSkill();
+    }
+
+    private void BeginMissileBarrageSkillSelection()
+    {
+        if (_towerDefenseGameOver || _missileBarrageSkillCooldown > 0f) return;
+        BeginTacticalSkillSelection(TacticalSkillSelectionState.MissileBarragePoint);
     }
 
     private void BeginTacticalSkillSelection(TacticalSkillSelectionState state)
@@ -187,7 +216,6 @@ public partial class RougeGameManager
     {
         _tacticalSkillSelection = TacticalSkillSelectionState.None;
         _tacticalSkillPointValid = false;
-        _overclockDirectionTower = null;
         HideTacticalSkillIndicators();
     }
 
@@ -202,49 +230,13 @@ public partial class RougeGameManager
             return true;
         }
 
-        if (_tacticalSkillSelection == TacticalSkillSelectionState.OverclockTower)
-        {
-            HideTacticalSkillIndicators();
-            if (mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
-            {
-                RougeDefenseTower tower = RaycastDefenseTower();
-                if (tower != null && _overclockSkillCooldown <= 0f && _towerDefenseGold >= _overclockSkillCost)
-                {
-                    if (tower.TowerType == RougeTowerType.PiercingLaser)
-                    {
-                        _overclockDirectionTower = tower;
-                        _tacticalSkillSelection = TacticalSkillSelectionState.OverclockDirection;
-                        RefreshTowerDefenseUi(true);
-                    }
-                    else CastOverclockSkill(tower, default, false);
-                }
-            }
-            return true;
-        }
-
-        if (_tacticalSkillSelection == TacticalSkillSelectionState.OverclockDirection)
-        {
-            if (_overclockDirectionTower == null)
-            {
-                CancelTacticalSkillSelection(false);
-                return true;
-            }
-            bool directionHasPoint = TryGetTacticalMousePoint(out Vector3 directionPoint);
-            Vector3 origin3 = _overclockDirectionTower.transform.position;
-            float2 origin = new float2(origin3.x, origin3.z);
-            float2 direction = new float2(directionPoint.x, directionPoint.z) - origin;
-            bool directionValid = directionHasPoint && math.lengthsq(direction) > 0.25f;
-            direction = math.normalizesafe(direction, new float2(0f, 1f));
-            float length = tacticalSkillBalance.overclock.piercingLaser.range;
-            UpdateOverclockDirectionIndicator(origin3, direction, length, directionValid);
-            if (mouse.leftButton.wasPressedThisFrame && !pointerOverUi && directionValid)
-                CastOverclockSkill(_overclockDirectionTower, direction, true);
-            return true;
-        }
         bool hasPoint = TryGetTacticalMousePoint(out Vector3 worldPoint);
-        float radius = _tacticalSkillSelection == TacticalSkillSelectionState.BlackHolePoint
-            ? tacticalSkillBalance.blackHole.pullRadius
-            : tacticalSkillBalance.windmill.impactRadius;
+        float radius = _tacticalSkillSelection switch
+        {
+            TacticalSkillSelectionState.BlackHolePoint => tacticalSkillBalance.blackHole.pullRadius,
+            TacticalSkillSelectionState.MissileBarragePoint => tacticalSkillBalance.missileBarrage.selectionRadius,
+            _ => tacticalSkillBalance.windmill.impactRadius
+        };
         bool forbidTowerPlace = _tacticalSkillSelection == TacticalSkillSelectionState.WindmillPoint;
         bool valid = hasPoint && IsValidTacticalSkillPoint(new float2(worldPoint.x, worldPoint.z), forbidTowerPlace);
 
@@ -286,6 +278,11 @@ public partial class RougeGameManager
             case TacticalSkillSelectionState.BlackHolePoint:
                 if (!valid || _blackHoleSkillCooldown > 0f || _towerDefenseGold < _blackHoleSkillCost) return true;
                 CastBlackHoleSkill(new float2(worldPoint.x, worldPoint.z));
+                break;
+
+            case TacticalSkillSelectionState.MissileBarragePoint:
+                if (!valid || _missileBarrageSkillCooldown > 0f) return true;
+                CastMissileBarrageSkill(new float2(worldPoint.x, worldPoint.z));
                 break;
         }
         return true;
@@ -385,32 +382,41 @@ public partial class RougeGameManager
         RefreshTowerDefenseUi(true);
     }
 
-    private void CastOverclockSkill(RougeDefenseTower tower, float2 direction, bool hasDirection)
+    private void CastOverclockSkill()
     {
-        if (tower == null || _overclockSkillCooldown > 0f || _towerDefenseGold < _overclockSkillCost) return;
-        if (!ActivateTowerSpecial(tower, direction, hasDirection)) return;
+        if (_overclockSkillCooldown > 0f || _towerDefenseGold < _overclockSkillCost || _defenseTowers.Count == 0) return;
+        RougeOverclockTacticalSkillConfig config = tacticalSkillBalance.overclock;
+        int affected = 0;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null) continue;
+            tower.ActivateOverclock(config.duration, config.attackSpeedMultiplier, config.damageMultiplier);
+            affected++;
+        }
+        if (affected == 0) return;
         _towerDefenseGold -= _overclockSkillCost;
         _overclockSkillCost = GetNextTacticalSkillCost(_overclockSkillCost,
             tacticalSkillBalance.overclock.costMultiplier);
         _overclockSkillCooldown = tacticalSkillBalance.overclock.cooldown;
-        ClearTacticalSkillSelection();
-        SetTowerPlacementMode(false);
         RefreshTowerDefenseUi(true);
     }
 
-    private void UpdateOverclockDirectionIndicator(Vector3 origin, float2 direction, float length, bool valid)
+    private void CastMissileBarrageSkill(float2 position)
     {
-        if (_tacticalSkillCircle != null) _tacticalSkillCircle.enabled = false;
-        if (_tacticalSkillDirection == null) return;
-        Color color = valid ? new Color(0.72f, 0.25f, 1f, 1f) : new Color(1f, 0.15f, 0.12f, 1f);
-        _tacticalSkillDirection.enabled = true;
-        _tacticalSkillDirection.positionCount = 2;
-        _tacticalSkillDirection.widthMultiplier = tacticalSkillBalance.overclock.piercingLaser.width;
-        _tacticalSkillDirection.startColor = color;
-        _tacticalSkillDirection.endColor = color;
-        Vector3 start = new Vector3(origin.x, renderHeight + 0.35f, origin.z);
-        _tacticalSkillDirection.SetPosition(0, start);
-        _tacticalSkillDirection.SetPosition(1, start + new Vector3(direction.x, 0f, direction.y) * length);
+        RougeMissileBarrageTacticalSkillConfig config = tacticalSkillBalance.missileBarrage;
+        _missileBarrageSkillCooldown = config.cooldown;
+        _activeMissileBarrageSkills.Add(new ActiveMissileBarrageSkill
+        {
+            Position = position,
+            Remaining = config.duration,
+            SpawnTimer = 0f
+        });
+        SpawnAOERing(new Vector3(position.x, renderHeight + 0.05f, position.y), config.selectionRadius,
+            0.45f, new Color(1f, 0.28f, 0.08f, 1f));
+        ClearTacticalSkillSelection();
+        SetTowerPlacementMode(false);
+        RefreshTowerDefenseUi(true);
     }
 
     private float GetNextTacticalDamageMultiplier()
@@ -429,8 +435,11 @@ public partial class RougeGameManager
         _windmillSkillCooldown = Mathf.Max(0f, _windmillSkillCooldown - dt);
         _blackHoleSkillCooldown = Mathf.Max(0f, _blackHoleSkillCooldown - dt);
         _overclockSkillCooldown = Mathf.Max(0f, _overclockSkillCooldown - dt);
+        _missileBarrageSkillCooldown = Mathf.Max(0f, _missileBarrageSkillCooldown - dt);
         UpdateActiveWindmillSkills(dt);
         UpdateActiveBlackHoleSkills(dt);
+        UpdateActiveMissileBarrageSkills(dt);
+        UpdateFallingMissiles(dt);
     }
 
     private void UpdateActiveWindmillSkills(float dt)
@@ -540,6 +549,87 @@ public partial class RougeGameManager
         }
     }
 
+    private void UpdateActiveMissileBarrageSkills(float dt)
+    {
+        RougeMissileBarrageTacticalSkillConfig config = tacticalSkillBalance.missileBarrage;
+        float minimumInterval = Mathf.Max(0.01f, Mathf.Min(config.minimumInterval, config.maximumInterval));
+        float maximumInterval = Mathf.Max(minimumInterval, Mathf.Max(config.minimumInterval, config.maximumInterval));
+        for (int i = _activeMissileBarrageSkills.Count - 1; i >= 0; i--)
+        {
+            ActiveMissileBarrageSkill skill = _activeMissileBarrageSkills[i];
+            skill.Remaining -= dt;
+            skill.SpawnTimer -= dt;
+            int catchUp = 0;
+            while (skill.SpawnTimer <= 0f && skill.Remaining > 0f && catchUp < 4)
+            {
+                Vector2 random = UnityEngine.Random.insideUnitCircle * config.selectionRadius;
+                Vector3 end = new Vector3(skill.Position.x + random.x, renderHeight + 0.12f,
+                    skill.Position.y + random.y);
+                float2 clamped = new float2(
+                    Mathf.Clamp(end.x, -arenaHalfExtent, arenaHalfExtent),
+                    Mathf.Clamp(end.z, -arenaHalfExtent, arenaHalfExtent));
+                end.x = clamped.x;
+                end.z = clamped.y;
+                Vector2 drift = UnityEngine.Random.insideUnitCircle * 4f;
+                Vector3 start = end + new Vector3(drift.x, Mathf.Max(1f, config.fallHeight), drift.y);
+                _activeFallingMissiles.Add(new ActiveFallingMissile
+                {
+                    Start = start,
+                    End = end,
+                    Elapsed = 0f,
+                    Duration = Mathf.Max(0.05f, config.fallDuration),
+                    Visual = CreateFallingMissileVisual(start)
+                });
+                skill.SpawnTimer += UnityEngine.Random.Range(minimumInterval, maximumInterval);
+                catchUp++;
+            }
+            if (skill.Remaining <= 0f) _activeMissileBarrageSkills.RemoveAt(i);
+            else _activeMissileBarrageSkills[i] = skill;
+        }
+    }
+
+    private void UpdateFallingMissiles(float dt)
+    {
+        RougeMissileBarrageTacticalSkillConfig config = tacticalSkillBalance.missileBarrage;
+        for (int i = _activeFallingMissiles.Count - 1; i >= 0; i--)
+        {
+            ActiveFallingMissile missile = _activeFallingMissiles[i];
+            missile.Elapsed += dt;
+            float progress = Mathf.Clamp01(missile.Elapsed / Mathf.Max(0.05f, missile.Duration));
+            float eased = progress * progress;
+            if (missile.Visual != null)
+            {
+                missile.Visual.transform.position = Vector3.LerpUnclamped(missile.Start, missile.End, eased);
+                float pulse = 0.85f + Mathf.Sin(Time.time * 28f + i) * 0.15f;
+                missile.Visual.transform.localScale = Vector3.one * pulse;
+            }
+            if (progress < 1f)
+            {
+                _activeFallingMissiles[i] = missile;
+                continue;
+            }
+
+            float2 impact = new float2(missile.End.x, missile.End.z);
+            AddTacticalDamagePulse(impact, config.impactRadius, config.impactDamage, false, 0f);
+            SpawnExplosionVFX(missile.End + Vector3.up * 0.35f, Mathf.Max(1.5f, config.impactRadius * 0.7f));
+            SpawnAOERing(missile.End, config.impactRadius, 0.28f, new Color(1f, 0.32f, 0.06f, 1f));
+            if (missile.Visual != null) Destroy(missile.Visual);
+            _activeFallingMissiles.RemoveAt(i);
+        }
+    }
+
+    private GameObject CreateFallingMissileVisual(Vector3 position)
+    {
+        GameObject root = new GameObject("Tactical Falling Missile");
+        root.transform.position = position;
+        root.AddComponent<RougeBillboard>();
+        SpriteRenderer missile = RougeSpriteAssets.CreateRenderer("Missile Sprite", root.transform,
+            RougeSpriteAssets.Load("Sprites/projectile_energy"), Vector3.zero, 0.7f, 90,
+            new Color(1f, 0.38f, 0.06f, 1f));
+        missile.transform.localScale = new Vector3(0.55f, 1.7f, 1f);
+        return root;
+    }
+
     private void AddTacticalDamagePulse(float2 position, float radius, float damage, bool launchKilled, float launchHeight)
     {
         TryAddSkillArea(new RougeSkillArea
@@ -642,7 +732,7 @@ public partial class RougeGameManager
         CreateTacticalSkillButton(panel.transform, 0, -292.5f, new Color(0.08f, 0.55f, 0.78f, 1f), BeginWindmillSkillSelection);
         CreateTacticalSkillButton(panel.transform, 1, -97.5f, new Color(0.42f, 0.08f, 0.68f, 1f), BeginBlackHoleSkillSelection);
         CreateTacticalSkillButton(panel.transform, 2, 97.5f, new Color(0.95f, 0.48f, 0.08f, 1f), BeginOverclockSkillSelection);
-        CreateTacticalSkillButton(panel.transform, 3, 292.5f, new Color(0.14f, 0.17f, 0.22f, 1f), null);
+        CreateTacticalSkillButton(panel.transform, 3, 292.5f, new Color(0.72f, 0.16f, 0.06f, 1f), BeginMissileBarrageSkillSelection);
     }
 
     private void CreateTacticalSkillButton(Transform parent, int index, float x, Color color, UnityEngine.Events.UnityAction action)
@@ -682,16 +772,19 @@ public partial class RougeGameManager
         {
             _tacticalSkillButtonTexts[2].text = _overclockSkillCooldown > 0f
                 ? $"OVERCLOCK\nCD {_overclockSkillCooldown:0.0}s"
-                : $"OVERCLOCK\n${_overclockSkillCost}  SELECT TOWER";
+                : $"OVERCLOCK\n${_overclockSkillCost}  ALL TOWERS";
             bool available = _overclockSkillCooldown <= 0f && _towerDefenseGold >= _overclockSkillCost &&
-                _tacticalSkillSelection != TacticalSkillSelectionState.OverclockTower &&
-                _tacticalSkillSelection != TacticalSkillSelectionState.OverclockDirection;
+                _defenseTowers.Count > 0;
             SetPurchaseButtonAvailability(_tacticalSkillButtons[2], _tacticalSkillButtonTexts[2], available);
         }
         if (_tacticalSkillButtonTexts[3] != null)
         {
-            _tacticalSkillButtonTexts[3].text = "LOCKED\nSKILL IV";
-            SetPurchaseButtonAvailability(_tacticalSkillButtons[3], _tacticalSkillButtonTexts[3], false);
+            _tacticalSkillButtonTexts[3].text = _missileBarrageSkillCooldown > 0f
+                ? $"MISSILE RAIN\nCD {_missileBarrageSkillCooldown:0.0}s"
+                : "MISSILE RAIN\nAREA R50  10s";
+            bool available = _missileBarrageSkillCooldown <= 0f &&
+                _tacticalSkillSelection != TacticalSkillSelectionState.MissileBarragePoint;
+            SetPurchaseButtonAvailability(_tacticalSkillButtons[3], _tacticalSkillButtonTexts[3], available);
         }
     }
 
@@ -702,8 +795,7 @@ public partial class RougeGameManager
             TacticalSkillSelectionState.WindmillPoint => "WINDMILL 1/2  |  CHOOSE IMPACT POINT  |  RED AREA IS INVALID",
             TacticalSkillSelectionState.WindmillDirection => "WINDMILL 2/2  |  CHOOSE TRAVEL DIRECTION",
             TacticalSkillSelectionState.BlackHolePoint => "BLACK HOLE  |  CHOOSE CENTER POINT",
-            TacticalSkillSelectionState.OverclockTower => "OVERCLOCK  |  CLICK A TOWER TO ACTIVATE ITS SPECIAL SKILL",
-            TacticalSkillSelectionState.OverclockDirection => "OVERCLOCK  |  CHOOSE SUPER PIERCING CANNON DIRECTION",
+            TacticalSkillSelectionState.MissileBarragePoint => "MISSILE RAIN  |  CHOOSE AREA CENTER  |  RADIUS 50",
             _ => string.Empty
         };
     }

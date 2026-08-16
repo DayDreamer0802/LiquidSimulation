@@ -3,6 +3,10 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class RougeDefenseTower : MonoBehaviour
 {
+  
+
+
+
     [SerializeField] private RougeTowerType towerType;
     [SerializeField, Range(1, TowerDefenseVisuals.MaxTowerLevel)] private int level = 1;
     [SerializeField] private float placementRadius;
@@ -25,7 +29,14 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private GameObject laserBeamObject;
     private Mesh laserBeamMesh;
     private GameObject bossInterferenceMarker;
-    private float attackSpeedMultiplier = 1f;
+    private float bossAttackSpeedMultiplier = 1f;
+    private float overclockAttackSpeedMultiplier = 1f;
+    private float overclockDamageMultiplier = 1f;
+    private float overclockRemaining;
+    private ParticleSystem overclockParticles;
+    private Material overclockParticleMaterial;
+    private Transform orbitSphereOrb;
+    private Vector3 orbitSphereOrbRestPosition;
     private Vector3 rotatingHeadRestPosition;
     private float recoilTimer;
     private const float CannonRecoilDuration = 0.16f;
@@ -36,7 +47,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public int Level => level;
     public int MaxLevel => TowerDefenseVisuals.MaxTowerLevel;
     public bool CanUpgrade => level < MaxLevel;
-    public float Damage => Stats.Damage;
+    public float Damage => Stats.Damage * overclockDamageMultiplier;
     public float AttackInterval => Stats.AttackInterval;
     public float AttackRange => Stats.AttackRadius;
     public int TargetCount => Stats.TargetCount;
@@ -48,12 +59,14 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float OrbitSphereRadius => Stats.OrbitSphereRadius;
     public float OrbitRadialSpeed => Stats.OrbitRadialSpeed;
     public float OrbitAngularSpeed => Stats.OrbitAngularSpeed;
+    public float OrbitOuterHoldDuration => Stats.OrbitOuterHoldDuration;
     public float PlacementRadius => placementRadius;
     public int PurchaseCost => purchaseCost;
     public int InvestedGold => investedGold;
     public bool IsTargetedDamage => isTargetedDamage;
     public RougeTowerTargetPriority TargetPriority => targetPriority;
-    public float AttackSpeedMultiplier => attackSpeedMultiplier;
+    public float AttackSpeedMultiplier => bossAttackSpeedMultiplier * overclockAttackSpeedMultiplier;
+    public bool IsOverclocked => overclockRemaining > 0f;
     // Lv1 purchase is 1x. Upgrades to Lv2..Lv5 cost 2x, 4x, 8x and 16x.
     public int UpgradeCost => CanUpgrade ? purchaseCost * (1 << level) : 0;
     public string DisplayName => TowerDefenseVisuals.GetTowerName(towerType);
@@ -190,6 +203,13 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void UpdatePresentation(float dt)
     {
+        UpdateOverclock(dt);
+        if (orbitSphereOrb != null)
+        {
+            float bob = Mathf.Sin(Time.time * 2.4f + GetInstanceID() * 0.017f) * 0.12f;
+            orbitSphereOrb.localPosition = orbitSphereOrbRestPosition + Vector3.up * bob;
+        }
+
         if (rotatingHead == null) return;
         recoilTimer = Mathf.Max(0f, recoilTimer - Mathf.Max(0f, dt));
         if (recoilTimer <= 0f)
@@ -204,9 +224,16 @@ public sealed class RougeDefenseTower : MonoBehaviour
         rotatingHead.localPosition = rotatingHeadRestPosition - barrelDirection * recoil;
     }
 
+    internal Vector3 GetCrystalLaserOrigin()
+    {
+        return orbitSphereOrb != null
+            ? orbitSphereOrb.position
+            : transform.position + Vector3.up * 3f;
+    }
+
     internal void SetBossInterference(bool active, float speedMultiplier)
     {
-        attackSpeedMultiplier = active ? Mathf.Clamp(speedMultiplier, 0.05f, 1f) : 1f;
+        bossAttackSpeedMultiplier = active ? Mathf.Clamp(speedMultiplier, 0.05f, 1f) : 1f;
         if (!active)
         {
             if (bossInterferenceMarker != null) bossInterferenceMarker.SetActive(false);
@@ -228,6 +255,78 @@ public sealed class RougeDefenseTower : MonoBehaviour
         bossInterferenceMarker.transform.localScale = Vector3.one * pulse;
     }
 
+    internal void ActivateOverclock(float duration, float attackSpeed, float damage)
+    {
+        overclockRemaining = Mathf.Max(overclockRemaining, Mathf.Max(0f, duration));
+        overclockAttackSpeedMultiplier = Mathf.Max(1f, attackSpeed);
+        overclockDamageMultiplier = Mathf.Max(1f, damage);
+        EnsureOverclockParticles();
+        if (overclockParticles != null && !overclockParticles.isPlaying) overclockParticles.Play(true);
+    }
+
+    private void UpdateOverclock(float dt)
+    {
+        if (overclockRemaining <= 0f) return;
+        overclockRemaining = Mathf.Max(0f, overclockRemaining - Mathf.Max(0f, dt));
+        if (overclockRemaining > 0f) return;
+        overclockAttackSpeedMultiplier = 1f;
+        overclockDamageMultiplier = 1f;
+        if (overclockParticles != null)
+            overclockParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+    }
+
+    private void EnsureOverclockParticles()
+    {
+        if (overclockParticles != null) return;
+        GameObject effect = new GameObject("Overclock Particles");
+        effect.transform.SetParent(transform, false);
+        effect.transform.localPosition = new Vector3(0f, 2.8f, 0f);
+        overclockParticles = effect.AddComponent<ParticleSystem>();
+
+        ParticleSystem.MainModule main = overclockParticles.main;
+        main.loop = true;
+        main.playOnAwake = false;
+        main.simulationSpace = ParticleSystemSimulationSpace.Local;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.45f, 0.85f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 1.5f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.12f, 0.28f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(0.15f, 0.8f, 1f, 0.95f), new Color(1f, 0.58f, 0.08f, 0.95f));
+        main.maxParticles = 48;
+
+        ParticleSystem.EmissionModule emission = overclockParticles.emission;
+        emission.rateOverTime = 18f;
+        ParticleSystem.ShapeModule shape = overclockParticles.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 1.55f;
+        shape.radiusThickness = 0.08f;
+
+        ParticleSystem.ColorOverLifetimeModule colorOverLifetime = overclockParticles.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        Gradient fade = new Gradient();
+        fade.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(0.35f, 0.9f, 1f), 0f),
+                new GradientColorKey(new Color(1f, 0.5f, 0.08f), 1f)
+            },
+            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.18f), new GradientAlphaKey(0f, 1f) });
+        colorOverLifetime.color = fade;
+
+        ParticleSystemRenderer particleRenderer = effect.GetComponent<ParticleSystemRenderer>();
+        particleRenderer.renderMode = ParticleSystemRenderMode.Billboard;
+        particleRenderer.sortingOrder = 70;
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Particles/Standard Unlit");
+        if (shader != null)
+        {
+            overclockParticleMaterial = new Material(shader) { name = "Tower Overclock Particle Material" };
+            if (overclockParticleMaterial.HasProperty("_BaseColor"))
+                overclockParticleMaterial.SetColor("_BaseColor", Color.white);
+            particleRenderer.sharedMaterial = overclockParticleMaterial;
+        }
+    }
+
     private void OnValidate()
     {
         level = Mathf.Clamp(level, 1, TowerDefenseVisuals.MaxTowerLevel);
@@ -240,9 +339,15 @@ public sealed class RougeDefenseTower : MonoBehaviour
         TowerDefenseVisuals.DestroyChildren(transform);
         rotatingHead = null;
         rotatingHeadRestPosition = Vector3.zero;
+        orbitSphereOrb = null;
+        orbitSphereOrbRestPosition = Vector3.zero;
         recoilTimer = 0f;
         bossInterferenceMarker = null;
-        attackSpeedMultiplier = 1f;
+        bossAttackSpeedMultiplier = 1f;
+        overclockAttackSpeedMultiplier = 1f;
+        overclockDamageMultiplier = 1f;
+        overclockRemaining = 0f;
+        overclockParticles = null;
 
         GameObject visualRoot = new GameObject("Tower 2D Billboard");
         visualRoot.transform.SetParent(transform, false);
@@ -273,9 +378,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
                     new Color(1f, 0.55f, 1f, 1f));
                 break;
             case RougeTowerType.OrbitSphere:
-                RougeSpriteAssets.CreateRenderer("Orbit Sphere Tower Sprite", visualRoot.transform,
-                    RougeSpriteAssets.Load("Sprites/tower_ice"), Vector3.zero, 1.12f, 10,
-                    new Color(0.48f, 0.66f, 1f, 1f));
+                BuildOrbitSphereSpriteVisual(visualRoot.transform);
                 break;
         }
 
@@ -297,7 +400,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
         laserBeamObject.transform.SetParent(transform, false);
         MeshFilter filter = laserBeamObject.AddComponent<MeshFilter>();
         MeshRenderer renderer = laserBeamObject.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = TowerDefenseVisuals.GetLaserConnectionMaterial();
+        renderer.sharedMaterial = towerType == RougeTowerType.OrbitSphere
+            ? TowerDefenseVisuals.GetCrystalLaserMaterial()
+            : TowerDefenseVisuals.GetLaserConnectionMaterial();
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         laserBeamMesh = new Mesh { name = "Tower Thin Laser Lines" };
@@ -320,6 +425,21 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private void OnDestroy()
     {
         ReleaseLaserBeamMesh();
+        if (overclockParticleMaterial != null)
+        {
+            if (Application.isPlaying) Destroy(overclockParticleMaterial);
+            else DestroyImmediate(overclockParticleMaterial);
+        }
+    }
+
+    private void BuildOrbitSphereSpriteVisual(Transform visualRoot)
+    {
+        RougeSpriteAssets.CreateRenderer("Crystal Tower Base", visualRoot,
+            RougeSpriteAssets.Load("Sprites/tower_orbit_base"), new Vector3(0f, -0.18f, 0f), 0.48f, 10, Color.white);
+        SpriteRenderer crystal = RougeSpriteAssets.CreateRenderer("Floating Crystal", visualRoot,
+            RougeSpriteAssets.Load("Sprites/tower_crystal"), new Vector3(0f, 1.02f, 0.02f), 0.52f, 11, Color.white);
+        orbitSphereOrb = crystal.transform;
+        orbitSphereOrbRestPosition = orbitSphereOrb.localPosition;
     }
 
     private void BuildDirectionalSpriteVisual(Transform visualRoot, string topPath, float topScale, Color topColor)

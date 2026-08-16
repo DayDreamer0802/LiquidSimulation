@@ -1243,21 +1243,22 @@ public partial class RougeGameManager : MonoBehaviour
             {
                 _laserMat = new Material(laserShader);
                 _ownsLaserMat = true;
-                _laserMat.SetColor("_BeamColor", new Color(0.095f, 0.78f, 1f, 1f));
-                _laserMat.SetColor("_EdgeColor", new Color(0.02f, 0.21f, 0.95f, 1f));
-                _laserMat.SetFloat("_CoreRadius", 0.145f);
-                _laserMat.SetFloat("_EdgeSoftness", 0.215f);
-                _laserMat.SetFloat("_PulseSpeed", 7.2f);
-                _laserMat.SetFloat("_ScrollSpeed", 18.5f);
-                _laserMat.SetFloat("_NoiseStrength", 0.22f);
-                _laserMat.SetFloat("_HelixTightness", 34f);
-                _laserMat.SetFloat("_HelixWidth", 0.075f);
-                _laserMat.SetFloat("_HelixIntensity", 1.9f);
-                _laserMat.SetFloat("_HelixSpinSpeed", 18f);
-                _laserMat.SetFloat("_HelixSecondaryOffset", 1.5708f);
-                _laserMat.SetFloat("_HelixCutout", 0.86f);
+                _laserMat.SetColor("_CoreColor", new Color(2.8f, 3.2f, 3.5f, 1f));
+                _laserMat.SetColor("_BeamColor", new Color(0.08f, 1.25f, 2.8f, 1f));
+                _laserMat.SetColor("_GlowColor", new Color(0.12f, 0.25f, 2.2f, 1f));
+                _laserMat.SetFloat("_CoreRadius", 0.18f);
+                _laserMat.SetFloat("_BeamRadius", 0.52f);
+                _laserMat.SetFloat("_GlowSoftness", 0.28f);
+                _laserMat.SetFloat("_FlowScale", 28f);
+                _laserMat.SetFloat("_FlowSpeed", 18f);
+                _laserMat.SetFloat("_RibbonScale", 11f);
+                _laserMat.SetFloat("_RibbonSpeed", 9f);
+                _laserMat.SetFloat("_RibbonIntensity", 1.45f);
+                _laserMat.SetFloat("_NoiseStrength", 0.24f);
+                _laserMat.SetFloat("_PulseSpeed", 6f);
                 _laserMat.SetFloat("_FresnelPower", 2.2f);
-                _laserMat.SetFloat("_FresnelStrength", 1.45f);
+                _laserMat.SetFloat("_FresnelStrength", 1.25f);
+                _laserMat.SetFloat("_EndFade", 0.08f);
                 _laserMat.SetFloat("_Alpha", 1f);
             }
             else

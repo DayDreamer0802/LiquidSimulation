@@ -25,21 +25,23 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Alpha: 0.695
-    - _CoreRadius: 0.22
-    - _EdgeSoftness: 0.261
-    - _FresnelPower: 1.92
-    - _FresnelStrength: 0.59
-    - _HelixIntensity: 1.24
-    - _HelixSecondaryOffset: 1.29
-    - _HelixSpinSpeed: 14.1
-    - _HelixTightness: 48.8
-    - _HelixWidth: 0.223
-    - _NoiseStrength: 0.531
-    - _PulseSpeed: 2.4
-    - _ScrollSpeed: 24
+    - _Alpha: 1
+    - _BeamRadius: 0.52
+    - _CoreRadius: 0.18
+    - _EndFade: 0.08
+    - _FlowScale: 28
+    - _FlowSpeed: 18
+    - _FresnelPower: 2.2
+    - _FresnelStrength: 1.25
+    - _GlowSoftness: 0.28
+    - _NoiseStrength: 0.24
+    - _PulseSpeed: 6
+    - _RibbonIntensity: 1.45
+    - _RibbonScale: 11
+    - _RibbonSpeed: 9
     m_Colors:
-    - _BeamColor: {r: 0.4716978, g: 0.74041027, b: 2, a: 1}
-    - _EdgeColor: {r: 0.04504699, g: 0.20546795, b: 1.1486983, a: 1}
+    - _BeamColor: {r: 0.08, g: 1.25, b: 2.8, a: 1}
+    - _CoreColor: {r: 2.8, g: 3.2, b: 3.5, a: 1}
+    - _GlowColor: {r: 0.12, g: 0.25, b: 2.2, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

@@ -482,7 +482,8 @@
                         "tickInterval": 0.10000000149011612,
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 20.0,
-                        "orbitAngularSpeed": 360.0
+                        "orbitAngularSpeed": 360.0,
+                        "orbitOuterHoldDuration": 1.5
                     },
                     {
                         "damage": 35.0,
@@ -496,7 +497,8 @@
                         "tickInterval": 0.10000000149011612,
                         "orbitSphereRadius": 1.2999999523162842,
                         "orbitRadialSpeed": 20.0,
-                        "orbitAngularSpeed": 390.0
+                        "orbitAngularSpeed": 390.0,
+                        "orbitOuterHoldDuration": 2.0
                     },
                     {
                         "damage": 40.0,
@@ -510,7 +512,8 @@
                         "tickInterval": 0.10000000149011612,
                         "orbitSphereRadius": 1.399999976158142,
                         "orbitRadialSpeed": 20.0,
-                        "orbitAngularSpeed": 420.0
+                        "orbitAngularSpeed": 420.0,
+                        "orbitOuterHoldDuration": 2.5
                     },
                     {
                         "damage": 45.0,
@@ -524,7 +527,8 @@
                         "tickInterval": 0.10000000149011612,
                         "orbitSphereRadius": 1.5,
                         "orbitRadialSpeed": 20.0,
-                        "orbitAngularSpeed": 450.0
+                        "orbitAngularSpeed": 450.0,
+                        "orbitOuterHoldDuration": 3.0
                     },
                     {
                         "damage": 60.0,
@@ -538,7 +542,8 @@
                         "tickInterval": 0.10000000149011612,
                         "orbitSphereRadius": 1.7000000476837159,
                         "orbitRadialSpeed": 20.0,
-                        "orbitAngularSpeed": 720.0
+                        "orbitAngularSpeed": 720.0,
+                        "orbitOuterHoldDuration": 4.0
                     }
                 ]
             }
@@ -635,54 +640,20 @@
             "initialCost": 2500,
             "costMultiplier": 1.5,
             "cooldown": 15.0,
-            "ice": {
-                "radius": 30.0,
-                "freezeDuration": 5.0
-            },
-            "machineGun": {
-                "duration": 5.0,
-                "interval": 0.05,
-                "positionsPerVolley": 20,
-                "radius": 30.0,
-                "impactRadius": 2.0,
-                "damage": 50.0,
-                "projectileTravelDuration": 0.3,
-                "projectileArcHeight": 4.0
-            },
-            "cannon": {
-                "explosionRadius": 50.0,
-                "damage": 3000.0,
-                "projectileScale": 5.0,
-                "flightDuration": 0.8,
-                "arcHeight": 12.0
-            },
-            "flame": {
-                "duration": 5.0,
-                "interval": 0.25,
-                "radius": 30.0,
-                "damage": 50.0
-            },
-            "laser": {
-                "duration": 3.0,
-                "interval": 0.25,
-                "sweepDuration": 0.5,
-                "range": 30.0,
-                "width": 3.0,
-                "damage": 300.0
-            },
-            "piercingLaser": {
-                "range": 100.0,
-                "width": 10.0,
-                "damage": 2000.0,
-                "visualDuration": 0.6
-            },
-            "orbitSphere": {
-                "sphereCount": 8,
-                "statMultiplier": 2.0,
-                "outerHoldDuration": 4.0,
-                "activeExplosionRadiusMultiplier": 4.0,
-                "activeExplosionDamage": 100.0
-            }
+            "duration": 7.0,
+            "attackSpeedMultiplier": 1.3,
+            "damageMultiplier": 1.3
+        },
+        "missileBarrage": {
+            "cooldown": 25.0,
+            "selectionRadius": 50.0,
+            "duration": 10.0,
+            "minimumInterval": 0.3,
+            "maximumInterval": 0.4,
+            "impactRadius": 5.0,
+            "impactDamage": 100.0,
+            "fallHeight": 35.0,
+            "fallDuration": 0.45
         }
     }
 }

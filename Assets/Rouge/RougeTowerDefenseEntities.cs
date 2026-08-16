@@ -25,11 +25,13 @@ public readonly struct RougeTowerStats
     public readonly float OrbitSphereRadius;
     public readonly float OrbitRadialSpeed;
     public readonly float OrbitAngularSpeed;
+    public readonly float OrbitOuterHoldDuration;
 
     public RougeTowerStats(float damage, float attackInterval, float attackRadius,
         int targetCount = 1, int projectileCount = 1, float aoeRadius = 0f,
         float effectPercent = 0f, float effectDuration = 0f, float tickInterval = 0f,
-        float orbitSphereRadius = 0f, float orbitRadialSpeed = 0f, float orbitAngularSpeed = 0f)
+        float orbitSphereRadius = 0f, float orbitRadialSpeed = 0f, float orbitAngularSpeed = 0f,
+        float orbitOuterHoldDuration = 0f)
     {
         Damage = damage;
         AttackInterval = attackInterval;
@@ -43,6 +45,7 @@ public readonly struct RougeTowerStats
         OrbitSphereRadius = orbitSphereRadius;
         OrbitRadialSpeed = orbitRadialSpeed;
         OrbitAngularSpeed = orbitAngularSpeed;
+        OrbitOuterHoldDuration = orbitOuterHoldDuration;
     }
 }
 
@@ -52,6 +55,7 @@ internal static class TowerDefenseVisuals
     public const int TowerTypeCount = 7;
     private static Material s_lineMaterial;
     private static Material s_laserConnectionMaterial;
+    private static Material s_crystalLaserMaterial;
     private static RougeTowerBalanceConfig s_runtimeBalance;
 
     public static void SetRuntimeBalance(RougeTowerBalanceConfig balance)
@@ -70,7 +74,7 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Flame: return "FLAME TOWER";
             case RougeTowerType.Laser: return "LASER TOWER";
             case RougeTowerType.PiercingLaser: return "PIERCING LASER";
-            default: return "ORBIT SPHERE";
+            default: return "CRYSTAL TOWER";
         }
     }
 
@@ -163,7 +167,8 @@ internal static class TowerDefenseVisuals
                     tickInterval: Pick(i, 0.3f, 0.28f, 0.25f, 0.22f, 0.2f),
                     orbitSphereRadius: Pick(i, 1.2f, 1.3f, 1.4f, 1.5f, 1.7f),
                     orbitRadialSpeed: Pick(i, 8f, 9f, 10f, 11f, 12f),
-                    orbitAngularSpeed: Pick(i, 180f, 210f, 240f, 270f, 320f));
+                    orbitAngularSpeed: Pick(i, 180f, 210f, 240f, 270f, 320f),
+                    orbitOuterHoldDuration: Pick(i, 1.5f, 2f, 2.5f, 3f, 4f));
         }
     }
 
@@ -254,6 +259,24 @@ internal static class TowerDefenseVisuals
             s_laserConnectionMaterial.SetColor("_BaseColor", s_laserConnectionMaterial.color);
         }
         return s_laserConnectionMaterial;
+    }
+
+    public static Material GetCrystalLaserMaterial()
+    {
+        if (s_crystalLaserMaterial != null) return s_crystalLaserMaterial;
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) shader = Shader.Find("Unlit/Color");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        s_crystalLaserMaterial = new Material(shader)
+        {
+            name = "Crystal Tower Thin Blue Laser Material",
+            color = new Color(0.08f, 0.58f, 1f, 1f),
+            renderQueue = 3000,
+            enableInstancing = true
+        };
+        if (s_crystalLaserMaterial.HasProperty("_BaseColor"))
+            s_crystalLaserMaterial.SetColor("_BaseColor", s_crystalLaserMaterial.color);
+        return s_crystalLaserMaterial;
     }
 
     public static void UpdateCircle(LineRenderer line, Vector3 center, float radius, Color color, bool visible)

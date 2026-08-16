@@ -59,7 +59,32 @@ public static class RougeSpriteAssets
 [DefaultExecutionOrder(1000)]
 public sealed class RougeBillboard : MonoBehaviour
 {
+
+//射击时候子弹从哪里发出的trans ,因为这个跟动画有关所以放在这里
+        [SerializeField] private Transform shootPoint;
+    //旋转攻击方向的content
     [SerializeField] private Transform rotatingContent;
+    //上下浮动的trans
+    [SerializeField] private Transform floatingContent;
+    [SerializeField] private float floatingTargetY =0.22f; //浮动到目标的y值,默认一定是0->y->0->-y->0反复
+     [SerializeField] private float flaotingTargetTime = 2f;//浮动一次来回耗时(sin360),浮动是sin函数
+    //发射子弹时候后坐力的content,如果这个不为null,那么需要在后座之后才会发射子弹
+     [SerializeField] private Transform shootMoveContent;
+
+    [SerializeField]  private float shootMoveY = -0.22f; //发射子弹后座位移Y
+      [SerializeField] private float shootMoveYTime1 = 0.1f; //后坐用时
+
+     [SerializeField] private float shootMoveYTime2 = 0.1f; //还原用时
+      //发射子弹时候缩放的content 如果这个不为null,那么需要在y缩小到最小之后才会发射子弹(也就是step2时候)
+      [SerializeField] private Transform shootScaleContent;
+      [SerializeField] private Vector2 shootScale1 = new Vector2(0.9f,1.1f); //发射时候一般是先x变小y变大,
+       [SerializeField] private float shootScale1Time =0.15f;//到scale1用时
+
+       [SerializeField] private Vector2 shootScale2 = new Vector2(1.1f,0.8f); //发射时候一般是先x变小y变大,
+       [SerializeField] private float shootScale2Time =0.3f;//到scale2用时
+
+       [SerializeField] private float shootScale3Time =0.2f;//还原scale用时
+   
     private Camera _camera;
     private Vector3 _worldDirection;
     private bool _hasWorldDirection;
