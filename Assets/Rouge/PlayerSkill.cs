@@ -36,7 +36,8 @@ public enum SkillHitEffectTag
     Poison = 1 << 2,
     Slow = 1 << 3,
     Curse = 1 << 4,
-    Burn = 1 << 5
+    Burn = 1 << 5,
+    Freeze = 1 << 6
 }
 
 public enum SkillExecutionType{

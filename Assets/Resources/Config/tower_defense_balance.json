@@ -631,17 +631,58 @@
             "explosionDamage": 10000.0,
             "killLaunchHeight": 22.0
         },
-        "dimensionalSlash": {
-            "initialCost": 5000,
+        "overclock": {
+            "initialCost": 2500,
             "costMultiplier": 1.5,
-            "cooldown": 25.0,
-            "damage": 200.0,
-            "totalLength": 50.0,
-            "minimumSegmentLength": 10.0,
-            "aoeRadius": 3.0,
-            "visualWidth": 0.11999999731779099,
-            "segmentInterval": 0.07999999821186066,
-            "visualDuration": 0.2199999988079071
+            "cooldown": 15.0,
+            "ice": {
+                "radius": 30.0,
+                "freezeDuration": 5.0
+            },
+            "machineGun": {
+                "duration": 5.0,
+                "interval": 0.05,
+                "positionsPerVolley": 20,
+                "radius": 30.0,
+                "impactRadius": 2.0,
+                "damage": 50.0,
+                "projectileTravelDuration": 0.3,
+                "projectileArcHeight": 4.0
+            },
+            "cannon": {
+                "explosionRadius": 50.0,
+                "damage": 3000.0,
+                "projectileScale": 5.0,
+                "flightDuration": 0.8,
+                "arcHeight": 12.0
+            },
+            "flame": {
+                "duration": 5.0,
+                "interval": 0.25,
+                "radius": 30.0,
+                "damage": 50.0
+            },
+            "laser": {
+                "duration": 3.0,
+                "interval": 0.25,
+                "sweepDuration": 0.5,
+                "range": 30.0,
+                "width": 3.0,
+                "damage": 300.0
+            },
+            "piercingLaser": {
+                "range": 100.0,
+                "width": 10.0,
+                "damage": 2000.0,
+                "visualDuration": 0.6
+            },
+            "orbitSphere": {
+                "sphereCount": 8,
+                "statMultiplier": 2.0,
+                "outerHoldDuration": 4.0,
+                "activeExplosionRadiusMultiplier": 4.0,
+                "activeExplosionDamage": 100.0
+            }
         }
     }
 }

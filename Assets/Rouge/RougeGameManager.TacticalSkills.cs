@@ -12,7 +12,8 @@ public partial class RougeGameManager
         WindmillPoint,
         WindmillDirection,
         BlackHolePoint,
-        DimensionalSlashDraw
+        OverclockTower,
+        OverclockDirection
     }
 
     private struct ActiveWindmillSkill
@@ -37,41 +38,22 @@ public partial class RougeGameManager
         public float DamageMultiplier;
     }
 
-    private sealed class ActiveDimensionalSlashSkill
-    {
-        public float2[] Points;
-        public int SegmentIndex;
-        public float SegmentTimer;
-        public float DamageMultiplier;
-    }
-
-    private struct ActiveDimensionalSlashVisual
-    {
-        public LineRenderer Renderer;
-        public float Remaining;
-        public float Duration;
-    }
-
     private TacticalSkillSelectionState _tacticalSkillSelection;
     private float2 _tacticalSkillPoint;
     private bool _tacticalSkillPointValid;
     private int _windmillSkillCost;
     private int _blackHoleSkillCost;
-    private int _dimensionalSlashSkillCost;
+    private int _overclockSkillCost;
     private float _windmillSkillCooldown;
     private float _blackHoleSkillCooldown;
-    private float _dimensionalSlashSkillCooldown;
+    private float _overclockSkillCooldown;
     private float _windmillDamageMultiplier;
     private float _blackHoleDamageMultiplier;
-    private float _dimensionalSlashDamageMultiplier;
-    private readonly List<float2> _dimensionalSlashPoints = new List<float2>(9);
-    private float _dimensionalSlashDrawnLength;
+    private RougeDefenseTower _overclockDirectionTower;
     private LineRenderer _tacticalSkillCircle;
     private LineRenderer _tacticalSkillDirection;
     private readonly List<ActiveWindmillSkill> _activeWindmillSkills = new List<ActiveWindmillSkill>();
     private readonly List<ActiveBlackHoleSkill> _activeBlackHoleSkills = new List<ActiveBlackHoleSkill>();
-    private readonly List<ActiveDimensionalSlashSkill> _activeDimensionalSlashSkills = new List<ActiveDimensionalSlashSkill>();
-    private readonly List<ActiveDimensionalSlashVisual> _activeDimensionalSlashVisuals = new List<ActiveDimensionalSlashVisual>();
     private readonly Button[] _tacticalSkillButtons = new Button[4];
     private readonly Text[] _tacticalSkillButtonTexts = new Text[4];
     private Material _tacticalBlackHoleMaterial;
@@ -85,16 +67,14 @@ public partial class RougeGameManager
         tacticalSkillBalance.EnsureDefaults();
         _windmillSkillCost = Mathf.Max(0, tacticalSkillBalance.windmill.initialCost);
         _blackHoleSkillCost = Mathf.Max(0, tacticalSkillBalance.blackHole.initialCost);
-        _dimensionalSlashSkillCost = Mathf.Max(0, tacticalSkillBalance.dimensionalSlash.initialCost);
+        _overclockSkillCost = Mathf.Max(0, tacticalSkillBalance.overclock.initialCost);
         _windmillSkillCooldown = 0f;
         _blackHoleSkillCooldown = 0f;
-        _dimensionalSlashSkillCooldown = 0f;
+        _overclockSkillCooldown = 0f;
         _windmillDamageMultiplier = 1f;
         _blackHoleDamageMultiplier = 1f;
-        _dimensionalSlashDamageMultiplier = 1f;
-        _dimensionalSlashPoints.Clear();
-        _dimensionalSlashDrawnLength = 0f;
         _tacticalSkillSelection = TacticalSkillSelectionState.None;
+        _overclockDirectionTower = null;
         EnsureTacticalSkillIndicators();
         HideTacticalSkillIndicators();
     }
@@ -112,13 +92,6 @@ public partial class RougeGameManager
             if (_activeBlackHoleSkills[i].Visual != null) Destroy(_activeBlackHoleSkills[i].Visual);
         }
         _activeBlackHoleSkills.Clear();
-        _activeDimensionalSlashSkills.Clear();
-        for (int i = 0; i < _activeDimensionalSlashVisuals.Count; i++)
-        {
-            if (_activeDimensionalSlashVisuals[i].Renderer != null)
-                Destroy(_activeDimensionalSlashVisuals[i].Renderer.gameObject);
-        }
-        _activeDimensionalSlashVisuals.Clear();
         if (_tacticalSkillCircle != null) Destroy(_tacticalSkillCircle.gameObject);
         if (_tacticalSkillDirection != null) Destroy(_tacticalSkillDirection.gameObject);
         _tacticalSkillCircle = null;
@@ -182,13 +155,11 @@ public partial class RougeGameManager
         BeginTacticalSkillSelection(TacticalSkillSelectionState.BlackHolePoint);
     }
 
-    private void BeginDimensionalSlashSkillSelection()
+    private void BeginOverclockSkillSelection()
     {
-        if (_towerDefenseGameOver || _dimensionalSlashSkillCooldown > 0f ||
-            _towerDefenseGold < _dimensionalSlashSkillCost) return;
-        _dimensionalSlashPoints.Clear();
-        _dimensionalSlashDrawnLength = 0f;
-        BeginTacticalSkillSelection(TacticalSkillSelectionState.DimensionalSlashDraw);
+        if (_towerDefenseGameOver || _overclockSkillCooldown > 0f ||
+            _towerDefenseGold < _overclockSkillCost) return;
+        BeginTacticalSkillSelection(TacticalSkillSelectionState.OverclockTower);
     }
 
     private void BeginTacticalSkillSelection(TacticalSkillSelectionState state)
@@ -216,8 +187,7 @@ public partial class RougeGameManager
     {
         _tacticalSkillSelection = TacticalSkillSelectionState.None;
         _tacticalSkillPointValid = false;
-        _dimensionalSlashPoints.Clear();
-        _dimensionalSlashDrawnLength = 0f;
+        _overclockDirectionTower = null;
         HideTacticalSkillIndicators();
     }
 
@@ -232,11 +202,46 @@ public partial class RougeGameManager
             return true;
         }
 
-        bool hasPoint = TryGetTacticalMousePoint(out Vector3 worldPoint);
-        if (_tacticalSkillSelection == TacticalSkillSelectionState.DimensionalSlashDraw)
+        if (_tacticalSkillSelection == TacticalSkillSelectionState.OverclockTower)
         {
-            return UpdateDimensionalSlashDrawing(mouse, pointerOverUi, hasPoint, worldPoint);
+            HideTacticalSkillIndicators();
+            if (mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
+            {
+                RougeDefenseTower tower = RaycastDefenseTower();
+                if (tower != null && _overclockSkillCooldown <= 0f && _towerDefenseGold >= _overclockSkillCost)
+                {
+                    if (tower.TowerType == RougeTowerType.PiercingLaser)
+                    {
+                        _overclockDirectionTower = tower;
+                        _tacticalSkillSelection = TacticalSkillSelectionState.OverclockDirection;
+                        RefreshTowerDefenseUi(true);
+                    }
+                    else CastOverclockSkill(tower, default, false);
+                }
+            }
+            return true;
         }
+
+        if (_tacticalSkillSelection == TacticalSkillSelectionState.OverclockDirection)
+        {
+            if (_overclockDirectionTower == null)
+            {
+                CancelTacticalSkillSelection(false);
+                return true;
+            }
+            bool directionHasPoint = TryGetTacticalMousePoint(out Vector3 directionPoint);
+            Vector3 origin3 = _overclockDirectionTower.transform.position;
+            float2 origin = new float2(origin3.x, origin3.z);
+            float2 direction = new float2(directionPoint.x, directionPoint.z) - origin;
+            bool directionValid = directionHasPoint && math.lengthsq(direction) > 0.25f;
+            direction = math.normalizesafe(direction, new float2(0f, 1f));
+            float length = tacticalSkillBalance.overclock.piercingLaser.range;
+            UpdateOverclockDirectionIndicator(origin3, direction, length, directionValid);
+            if (mouse.leftButton.wasPressedThisFrame && !pointerOverUi && directionValid)
+                CastOverclockSkill(_overclockDirectionTower, direction, true);
+            return true;
+        }
+        bool hasPoint = TryGetTacticalMousePoint(out Vector3 worldPoint);
         float radius = _tacticalSkillSelection == TacticalSkillSelectionState.BlackHolePoint
             ? tacticalSkillBalance.blackHole.pullRadius
             : tacticalSkillBalance.windmill.impactRadius;
@@ -284,85 +289,6 @@ public partial class RougeGameManager
                 break;
         }
         return true;
-    }
-
-    private bool UpdateDimensionalSlashDrawing(Mouse mouse, bool pointerOverUi, bool hasPoint, Vector3 worldPoint)
-    {
-        RougeDimensionalSlashTacticalSkillConfig config = tacticalSkillBalance.dimensionalSlash;
-        float totalLength = Mathf.Max(10f, config.totalLength);
-        float minimumLength = Mathf.Clamp(config.minimumSegmentLength, 0.1f, totalLength);
-        float2 cursor = new float2(worldPoint.x, worldPoint.z);
-        bool valid = hasPoint && IsValidTacticalSkillPoint(cursor, false);
-        float2 previewPoint = cursor;
-
-        if (_dimensionalSlashPoints.Count == 0)
-        {
-            if (_tacticalSkillDirection != null) _tacticalSkillDirection.enabled = false;
-        }
-        else
-        {
-            float2 start = _dimensionalSlashPoints[_dimensionalSlashPoints.Count - 1];
-            float2 delta = cursor - start;
-            float rawLength = math.length(delta);
-            float remaining = Mathf.Max(0f, totalLength - _dimensionalSlashDrawnLength);
-            float previewLength = Mathf.Min(rawLength, remaining);
-            float2 direction = math.normalizesafe(delta, new float2(0f, 1f));
-            previewPoint = start + direction * previewLength;
-            float leftover = remaining - previewLength;
-            bool leavesUsableSegment = leftover <= 0.02f || leftover + 0.001f >= minimumLength;
-            valid = hasPoint && rawLength + 0.001f >= minimumLength &&
-                previewLength + 0.001f >= minimumLength && leavesUsableSegment &&
-                IsValidTacticalSkillPoint(previewPoint, false);
-            UpdateDimensionalSlashIndicator(previewPoint, valid);
-        }
-
-        _tacticalSkillPointValid = valid;
-        Color color = valid ? new Color(0.72f, 0.25f, 1f, 1f) : new Color(1f, 0.12f, 0.18f, 1f);
-        TowerDefenseVisuals.UpdateCircle(_tacticalSkillCircle,
-            new Vector3(previewPoint.x, renderHeight, previewPoint.y), config.aoeRadius, color, hasPoint);
-
-        if (!mouse.leftButton.wasPressedThisFrame || pointerOverUi || !valid) return true;
-        if (_dimensionalSlashPoints.Count == 0)
-        {
-            _dimensionalSlashPoints.Add(cursor);
-            UpdateDimensionalSlashIndicator(cursor, true);
-            RefreshTowerDefenseUi(true);
-            return true;
-        }
-
-        float2 previous = _dimensionalSlashPoints[_dimensionalSlashPoints.Count - 1];
-        float acceptedLength = math.distance(previous, previewPoint);
-        _dimensionalSlashPoints.Add(previewPoint);
-        _dimensionalSlashDrawnLength += acceptedLength;
-        if (_dimensionalSlashDrawnLength + 0.02f >= totalLength)
-        {
-            CastDimensionalSlashSkill();
-        }
-        else
-        {
-            UpdateDimensionalSlashIndicator(previewPoint, true);
-            RefreshTowerDefenseUi(true);
-        }
-        return true;
-    }
-
-    private void UpdateDimensionalSlashIndicator(float2 previewPoint, bool valid)
-    {
-        if (_tacticalSkillDirection == null || _dimensionalSlashPoints.Count == 0) return;
-        RougeDimensionalSlashTacticalSkillConfig config = tacticalSkillBalance.dimensionalSlash;
-        _tacticalSkillDirection.enabled = true;
-        _tacticalSkillDirection.positionCount = _dimensionalSlashPoints.Count + 1;
-        Color color = valid ? new Color(0.72f, 0.25f, 1f, 1f) : new Color(1f, 0.12f, 0.18f, 1f);
-        _tacticalSkillDirection.startColor = color;
-        _tacticalSkillDirection.endColor = color;
-        _tacticalSkillDirection.widthMultiplier = Mathf.Max(0.04f, config.visualWidth);
-        for (int i = 0; i < _dimensionalSlashPoints.Count; i++)
-        {
-            float2 point = _dimensionalSlashPoints[i];
-            _tacticalSkillDirection.SetPosition(i, new Vector3(point.x, renderHeight + 0.35f, point.y));
-        }
-        _tacticalSkillDirection.SetPosition(_dimensionalSlashPoints.Count,
-            new Vector3(previewPoint.x, renderHeight + 0.35f, previewPoint.y));
     }
 
     private bool TryGetTacticalMousePoint(out Vector3 worldPoint)
@@ -459,25 +385,32 @@ public partial class RougeGameManager
         RefreshTowerDefenseUi(true);
     }
 
-    private void CastDimensionalSlashSkill()
+    private void CastOverclockSkill(RougeDefenseTower tower, float2 direction, bool hasDirection)
     {
-        if (_dimensionalSlashPoints.Count < 2 || _dimensionalSlashSkillCooldown > 0f ||
-            _towerDefenseGold < _dimensionalSlashSkillCost) return;
-        _towerDefenseGold -= _dimensionalSlashSkillCost;
-        _dimensionalSlashSkillCost = GetNextTacticalSkillCost(_dimensionalSlashSkillCost,
-            tacticalSkillBalance.dimensionalSlash.costMultiplier);
-        _dimensionalSlashSkillCooldown = tacticalSkillBalance.dimensionalSlash.cooldown;
-        _activeDimensionalSlashSkills.Add(new ActiveDimensionalSlashSkill
-        {
-            Points = _dimensionalSlashPoints.ToArray(),
-            SegmentIndex = 0,
-            SegmentTimer = 0f,
-            DamageMultiplier = _dimensionalSlashDamageMultiplier
-        });
-        _dimensionalSlashDamageMultiplier *= GetNextTacticalDamageMultiplier();
+        if (tower == null || _overclockSkillCooldown > 0f || _towerDefenseGold < _overclockSkillCost) return;
+        if (!ActivateTowerSpecial(tower, direction, hasDirection)) return;
+        _towerDefenseGold -= _overclockSkillCost;
+        _overclockSkillCost = GetNextTacticalSkillCost(_overclockSkillCost,
+            tacticalSkillBalance.overclock.costMultiplier);
+        _overclockSkillCooldown = tacticalSkillBalance.overclock.cooldown;
         ClearTacticalSkillSelection();
         SetTowerPlacementMode(false);
         RefreshTowerDefenseUi(true);
+    }
+
+    private void UpdateOverclockDirectionIndicator(Vector3 origin, float2 direction, float length, bool valid)
+    {
+        if (_tacticalSkillCircle != null) _tacticalSkillCircle.enabled = false;
+        if (_tacticalSkillDirection == null) return;
+        Color color = valid ? new Color(0.72f, 0.25f, 1f, 1f) : new Color(1f, 0.15f, 0.12f, 1f);
+        _tacticalSkillDirection.enabled = true;
+        _tacticalSkillDirection.positionCount = 2;
+        _tacticalSkillDirection.widthMultiplier = tacticalSkillBalance.overclock.piercingLaser.width;
+        _tacticalSkillDirection.startColor = color;
+        _tacticalSkillDirection.endColor = color;
+        Vector3 start = new Vector3(origin.x, renderHeight + 0.35f, origin.z);
+        _tacticalSkillDirection.SetPosition(0, start);
+        _tacticalSkillDirection.SetPosition(1, start + new Vector3(direction.x, 0f, direction.y) * length);
     }
 
     private float GetNextTacticalDamageMultiplier()
@@ -495,11 +428,9 @@ public partial class RougeGameManager
     {
         _windmillSkillCooldown = Mathf.Max(0f, _windmillSkillCooldown - dt);
         _blackHoleSkillCooldown = Mathf.Max(0f, _blackHoleSkillCooldown - dt);
-        _dimensionalSlashSkillCooldown = Mathf.Max(0f, _dimensionalSlashSkillCooldown - dt);
+        _overclockSkillCooldown = Mathf.Max(0f, _overclockSkillCooldown - dt);
         UpdateActiveWindmillSkills(dt);
         UpdateActiveBlackHoleSkills(dt);
-        UpdateActiveDimensionalSlashSkills(dt);
-        UpdateDimensionalSlashVisuals(dt);
     }
 
     private void UpdateActiveWindmillSkills(float dt)
@@ -609,87 +540,6 @@ public partial class RougeGameManager
         }
     }
 
-    private void UpdateActiveDimensionalSlashSkills(float dt)
-    {
-        RougeDimensionalSlashTacticalSkillConfig config = tacticalSkillBalance.dimensionalSlash;
-        for (int i = _activeDimensionalSlashSkills.Count - 1; i >= 0; i--)
-        {
-            ActiveDimensionalSlashSkill skill = _activeDimensionalSlashSkills[i];
-            skill.SegmentTimer -= dt;
-            while (skill.SegmentTimer <= 0f && skill.SegmentIndex < skill.Points.Length - 1)
-            {
-                float2 start = skill.Points[skill.SegmentIndex];
-                float2 end = skill.Points[skill.SegmentIndex + 1];
-                AddTacticalLineDamage(start, end, config.aoeRadius,
-                    config.damage * skill.DamageMultiplier);
-                CreateDimensionalSlashVisual(start, end, config);
-                skill.SegmentIndex++;
-                skill.SegmentTimer += Mathf.Max(0.01f, config.segmentInterval);
-            }
-            if (skill.SegmentIndex >= skill.Points.Length - 1)
-                _activeDimensionalSlashSkills.RemoveAt(i);
-        }
-    }
-
-    private void AddTacticalLineDamage(float2 start, float2 end, float radius, float damage)
-    {
-        float2 delta = end - start;
-        float length = math.length(delta);
-        if (length <= 0.001f) return;
-        TryAddSkillArea(new RougeSkillArea
-        {
-            Type = 19,
-            Position = start,
-            Direction = delta / length,
-            Length = length,
-            Radius = Mathf.Max(0.1f, radius),
-            Damage = Mathf.Max(0f, damage)
-        });
-    }
-
-    private void CreateDimensionalSlashVisual(float2 start, float2 end,
-        RougeDimensionalSlashTacticalSkillConfig config)
-    {
-        LineRenderer line = TowerDefenseVisuals.CreateBeamRenderer("Dimensional Slash", transform,
-            Mathf.Max(0.035f, config.visualWidth));
-        line.sharedMaterial = TowerDefenseVisuals.GetDimensionalSlashMaterial();
-        line.sortingOrder = 32020;
-        line.textureMode = LineTextureMode.Stretch;
-        line.numCapVertices = 2;
-        line.positionCount = 2;
-        line.SetPosition(0, new Vector3(start.x, renderHeight + 0.65f, start.y));
-        line.SetPosition(1, new Vector3(end.x, renderHeight + 0.65f, end.y));
-        Color color = new Color(0.78f, 0.24f, 1f, 1f);
-        line.startColor = color;
-        line.endColor = new Color(0.18f, 0.9f, 1f, 1f);
-        float duration = Mathf.Max(0.01f, config.visualDuration);
-        _activeDimensionalSlashVisuals.Add(new ActiveDimensionalSlashVisual
-        {
-            Renderer = line,
-            Remaining = duration,
-            Duration = duration
-        });
-    }
-
-    private void UpdateDimensionalSlashVisuals(float dt)
-    {
-        for (int i = _activeDimensionalSlashVisuals.Count - 1; i >= 0; i--)
-        {
-            ActiveDimensionalSlashVisual visual = _activeDimensionalSlashVisuals[i];
-            visual.Remaining -= dt;
-            if (visual.Renderer == null || visual.Remaining <= 0f)
-            {
-                if (visual.Renderer != null) Destroy(visual.Renderer.gameObject);
-                _activeDimensionalSlashVisuals.RemoveAt(i);
-                continue;
-            }
-            float alpha = Mathf.Clamp01(visual.Remaining / Mathf.Max(0.01f, visual.Duration));
-            visual.Renderer.startColor = new Color(0.78f, 0.24f, 1f, alpha);
-            visual.Renderer.endColor = new Color(0.18f, 0.9f, 1f, alpha);
-            _activeDimensionalSlashVisuals[i] = visual;
-        }
-    }
-
     private void AddTacticalDamagePulse(float2 position, float radius, float damage, bool launchKilled, float launchHeight)
     {
         TryAddSkillArea(new RougeSkillArea
@@ -791,7 +641,7 @@ public partial class RougeGameManager
 
         CreateTacticalSkillButton(panel.transform, 0, -292.5f, new Color(0.08f, 0.55f, 0.78f, 1f), BeginWindmillSkillSelection);
         CreateTacticalSkillButton(panel.transform, 1, -97.5f, new Color(0.42f, 0.08f, 0.68f, 1f), BeginBlackHoleSkillSelection);
-        CreateTacticalSkillButton(panel.transform, 2, 97.5f, new Color(0.58f, 0.12f, 0.72f, 1f), BeginDimensionalSlashSkillSelection);
+        CreateTacticalSkillButton(panel.transform, 2, 97.5f, new Color(0.95f, 0.48f, 0.08f, 1f), BeginOverclockSkillSelection);
         CreateTacticalSkillButton(panel.transform, 3, 292.5f, new Color(0.14f, 0.17f, 0.22f, 1f), null);
     }
 
@@ -816,25 +666,33 @@ public partial class RougeGameManager
             _tacticalSkillButtonTexts[0].text = _windmillSkillCooldown > 0f
                 ? $"WINDMILL\nCD {_windmillSkillCooldown:0.0}s"
                 : $"WINDMILL\n${_windmillSkillCost}  DMG ×{_windmillDamageMultiplier:0.##}";
-            _tacticalSkillButtons[0].interactable = _windmillSkillCooldown <= 0f && _towerDefenseGold >= _windmillSkillCost &&
+            bool available = _windmillSkillCooldown <= 0f && _towerDefenseGold >= _windmillSkillCost &&
                 _tacticalSkillSelection != TacticalSkillSelectionState.WindmillDirection;
+            SetPurchaseButtonAvailability(_tacticalSkillButtons[0], _tacticalSkillButtonTexts[0], available);
         }
         if (_tacticalSkillButtonTexts[1] != null)
         {
             _tacticalSkillButtonTexts[1].text = _blackHoleSkillCooldown > 0f
                 ? $"BLACK HOLE\nCD {_blackHoleSkillCooldown:0.0}s"
                 : $"BLACK HOLE\n${_blackHoleSkillCost}  DMG ×{_blackHoleDamageMultiplier:0.##}";
-            _tacticalSkillButtons[1].interactable = _blackHoleSkillCooldown <= 0f && _towerDefenseGold >= _blackHoleSkillCost;
+            bool available = _blackHoleSkillCooldown <= 0f && _towerDefenseGold >= _blackHoleSkillCost;
+            SetPurchaseButtonAvailability(_tacticalSkillButtons[1], _tacticalSkillButtonTexts[1], available);
         }
         if (_tacticalSkillButtonTexts[2] != null)
         {
-            _tacticalSkillButtonTexts[2].text = _dimensionalSlashSkillCooldown > 0f
-                ? $"DIMENSION SLASH\nCD {_dimensionalSlashSkillCooldown:0.0}s"
-                : $"DIMENSION SLASH\n${_dimensionalSlashSkillCost}  DMG ×{_dimensionalSlashDamageMultiplier:0.##}";
-            _tacticalSkillButtons[2].interactable = _dimensionalSlashSkillCooldown <= 0f &&
-                _towerDefenseGold >= _dimensionalSlashSkillCost;
+            _tacticalSkillButtonTexts[2].text = _overclockSkillCooldown > 0f
+                ? $"OVERCLOCK\nCD {_overclockSkillCooldown:0.0}s"
+                : $"OVERCLOCK\n${_overclockSkillCost}  SELECT TOWER";
+            bool available = _overclockSkillCooldown <= 0f && _towerDefenseGold >= _overclockSkillCost &&
+                _tacticalSkillSelection != TacticalSkillSelectionState.OverclockTower &&
+                _tacticalSkillSelection != TacticalSkillSelectionState.OverclockDirection;
+            SetPurchaseButtonAvailability(_tacticalSkillButtons[2], _tacticalSkillButtonTexts[2], available);
         }
-        if (_tacticalSkillButtonTexts[3] != null) _tacticalSkillButtonTexts[3].text = "LOCKED\nSKILL IV";
+        if (_tacticalSkillButtonTexts[3] != null)
+        {
+            _tacticalSkillButtonTexts[3].text = "LOCKED\nSKILL IV";
+            SetPurchaseButtonAvailability(_tacticalSkillButtons[3], _tacticalSkillButtonTexts[3], false);
+        }
     }
 
     private string GetTacticalSkillModeText()
@@ -844,8 +702,8 @@ public partial class RougeGameManager
             TacticalSkillSelectionState.WindmillPoint => "WINDMILL 1/2  |  CHOOSE IMPACT POINT  |  RED AREA IS INVALID",
             TacticalSkillSelectionState.WindmillDirection => "WINDMILL 2/2  |  CHOOSE TRAVEL DIRECTION",
             TacticalSkillSelectionState.BlackHolePoint => "BLACK HOLE  |  CHOOSE CENTER POINT",
-            TacticalSkillSelectionState.DimensionalSlashDraw =>
-                $"DIMENSION SLASH  |  DRAW {_dimensionalSlashDrawnLength:0.#}/{tacticalSkillBalance.dimensionalSlash.totalLength:0.#}m  |  EACH SEGMENT ≥ {tacticalSkillBalance.dimensionalSlash.minimumSegmentLength:0.#}m",
+            TacticalSkillSelectionState.OverclockTower => "OVERCLOCK  |  CLICK A TOWER TO ACTIVATE ITS SPECIAL SKILL",
+            TacticalSkillSelectionState.OverclockDirection => "OVERCLOCK  |  CHOOSE SUPER PIERCING CANNON DIRECTION",
             _ => string.Empty
         };
     }

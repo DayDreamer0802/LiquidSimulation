@@ -1438,6 +1438,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.LaunchStackTimer = math.max(0f, effects.LaunchStackTimer - DeltaTime);
             }
 
+            if (effects.FreezeTimer > 0f)
+            {
+                effects.FreezeTimer = math.max(0f, effects.FreezeTimer - DeltaTime);
+            }
+
             if (effects.SlowTimer > 0f)
             {
                 effects.SlowTimer = math.max(0f, effects.SlowTimer - DeltaTime);
@@ -1453,7 +1458,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
+            float slowMoveFactor = effects.FreezeTimer > 0f
+                ? 0f
+                : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 toGoal = GoalPos - pos.xz;
@@ -2439,6 +2446,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
         }
 
+        if ((tags & SkillHitEffectTag.Freeze) != 0)
+        {
+            effects.FreezeTimer = math.max(effects.FreezeTimer,
+                skill.EffectFreezeDuration > 0f ? skill.EffectFreezeDuration : 2f);
+        }
+
         if ((tags & SkillHitEffectTag.Curse) != 0)
         {
             effects.CurseExplosionDamage = math.max(effects.CurseExplosionDamage, skill.EffectCurseExplosionDamage);
@@ -2751,6 +2764,11 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 }
             }
 
+            if (effects.FreezeTimer > 0f)
+            {
+                effects.FreezeTimer = math.max(0f, effects.FreezeTimer - DeltaTime);
+            }
+
             if (effects.SlowTimer > 0f)
             {
                 effects.SlowTimer = math.max(0f, effects.SlowTimer - DeltaTime);
@@ -2766,7 +2784,9 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
+            float slowMoveFactor = effects.FreezeTimer > 0f
+                ? 0f
+                : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 desired = math.normalizesafe(toPlayer);
@@ -3610,6 +3630,12 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.SlowPercent = skill.EffectSlowPercent;
             }
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
+        }
+
+        if ((tags & SkillHitEffectTag.Freeze) != 0)
+        {
+            effects.FreezeTimer = math.max(effects.FreezeTimer,
+                skill.EffectFreezeDuration > 0f ? skill.EffectFreezeDuration : 2f);
         }
 
         if ((tags & SkillHitEffectTag.Curse) != 0)

@@ -31,6 +31,10 @@ public partial class RougeGameManager
     private readonly List<TowerFireZone> _towerFireZones = new List<TowerFireZone>();
     private readonly List<TowerBeamVisual> _towerBeamVisuals = new List<TowerBeamVisual>();
     private readonly List<ActiveOrbitSphereAttack> _activeOrbitSphereAttacks = new List<ActiveOrbitSphereAttack>();
+    private readonly List<ActiveMachineGunOverclock> _activeMachineGunOverclocks = new List<ActiveMachineGunOverclock>();
+    private readonly List<ActiveFlameOverclock> _activeFlameOverclocks = new List<ActiveFlameOverclock>();
+    private readonly List<ActiveLaserOverclock> _activeLaserOverclocks = new List<ActiveLaserOverclock>();
+    private readonly List<ActiveSweepingLaser> _activeSweepingLasers = new List<ActiveSweepingLaser>();
     private readonly Stack<GameObject> _towerProjectileVisualPool = new Stack<GameObject>();
     private readonly int[] _towerTargetIndices = new int[FindTowerTargetsJob.MaxTargetsPerTower];
     private readonly float[] _towerTargetDistances = new float[FindTowerTargetsJob.MaxTargetsPerTower];
@@ -61,6 +65,8 @@ public partial class RougeGameManager
     private Button _towerTargetPriorityButton;
     private Text _towerTargetPriorityButtonText;
     private Text _towerDamageRankingText;
+    private readonly Button[] _towerBuildButtons = new Button[TowerDefenseVisuals.TowerTypeCount];
+    private readonly Text[] _towerBuildButtonTexts = new Text[TowerDefenseVisuals.TowerTypeCount];
     private readonly int[] _towerDamageRankOrder = { 0, 1, 2, 3, 4, 5, 6 };
     private float _nextTowerDefenseUiRefreshTime;
     private Image _bossHealthFill;
@@ -124,6 +130,39 @@ public partial class RougeGameManager
         public float Remaining;
     }
 
+    private struct ActiveMachineGunOverclock
+    {
+        public RougeDefenseTower Tower;
+        public float Remaining;
+        public float TickTimer;
+    }
+
+    private struct ActiveFlameOverclock
+    {
+        public RougeDefenseTower Tower;
+        public float Remaining;
+        public float TickTimer;
+    }
+
+    private struct ActiveLaserOverclock
+    {
+        public RougeDefenseTower Tower;
+        public float Remaining;
+        public float TickTimer;
+    }
+
+    private struct ActiveSweepingLaser
+    {
+        public LineRenderer Renderer;
+        public Vector3 Start;
+        public float2 Direction;
+        public float Elapsed;
+        public float Duration;
+        public float Length;
+        public float Width;
+        public float Damage;
+    }
+
     private sealed class ActiveOrbitSphereAttack
     {
         public RougeDefenseTower Tower;
@@ -131,7 +170,10 @@ public partial class RougeGameManager
         public float Distance;
         public float AngleDegrees;
         public float DamageTimer;
+        public float OuterHoldRemaining;
+        public float StatMultiplier;
         public bool Returning;
+        public bool Overclocked;
     }
     private readonly Matrix4x4[] _orbitSphereRenderMatrices = new Matrix4x4[1023];
     private Material _orbitSphereRenderMaterial;
@@ -262,10 +304,17 @@ public partial class RougeGameManager
         }
         _towerBeamVisuals.Clear();
         for (int i = 0; i < _activeOrbitSphereAttacks.Count; i++)
-        {
             _activeOrbitSphereAttacks[i].Positions = null;
-        }
         _activeOrbitSphereAttacks.Clear();
+        _activeMachineGunOverclocks.Clear();
+        _activeFlameOverclocks.Clear();
+        _activeLaserOverclocks.Clear();
+        for (int i = 0; i < _activeSweepingLasers.Count; i++)
+        {
+            if (_activeSweepingLasers[i].Renderer != null)
+                Destroy(_activeSweepingLasers[i].Renderer.gameObject);
+        }
+        _activeSweepingLasers.Clear();
         if (_towerDefenseCanvas != null) Destroy(_towerDefenseCanvas.gameObject);
         _towerDefenseCanvas = null;
         _towerTargetRequestCount = 0;
@@ -551,6 +600,8 @@ public partial class RougeGameManager
 
     private void BeginTowerBuild(RougeTowerType type)
     {
+        TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
+        if (_towerDefenseGameOver || _towerDefenseGold < cost) return;
         if (!_towerPlacementMode)
         {
             _towerBuildSelectionActive = false;
@@ -717,7 +768,7 @@ public partial class RougeGameManager
 
     private void ToggleSelectedTowerTargetPriority()
     {
-        if (_selectedTower == null) return;
+        if (_selectedTower == null || !_selectedTower.IsTargetedDamage) return;
         _selectedTower.ToggleTargetPriority();
         // The current simulation may still be reading _towerTargetRequests.
         // Only change the managed tower state here; the normal next-frame update
@@ -743,6 +794,7 @@ public partial class RougeGameManager
         }
 
         UpdateTacticalSkills(dt);
+        UpdateTowerOverclockEffects(dt);
         UpdateTowerDefenseBoss();
         UpdateTowerDefenseSpawners(dt);
         ApplyPendingMainTowerAoe();
@@ -1313,6 +1365,13 @@ public partial class RougeGameManager
                 bossBalance.interferenceRadius * bossBalance.interferenceRadius;
             tower.SetBossInterference(bossDebuffed,
                 bossDebuffed ? Mathf.Clamp(bossBalance.interferenceAttackSpeedMultiplier, 0.05f, 1f) : 1f);
+            tower.UpdatePresentation(dt);
+
+            if (tower.TowerType == RougeTowerType.Cannon && tower.cannonBurstShotsRemaining > 0)
+            {
+                UpdateCannonBurst(tower, dt);
+                if (tower.cannonBurstShotsRemaining > 0) continue;
+            }
 
             if (tower.TowerType == RougeTowerType.Laser)
             {
@@ -1323,6 +1382,13 @@ public partial class RougeGameManager
             tower.HideLaserBeams();
             tower.attackTimer -= dt * tower.AttackSpeedMultiplier;
             if (tower.attackTimer > 0f) continue;
+
+            if (!tower.IsTargetedDamage)
+            {
+                FireTower(tower, tower.transform.position);
+                tower.attackTimer += tower.AttackInterval;
+                continue;
+            }
 
             if (tower.TowerType == RougeTowerType.MachineGun)
             {
@@ -1349,9 +1415,7 @@ public partial class RougeGameManager
 
             AimTowerAt(tower, targetPosition);
             FireTower(tower, targetPosition);
-            tower.attackTimer = tower.TowerType == RougeTowerType.OrbitSphere
-                ? float.PositiveInfinity
-                : tower.attackTimer + tower.AttackInterval;
+            tower.attackTimer += tower.AttackInterval;
         }
     }
 
@@ -1374,12 +1438,18 @@ public partial class RougeGameManager
             }
 
             Vector3 position = tower.transform.position;
+            bool focusedBossLaser = tower.TowerType == RougeTowerType.Laser &&
+                tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
             _towerTargetRequests[i] = new RougeTowerTargetRequest
             {
                 Position = new float2(position.x, position.z),
                 Range = tower.AttackRange,
-                TargetCount = math.clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower),
-                PriorityMode = (int)tower.TargetPriority
+                TargetCount = focusedBossLaser || !tower.IsTargetedDamage
+                    ? 1
+                    : math.clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower),
+                PriorityMode = tower.IsTargetedDamage
+                    ? (int)tower.TargetPriority
+                    : (int)RougeTowerTargetPriority.NearestToGoal
             };
         }
         _towerTargetRequestCount = count;
@@ -1447,7 +1517,9 @@ public partial class RougeGameManager
 
     private void UpdateContinuousLaserTower(RougeDefenseTower tower, int towerListIndex, float dt)
     {
-        int count = CollectTowerTargets(tower, towerListIndex, tower.TargetCount);
+        bool focusedBossMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+        int requestedTargets = focusedBossMode ? 1 : tower.TargetCount;
+        int count = CollectTowerTargets(tower, towerListIndex, requestedTargets);
         if (count <= 0)
         {
             tower.HideLaserBeams();
@@ -1457,6 +1529,16 @@ public partial class RougeGameManager
         Vector3 start = GetTowerMuzzlePosition(tower);
         tower.targetIndex = _towerTargetIndices[0];
         AimTowerAt(tower, _towerTargetPositions[0]);
+        if (focusedBossMode)
+        {
+            int beamCount = Mathf.Clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower);
+            tower.ShowFocusedLaserBeams(start, _towerTargetPositions[0], beamCount);
+            float perBeamDamage = Mathf.Max(1f, tower.Damage * 0.33f);
+            AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[0],
+                perBeamDamage * beamCount * dt * tower.AttackSpeedMultiplier);
+            return;
+        }
+
         tower.ShowLaserBeams(start, _towerTargetPositions, count);
         for (int i = 0; i < count; i++)
         {
@@ -1523,6 +1605,33 @@ public partial class RougeGameManager
         tower.AimAt(target);
     }
 
+    private void BeginCannonBurst(RougeDefenseTower tower, Vector3 target)
+    {
+        tower.cannonBurstTarget = target;
+        tower.cannonBurstShotsRemaining = Mathf.Max(1, tower.ProjectileCount);
+        tower.cannonBurstTimer = 0f;
+        UpdateCannonBurst(tower, 0f);
+    }
+
+    private void UpdateCannonBurst(RougeDefenseTower tower, float dt)
+    {
+        if (tower == null || tower.cannonBurstShotsRemaining <= 0) return;
+        tower.cannonBurstTimer -= dt * tower.AttackSpeedMultiplier;
+        int catchUpShots = 0;
+        while (tower.cannonBurstTimer <= 0f && tower.cannonBurstShotsRemaining > 0 && catchUpShots < 3)
+        {
+            Vector3 start = GetTowerMuzzlePosition(tower);
+            float distance = Vector2.Distance(new Vector2(start.x, start.z),
+                new Vector2(tower.cannonBurstTarget.x, tower.cannonBurstTarget.z));
+            SpawnTowerProjectile(RougeTowerType.Cannon, start, tower.cannonBurstTarget, tower.Damage,
+                tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1);
+            tower.TriggerCannonRecoil();
+            tower.cannonBurstShotsRemaining--;
+            tower.cannonBurstTimer += 0.12f;
+            catchUpShots++;
+        }
+    }
+
     private void FireTower(RougeDefenseTower tower, Vector3 target)
     {
         Vector3 start = GetTowerMuzzlePosition(tower);
@@ -1547,17 +1656,7 @@ public partial class RougeGameManager
                 break;
             }
             case RougeTowerType.Cannon:
-                for (int i = 0; i < tower.ProjectileCount; i++)
-                {
-                    Vector3 spreadTarget = target;
-                    if (tower.ProjectileCount > 1)
-                    {
-                        float side = i == 0 ? -0.8f : 0.8f;
-                        spreadTarget += new Vector3(side, 0f, -side * 0.45f);
-                    }
-                    SpawnTowerProjectile(RougeTowerType.Cannon, start, spreadTarget, tower.Damage,
-                        tower.AoeRadius, 0.7f, 5.5f, tower.targetIndex);
-                }
+                BeginCannonBurst(tower, target);
                 break;
             case RougeTowerType.Flame:
                 SpawnTowerProjectile(RougeTowerType.Flame, start, target, tower.Damage, tower.AoeRadius,
@@ -1583,29 +1682,330 @@ public partial class RougeGameManager
                 break;
             }
             case RougeTowerType.OrbitSphere:
-                StartOrbitSphereAttack(tower);
+                StartOrbitSphereAttack(tower, false);
                 break;
         }
     }
 
-    private void StartOrbitSphereAttack(RougeDefenseTower tower)
+    private bool ActivateTowerSpecial(RougeDefenseTower tower, float2 direction, bool hasDirection)
     {
-        if (tower == null) return;
+        if (tower == null) return false;
+        int towerIndex = _defenseTowers.IndexOf(tower);
+        Vector3 center = tower.transform.position;
+        Vector3 muzzle = GetTowerMuzzlePosition(tower);
+        RougeOverclockTacticalSkillConfig overclock = tacticalSkillBalance.overclock;
+
+        switch (tower.TowerType)
+        {
+            case RougeTowerType.Ice:
+            {
+                RougeIceOverclockConfig config = overclock.ice;
+                TryAddSkillArea(new RougeSkillArea
+                {
+                    Type = 13,
+                    Position = new float2(center.x, center.z),
+                    Radius = config.radius,
+                    EffectFlags = (int)SkillHitEffectTag.Freeze,
+                    EffectFreezeDuration = config.freezeDuration,
+                    SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                });
+                SpawnAOERing(new Vector3(center.x, renderHeight + 0.08f, center.z), config.radius, 0.7f,
+                    new Color(0.35f, 0.9f, 1f, 1f));
+                return true;
+            }
+            case RougeTowerType.MachineGun:
+                _activeMachineGunOverclocks.Add(new ActiveMachineGunOverclock
+                {
+                    Tower = tower,
+                    Remaining = overclock.machineGun.duration,
+                    TickTimer = 0f
+                });
+                SpawnAOERing(new Vector3(center.x, renderHeight + 0.08f, center.z), overclock.machineGun.radius, 0.4f,
+                    new Color(1f, 0.88f, 0.2f, 1f));
+                return true;
+            case RougeTowerType.Cannon:
+            {
+                if (!TryResolveTowerTarget(tower, towerIndex, out Vector3 target)) return false;
+                RougeCannonOverclockConfig config = overclock.cannon;
+                AimTowerAt(tower, target);
+                tower.TriggerCannonRecoil();
+                SpawnTowerProjectile(RougeTowerType.Cannon, muzzle, target, config.damage,
+                    config.explosionRadius, config.flightDuration, config.arcHeight, -1, 0f, 0f,
+                    config.projectileScale);
+                return true;
+            }
+            case RougeTowerType.Flame:
+                _activeFlameOverclocks.Add(new ActiveFlameOverclock
+                {
+                    Tower = tower,
+                    Remaining = overclock.flame.duration,
+                    TickTimer = 0f
+                });
+                SpawnAOERing(new Vector3(center.x, renderHeight + 0.08f, center.z), overclock.flame.radius, 0.55f,
+                    new Color(1f, 0.18f, 0.02f, 1f));
+                return true;
+            case RougeTowerType.Laser:
+                _activeLaserOverclocks.Add(new ActiveLaserOverclock
+                {
+                    Tower = tower,
+                    Remaining = overclock.laser.duration,
+                    TickTimer = 0f
+                });
+                return true;
+            case RougeTowerType.PiercingLaser:
+            {
+                if (!hasDirection) return false;
+                RougePiercingLaserOverclockConfig config = overclock.piercingLaser;
+                direction = math.normalizesafe(direction, new float2(0f, 1f));
+                TryAddSkillArea(new RougeSkillArea
+                {
+                    Type = 15,
+                    Position = new float2(muzzle.x, muzzle.z),
+                    Direction = direction,
+                    Length = config.range,
+                    Radius = config.width,
+                    Damage = config.damage,
+                    SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                });
+                Vector3 end = muzzle + new Vector3(direction.x, 0f, direction.y) * config.range;
+                AimTowerAt(tower, end);
+                SpawnTowerBeam(muzzle, end, config.width, config.visualDuration);
+                return true;
+            }
+            case RougeTowerType.OrbitSphere:
+                return DetonateActiveOrbitSphereAttack(tower) || StartOrbitSphereAttack(tower, true);
+        }
+        return false;
+    }
+
+    private void UpdateTowerOverclockEffects(float dt)
+    {
+        UpdateMachineGunOverclocks(dt);
+        UpdateFlameOverclocks(dt);
+        UpdateLaserOverclocks(dt);
+        UpdateSweepingLasers(dt);
+    }
+
+    private void UpdateMachineGunOverclocks(float dt)
+    {
+        RougeMachineGunOverclockConfig config = tacticalSkillBalance.overclock.machineGun;
+        for (int i = _activeMachineGunOverclocks.Count - 1; i >= 0; i--)
+        {
+            ActiveMachineGunOverclock skill = _activeMachineGunOverclocks[i];
+            if (skill.Tower == null)
+            {
+                _activeMachineGunOverclocks.RemoveAt(i);
+                continue;
+            }
+            skill.Remaining -= dt;
+            skill.TickTimer -= dt;
+            int catchUp = 0;
+            while (skill.TickTimer <= 0f && skill.Remaining >= 0f && catchUp < 4)
+            {
+                Vector3 start = GetTowerMuzzlePosition(skill.Tower);
+                Vector3 center = skill.Tower.transform.position;
+                for (int shot = 0; shot < Mathf.Max(1, config.positionsPerVolley); shot++)
+                {
+                    Vector2 random = UnityEngine.Random.insideUnitCircle * config.radius;
+                    Vector3 target = new Vector3(center.x + random.x, renderHeight + 0.2f, center.z + random.y);
+                    SpawnTowerProjectile(RougeTowerType.MachineGun, start, target, config.damage,
+                        config.impactRadius, config.projectileTravelDuration, config.projectileArcHeight, -1);
+                }
+                skill.TickTimer += Mathf.Max(0.01f, config.interval);
+                catchUp++;
+            }
+            if (skill.Remaining <= 0f) _activeMachineGunOverclocks.RemoveAt(i);
+            else _activeMachineGunOverclocks[i] = skill;
+        }
+    }
+
+    private void UpdateFlameOverclocks(float dt)
+    {
+        RougeFlameOverclockConfig config = tacticalSkillBalance.overclock.flame;
+        for (int i = _activeFlameOverclocks.Count - 1; i >= 0; i--)
+        {
+            ActiveFlameOverclock skill = _activeFlameOverclocks[i];
+            if (skill.Tower == null)
+            {
+                _activeFlameOverclocks.RemoveAt(i);
+                continue;
+            }
+            skill.Remaining -= dt;
+            skill.TickTimer -= dt;
+            int catchUp = 0;
+            while (skill.TickTimer <= 0f && skill.Remaining >= 0f && catchUp < 4)
+            {
+                Vector3 center = skill.Tower.transform.position;
+                TryAddSkillArea(new RougeSkillArea
+                {
+                    Type = 13,
+                    Position = new float2(center.x, center.z),
+                    Radius = config.radius,
+                    Damage = config.damage,
+                    SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1
+                });
+                SpawnAOERing(new Vector3(center.x, renderHeight + 0.06f, center.z), config.radius,
+                    Mathf.Min(0.22f, config.interval), new Color(1f, 0.18f, 0.02f, 1f));
+                skill.TickTimer += Mathf.Max(0.01f, config.interval);
+                catchUp++;
+            }
+            if (skill.Remaining <= 0f) _activeFlameOverclocks.RemoveAt(i);
+            else _activeFlameOverclocks[i] = skill;
+        }
+    }
+
+    private void UpdateLaserOverclocks(float dt)
+    {
+        RougeLaserOverclockConfig config = tacticalSkillBalance.overclock.laser;
+        for (int i = _activeLaserOverclocks.Count - 1; i >= 0; i--)
+        {
+            ActiveLaserOverclock skill = _activeLaserOverclocks[i];
+            if (skill.Tower == null)
+            {
+                _activeLaserOverclocks.RemoveAt(i);
+                continue;
+            }
+            skill.Remaining -= dt;
+            skill.TickTimer -= dt;
+            int catchUp = 0;
+            while (skill.TickTimer <= 0f && skill.Remaining >= 0f && catchUp < 4)
+            {
+                int towerIndex = _defenseTowers.IndexOf(skill.Tower);
+                Vector3 towerPosition = skill.Tower.transform.position;
+                float2 direction;
+                if (TryResolveTowerTarget(skill.Tower, towerIndex, out Vector3 target))
+                    direction = math.normalizesafe(new float2(target.x - towerPosition.x, target.z - towerPosition.z), new float2(0f, 1f));
+                else
+                {
+                    float angle = UnityEngine.Random.value * Mathf.PI * 2f;
+                    direction = new float2(Mathf.Cos(angle), Mathf.Sin(angle));
+                }
+                Vector3 start = new Vector3(towerPosition.x + direction.x * 1.2f,
+                    renderHeight + 0.45f, towerPosition.z + direction.y * 1.2f);
+                LineRenderer line = TowerDefenseVisuals.CreateBeamRenderer("Overclock Sweeping Laser", transform, config.width);
+                line.sharedMaterial = TowerDefenseVisuals.GetLaserConnectionMaterial();
+                line.startColor = new Color(0.2f, 1f, 0.55f, 1f);
+                line.endColor = new Color(0.1f, 0.7f, 1f, 1f);
+                line.positionCount = 2;
+                line.SetPosition(0, start);
+                line.SetPosition(1, start);
+                _activeSweepingLasers.Add(new ActiveSweepingLaser
+                {
+                    Renderer = line,
+                    Start = start,
+                    Direction = direction,
+                    Elapsed = 0f,
+                    Duration = config.sweepDuration,
+                    Length = config.range,
+                    Width = config.width,
+                    Damage = config.damage
+                });
+                skill.Tower.AimAt(start + new Vector3(direction.x, 0f, direction.y) * config.range);
+                skill.TickTimer += Mathf.Max(0.01f, config.interval);
+                catchUp++;
+            }
+            if (skill.Remaining <= 0f) _activeLaserOverclocks.RemoveAt(i);
+            else _activeLaserOverclocks[i] = skill;
+        }
+    }
+
+    private void UpdateSweepingLasers(float dt)
+    {
+        for (int i = _activeSweepingLasers.Count - 1; i >= 0; i--)
+        {
+            ActiveSweepingLaser sweep = _activeSweepingLasers[i];
+            sweep.Elapsed += dt;
+            float progress = Mathf.Clamp01(sweep.Elapsed / Mathf.Max(0.05f, sweep.Duration));
+            Vector3 end = sweep.Start + new Vector3(sweep.Direction.x, 0f, sweep.Direction.y) * (sweep.Length * progress);
+            if (sweep.Renderer != null)
+            {
+                sweep.Renderer.SetPosition(0, sweep.Start);
+                sweep.Renderer.SetPosition(1, end);
+            }
+            if (progress < 1f)
+            {
+                _activeSweepingLasers[i] = sweep;
+                continue;
+            }
+            TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 15,
+                Position = new float2(sweep.Start.x, sweep.Start.z),
+                Direction = sweep.Direction,
+                Length = sweep.Length,
+                Radius = sweep.Width,
+                Damage = sweep.Damage,
+                SourceTowerTypePlusOne = (int)RougeTowerType.Laser + 1
+            });
+            if (sweep.Renderer != null) Destroy(sweep.Renderer.gameObject);
+            _activeSweepingLasers.RemoveAt(i);
+        }
+    }
+
+    private bool StartOrbitSphereAttack(RougeDefenseTower tower, bool overclocked)
+    {
+        if (tower == null) return false;
         for (int i = 0; i < _activeOrbitSphereAttacks.Count; i++)
         {
-            if (_activeOrbitSphereAttacks[i].Tower == tower) return;
+            if (_activeOrbitSphereAttacks[i].Tower == tower) return false;
         }
 
-        int sphereCount = Mathf.Clamp(tower.ProjectileCount, 1, 12);
-        _activeOrbitSphereAttacks.Add(new ActiveOrbitSphereAttack
+        RougeOrbitSphereOverclockConfig config = tacticalSkillBalance.overclock.orbitSphere;
+        float multiplier = overclocked ? Mathf.Max(1f, config.statMultiplier) : 1f;
+        int sphereCount = overclocked ? Mathf.Max(1, config.sphereCount) : Mathf.Max(1, tower.ProjectileCount);
+        ActiveOrbitSphereAttack attack = new ActiveOrbitSphereAttack
         {
             Tower = tower,
-            Positions = new Vector3[sphereCount],
-            Distance = Mathf.Max(0.1f, tower.OrbitSphereRadius * 1.5f),
+            Positions = new Vector3[Mathf.Clamp(sphereCount, 1, 64)],
+            Distance = Mathf.Max(0.1f, tower.OrbitSphereRadius * multiplier * 1.5f),
             AngleDegrees = 0f,
             DamageTimer = 0f,
-            Returning = false
-        });
+            OuterHoldRemaining = overclocked ? Mathf.Max(0f, config.outerHoldDuration) : 0f,
+            StatMultiplier = multiplier,
+            Returning = false,
+            Overclocked = overclocked
+        };
+        for (int sphere = 0; sphere < attack.Positions.Length; sphere++)
+        {
+            float angle = sphere * (Mathf.PI * 2f / attack.Positions.Length);
+            attack.Positions[sphere] = tower.transform.position + new Vector3(
+                Mathf.Cos(angle) * attack.Distance, renderHeight + 1.15f,
+                Mathf.Sin(angle) * attack.Distance);
+        }
+        _activeOrbitSphereAttacks.Add(attack);
+        tower.attackTimer = float.PositiveInfinity;
+        return true;
+    }
+
+    private bool DetonateActiveOrbitSphereAttack(RougeDefenseTower tower)
+    {
+        RougeOrbitSphereOverclockConfig config = tacticalSkillBalance.overclock.orbitSphere;
+        for (int i = _activeOrbitSphereAttacks.Count - 1; i >= 0; i--)
+        {
+            ActiveOrbitSphereAttack attack = _activeOrbitSphereAttacks[i];
+            if (attack.Tower != tower) continue;
+            float radius = tower.OrbitSphereRadius * Mathf.Max(1f, config.activeExplosionRadiusMultiplier);
+            if (attack.Positions != null)
+            {
+                for (int sphere = 0; sphere < attack.Positions.Length; sphere++)
+                {
+                    Vector3 position = attack.Positions[sphere];
+                    TryAddSkillArea(new RougeSkillArea
+                    {
+                        Type = 13,
+                        Position = new float2(position.x, position.z),
+                        Radius = radius,
+                        Damage = config.activeExplosionDamage,
+                        SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1
+                    });
+                    SpawnAOERing(position, radius, 0.35f, new Color(0.3f, 0.7f, 1f, 1f));
+                }
+            }
+            _activeOrbitSphereAttacks.RemoveAt(i);
+            tower.attackTimer = tower.AttackInterval;
+            return true;
+        }
+        return false;
     }
 
     private void UpdateOrbitSphereAttacks(float dt)
@@ -1621,17 +2021,24 @@ public partial class RougeGameManager
             }
 
             float effectiveDt = dt * tower.AttackSpeedMultiplier;
-            float minimumDistance = Mathf.Max(0.1f, tower.OrbitSphereRadius * 1.5f);
+            float multiplier = Mathf.Max(1f, attack.StatMultiplier);
+            float sphereRadius = tower.OrbitSphereRadius * multiplier;
+            float minimumDistance = Mathf.Max(0.1f, sphereRadius * 1.5f);
             float maximumDistance = Mathf.Max(minimumDistance + 0.1f, tower.AttackRange);
-            float radialStep = Mathf.Max(0.1f, tower.OrbitRadialSpeed) * effectiveDt;
+            float radialStep = Mathf.Max(0.1f, tower.OrbitRadialSpeed * multiplier) * effectiveDt;
             if (!attack.Returning)
             {
-                attack.Distance += radialStep;
-                if (attack.Distance >= maximumDistance)
+                if (attack.Distance < maximumDistance)
                 {
-                    attack.Distance = maximumDistance;
-                    attack.Returning = true;
+                    attack.Distance = Mathf.Min(maximumDistance, attack.Distance + radialStep);
+                    if (attack.Distance >= maximumDistance && !attack.Overclocked) attack.Returning = true;
                 }
+                else if (attack.OuterHoldRemaining > 0f)
+                {
+                    attack.OuterHoldRemaining = Mathf.Max(0f, attack.OuterHoldRemaining - effectiveDt);
+                    if (attack.OuterHoldRemaining <= 0f) attack.Returning = true;
+                }
+                else attack.Returning = true;
             }
             else
             {
@@ -1645,30 +2052,29 @@ public partial class RougeGameManager
             }
 
             attack.AngleDegrees = Mathf.Repeat(attack.AngleDegrees +
-                tower.OrbitAngularSpeed * effectiveDt, 360f);
+                tower.OrbitAngularSpeed * multiplier * effectiveDt, 360f);
             int sphereCount = attack.Positions != null ? attack.Positions.Length : 0;
             for (int sphere = 0; sphere < sphereCount; sphere++)
             {
                 float angle = (attack.AngleDegrees + sphere * (360f / sphereCount)) * Mathf.Deg2Rad;
-                Vector3 position = tower.transform.position + new Vector3(
+                attack.Positions[sphere] = tower.transform.position + new Vector3(
                     Mathf.Cos(angle) * attack.Distance, renderHeight + 1.15f,
                     Mathf.Sin(angle) * attack.Distance);
-                attack.Positions[sphere] = position;
             }
 
             attack.DamageTimer -= effectiveDt;
-            float damageInterval = Mathf.Max(0.02f, tower.TickInterval);
+            float damageInterval = Mathf.Max(0.02f, tower.TickInterval / multiplier);
             while (attack.DamageTimer <= 0f)
             {
                 for (int sphere = 0; sphere < sphereCount; sphere++)
                 {
-                    Vector3 p = attack.Positions[sphere];
+                    Vector3 position = attack.Positions[sphere];
                     TryAddSkillArea(new RougeSkillArea
                     {
                         Type = 13,
-                        Position = new float2(p.x, p.z),
-                        Radius = tower.OrbitSphereRadius,
-                        Damage = tower.Damage,
+                        Position = new float2(position.x, position.z),
+                        Radius = sphereRadius,
+                        Damage = tower.Damage * multiplier,
                         SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1
                     });
                 }
@@ -1684,11 +2090,9 @@ public partial class RougeGameManager
         {
             _orbitSphereRenderMaterial = CreateRuntimeMaterial("Rouge/SpriteInstanced",
                 "Orbit Sphere Instanced Material", true);
-            _orbitSphereRenderMaterial.SetTexture("_MainTex",
-                Resources.Load<Texture2D>("Sprites/projectile_energy"));
+            _orbitSphereRenderMaterial.SetTexture("_MainTex", Resources.Load<Texture2D>("Sprites/projectile_energy"));
             ApplyBaseColor(_orbitSphereRenderMaterial, new Color(0.32f, 0.72f, 1f, 1f));
         }
-
         Camera camera = RougeCameraFollow.ResolveCamera();
         Quaternion rotation = camera != null ? camera.transform.rotation : Quaternion.Euler(90f, 0f, 0f);
         int batchCount = 0;
@@ -1696,7 +2100,7 @@ public partial class RougeGameManager
         {
             ActiveOrbitSphereAttack attack = _activeOrbitSphereAttacks[attackIndex];
             if (attack?.Tower == null || attack.Positions == null) continue;
-            float diameter = Mathf.Max(0.1f, attack.Tower.OrbitSphereRadius * 2f);
+            float diameter = Mathf.Max(0.1f, attack.Tower.OrbitSphereRadius * attack.StatMultiplier * 2f);
             for (int sphere = 0; sphere < attack.Positions.Length; sphere++)
             {
                 _orbitSphereRenderMatrices[batchCount++] = Matrix4x4.TRS(
@@ -1724,10 +2128,12 @@ public partial class RougeGameManager
     }
 
     private void SpawnTowerProjectile(RougeTowerType type, Vector3 start, Vector3 end, float damage, float radius,
-        float duration, float arcHeight, int targetIndex, float effectDuration = 0f, float tickInterval = 0f)
+        float duration, float arcHeight, int targetIndex, float effectDuration = 0f, float tickInterval = 0f,
+        float visualScaleMultiplier = 1f)
     {
         if (_towerProjectiles.Count >= 512) return;
         GameObject visual = GetTowerProjectileVisual(type);
+        visual.transform.localScale *= Mathf.Max(0.1f, visualScaleMultiplier);
         visual.transform.position = start;
         visual.SetActive(true);
         _towerProjectiles.Add(new TowerProjectile
@@ -2141,6 +2547,18 @@ public partial class RougeGameManager
         Text labelText = button.GetComponentInChildren<Text>();
         if (labelText != null) labelText.fontSize = 18;
         button.onClick.AddListener(() => BeginTowerBuild(type));
+        int index = (int)type;
+        if ((uint)index < (uint)_towerBuildButtons.Length)
+        {
+            _towerBuildButtons[index] = button;
+            _towerBuildButtonTexts[index] = labelText;
+        }
+    }
+
+    private static void SetPurchaseButtonAvailability(Button button, Text text, bool available)
+    {
+        if (button != null) button.interactable = available;
+        if (text != null) text.color = available ? Color.white : new Color(0.48f, 0.5f, 0.54f, 1f);
     }
 
     private static string GetTowerBuildLabel(int hotkey, RougeTowerType type)
@@ -2180,6 +2598,12 @@ public partial class RougeGameManager
         }
         if (_mainTowerHealthFill != null)
             SetUiBarFill(_mainTowerHealthFill, mainTower != null ? mainTower.HealthNormalized : 0f);
+        for (int typeIndex = 0; typeIndex < _towerBuildButtons.Length; typeIndex++)
+        {
+            TowerDefenseVisuals.GetBaseStats((RougeTowerType)typeIndex, out _, out _, out _, out _, out int cost);
+            SetPurchaseButtonAvailability(_towerBuildButtons[typeIndex], _towerBuildButtonTexts[typeIndex],
+                !_towerDefenseGameOver && _towerDefenseGold >= cost);
+        }
         RefreshTowerDamageRanking();
         RefreshTacticalSkillUi();
         if (_towerSellButton != null)
@@ -2194,7 +2618,7 @@ public partial class RougeGameManager
         }
         if (_towerTargetPriorityButton != null)
         {
-            bool showPriority = _towerPlacementMode && _selectedTower != null;
+            bool showPriority = _towerPlacementMode && _selectedTower != null && _selectedTower.IsTargetedDamage;
             _towerTargetPriorityButton.gameObject.SetActive(showPriority);
             if (showPriority && _towerTargetPriorityButtonText != null)
             {
@@ -2243,7 +2667,8 @@ public partial class RougeGameManager
         {
             bool hasSelection = _selectedTower != null;
             bool canUpgrade = hasSelection && _selectedTower.CanUpgrade;
-            _towerUpgradeButton.interactable = canUpgrade && _towerDefenseGold >= _selectedTower.UpgradeCost;
+            bool upgradeAvailable = canUpgrade && _towerDefenseGold >= _selectedTower.UpgradeCost;
+            SetPurchaseButtonAvailability(_towerUpgradeButton, _towerUpgradeButtonText, upgradeAvailable);
             if (_towerUpgradeButtonText != null)
             {
                 _towerUpgradeButtonText.text = !hasSelection

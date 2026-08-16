@@ -224,18 +224,98 @@ public sealed class RougeBlackHoleTacticalSkillConfig
 }
 
 [Serializable]
-public sealed class RougeDimensionalSlashTacticalSkillConfig
+public sealed class RougeIceOverclockConfig
 {
-    [Min(0)] public int initialCost = 5000;
+    [Min(0.1f)] public float radius = 30f;
+    [Min(0.1f)] public float freezeDuration = 5f;
+}
+
+[Serializable]
+public sealed class RougeMachineGunOverclockConfig
+{
+    [Min(0.05f)] public float duration = 5f;
+    [Min(0.01f)] public float interval = 0.05f;
+    [Min(1)] public int positionsPerVolley = 20;
+    [Min(0.1f)] public float radius = 30f;
+    [Min(0.1f)] public float impactRadius = 2f;
+    [Min(0f)] public float damage = 50f;
+    [Min(0.02f)] public float projectileTravelDuration = 0.3f;
+    [Min(0f)] public float projectileArcHeight = 4f;
+}
+
+[Serializable]
+public sealed class RougeFlameOverclockConfig
+{
+    [Min(0.05f)] public float duration = 5f;
+    [Min(0.01f)] public float interval = 0.25f;
+    [Min(0.1f)] public float radius = 30f;
+    [Min(0f)] public float damage = 50f;
+}
+
+[Serializable]
+public sealed class RougeLaserOverclockConfig
+{
+    [Min(0.05f)] public float duration = 3f;
+    [Min(0.01f)] public float interval = 0.25f;
+    [Min(0.05f)] public float sweepDuration = 0.5f;
+    [Min(0.1f)] public float range = 30f;
+    [Min(0.1f)] public float width = 3f;
+    [Min(0f)] public float damage = 300f;
+}
+
+[Serializable]
+public sealed class RougePiercingLaserOverclockConfig
+{
+    [Min(0.1f)] public float range = 100f;
+    [Min(0.1f)] public float width = 10f;
+    [Min(0f)] public float damage = 2000f;
+    [Min(0.05f)] public float visualDuration = 0.6f;
+}
+
+[Serializable]
+public sealed class RougeCannonOverclockConfig
+{
+    [Min(0.1f)] public float explosionRadius = 50f;
+    [Min(0f)] public float damage = 3000f;
+    [Min(0.1f)] public float projectileScale = 5f;
+    [Min(0.05f)] public float flightDuration = 0.8f;
+    [Min(0f)] public float arcHeight = 12f;
+}
+
+[Serializable]
+public sealed class RougeOrbitSphereOverclockConfig
+{
+    [Min(1)] public int sphereCount = 8;
+    [Min(1f)] public float statMultiplier = 2f;
+    [Min(0f)] public float outerHoldDuration = 4f;
+    [Min(1f)] public float activeExplosionRadiusMultiplier = 4f;
+    [Min(0f)] public float activeExplosionDamage = 100f;
+}
+
+[Serializable]
+public sealed class RougeOverclockTacticalSkillConfig
+{
+    [Min(0)] public int initialCost = 2500;
     [Min(1f)] public float costMultiplier = 1.5f;
-    [Min(0f)] public float cooldown = 25f;
-    [Min(0f)] public float damage = 200f;
-    [Min(10f)] public float totalLength = 50f;
-    [Min(0.1f)] public float minimumSegmentLength = 10f;
-    [Min(0.1f)] public float aoeRadius = 3f;
-    [Min(0.02f)] public float visualWidth = 0.12f;
-    [Min(0.01f)] public float segmentInterval = 0.08f;
-    [Min(0.01f)] public float visualDuration = 0.22f;
+    [Min(0f)] public float cooldown = 15f;
+    public RougeIceOverclockConfig ice = new RougeIceOverclockConfig();
+    public RougeMachineGunOverclockConfig machineGun = new RougeMachineGunOverclockConfig();
+    public RougeCannonOverclockConfig cannon = new RougeCannonOverclockConfig();
+    public RougeFlameOverclockConfig flame = new RougeFlameOverclockConfig();
+    public RougeLaserOverclockConfig laser = new RougeLaserOverclockConfig();
+    public RougePiercingLaserOverclockConfig piercingLaser = new RougePiercingLaserOverclockConfig();
+    public RougeOrbitSphereOverclockConfig orbitSphere = new RougeOrbitSphereOverclockConfig();
+
+    public void EnsureDefaults()
+    {
+        ice ??= new RougeIceOverclockConfig();
+        machineGun ??= new RougeMachineGunOverclockConfig();
+        cannon ??= new RougeCannonOverclockConfig();
+        flame ??= new RougeFlameOverclockConfig();
+        laser ??= new RougeLaserOverclockConfig();
+        piercingLaser ??= new RougePiercingLaserOverclockConfig();
+        orbitSphere ??= new RougeOrbitSphereOverclockConfig();
+    }
 }
 
 [Serializable]
@@ -244,13 +324,14 @@ public sealed class RougeTacticalSkillBalanceConfig
     [Min(0f)] public float damageGrowthPerCast = 0.1f;
     public RougeWindmillTacticalSkillConfig windmill = new RougeWindmillTacticalSkillConfig();
     public RougeBlackHoleTacticalSkillConfig blackHole = new RougeBlackHoleTacticalSkillConfig();
-    public RougeDimensionalSlashTacticalSkillConfig dimensionalSlash = new RougeDimensionalSlashTacticalSkillConfig();
+    public RougeOverclockTacticalSkillConfig overclock = new RougeOverclockTacticalSkillConfig();
 
     public void EnsureDefaults()
     {
         windmill ??= new RougeWindmillTacticalSkillConfig();
         blackHole ??= new RougeBlackHoleTacticalSkillConfig();
-        dimensionalSlash ??= new RougeDimensionalSlashTacticalSkillConfig();
+        overclock ??= new RougeOverclockTacticalSkillConfig();
+        overclock.EnsureDefaults();
     }
 }
 

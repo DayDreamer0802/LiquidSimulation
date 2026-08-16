@@ -52,7 +52,6 @@ internal static class TowerDefenseVisuals
     public const int TowerTypeCount = 7;
     private static Material s_lineMaterial;
     private static Material s_laserConnectionMaterial;
-    private static Material s_dimensionalSlashMaterial;
     private static RougeTowerBalanceConfig s_runtimeBalance;
 
     public static void SetRuntimeBalance(RougeTowerBalanceConfig balance)
@@ -255,19 +254,6 @@ internal static class TowerDefenseVisuals
             s_laserConnectionMaterial.SetColor("_BaseColor", s_laserConnectionMaterial.color);
         }
         return s_laserConnectionMaterial;
-    }
-
-    public static Material GetDimensionalSlashMaterial()
-    {
-        if (s_dimensionalSlashMaterial != null) return s_dimensionalSlashMaterial;
-        Shader shader = Shader.Find("Rouge/DimensionalSlash");
-        if (shader == null) shader = Shader.Find("Sprites/Default");
-        s_dimensionalSlashMaterial = new Material(shader)
-        {
-            name = "Shared Dimensional Slash Material",
-            renderQueue = 3200
-        };
-        return s_dimensionalSlashMaterial;
     }
 
     public static void UpdateCircle(LineRenderer line, Vector3 center, float radius, Color color, bool visible)

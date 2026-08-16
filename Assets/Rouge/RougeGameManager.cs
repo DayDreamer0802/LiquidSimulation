@@ -3679,6 +3679,7 @@ public struct RougeSkillArea
     public float EffectPoisonSpreadRadius;
     public float EffectSlowPercent;
     public float EffectSlowDuration;
+    public float EffectFreezeDuration;
     public float EffectCurseExplosionDamage;
     public float EffectCurseExplosionRadius;
     public float EffectBurnDamage;
@@ -3694,6 +3695,7 @@ public struct RougeEnemyEffectState
     public float SlowPercent;
     public float SlowTimer;
     public float SlowStacks;
+    public float FreezeTimer;
     public float BurnTimer;
     public float BurnTickTimer;
     public float BurnDamage;

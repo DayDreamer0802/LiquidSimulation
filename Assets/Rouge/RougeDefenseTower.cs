@@ -8,9 +8,13 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [SerializeField] private float placementRadius;
     [SerializeField] private int purchaseCost;
     [SerializeField] private int investedGold;
+    [SerializeField] private bool isTargetedDamage = true;
     [SerializeField] private RougeTowerTargetPriority targetPriority = RougeTowerTargetPriority.NearestToGoal;
     [System.NonSerialized] internal float attackTimer;
     [System.NonSerialized] internal int targetIndex = -1;
+    [System.NonSerialized] internal int cannonBurstShotsRemaining;
+    [System.NonSerialized] internal float cannonBurstTimer;
+    [System.NonSerialized] internal Vector3 cannonBurstTarget;
     [System.NonSerialized] internal Transform rotatingHead;
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
@@ -22,6 +26,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private Mesh laserBeamMesh;
     private GameObject bossInterferenceMarker;
     private float attackSpeedMultiplier = 1f;
+    private Vector3 rotatingHeadRestPosition;
+    private float recoilTimer;
+    private const float CannonRecoilDuration = 0.16f;
+    private const float CannonRecoilDistance = 0.26f;
 
     private RougeTowerStats Stats => TowerDefenseVisuals.GetStats(towerType, level);
     public RougeTowerType TowerType => towerType;
@@ -43,6 +51,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float PlacementRadius => placementRadius;
     public int PurchaseCost => purchaseCost;
     public int InvestedGold => investedGold;
+    public bool IsTargetedDamage => isTargetedDamage;
     public RougeTowerTargetPriority TargetPriority => targetPriority;
     public float AttackSpeedMultiplier => attackSpeedMultiplier;
     // Lv1 purchase is 1x. Upgrades to Lv2..Lv5 cost 2x, 4x, 8x and 16x.
@@ -54,9 +63,12 @@ public sealed class RougeDefenseTower : MonoBehaviour
         towerType = type;
         level = 1;
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out placementRadius, out purchaseCost);
+        isTargetedDamage = GetDefaultTargetedDamage(type);
         investedGold = preview ? 0 : purchaseCost;
         attackTimer = type == RougeTowerType.Laser ? 0f : AttackInterval * 0.25f;
         targetIndex = -1;
+        cannonBurstShotsRemaining = 0;
+        cannonBurstTimer = 0f;
         BuildVisual(preview);
     }
 
@@ -71,6 +83,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void Ensure2DVisual()
     {
         TowerDefenseVisuals.GetBaseStats(towerType, out _, out _, out _, out placementRadius, out purchaseCost);
+        isTargetedDamage = GetDefaultTargetedDamage(towerType);
         investedGold = Mathf.Max(investedGold, purchaseCost);
         if (billboard == null) BuildVisual(false);
     }
@@ -89,6 +102,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         level++;
         investedGold += cost;
         targetIndex = -1;
+        cannonBurstShotsRemaining = 0;
         return true;
     }
 
@@ -133,6 +147,31 @@ public sealed class RougeDefenseTower : MonoBehaviour
         laserBeamObject.SetActive(true);
     }
 
+    internal void ShowFocusedLaserBeams(Vector3 start, Vector3 target, int count)
+    {
+        int connectionCount = Mathf.Min(count, MaxLaserConnections);
+        if (connectionCount <= 0)
+        {
+            HideLaserBeams();
+            return;
+        }
+
+        EnsureLaserBeamMesh();
+        for (int i = 0; i < connectionCount; i++)
+        {
+            float offset = (i - (connectionCount - 1) * 0.5f) * 0.055f;
+            int vertex = i * 2;
+            laserVertices[vertex] = transform.InverseTransformPoint(start + Vector3.right * offset);
+            laserVertices[vertex + 1] = transform.InverseTransformPoint(target + Vector3.up * 0.08f);
+        }
+
+        int vertexCount = connectionCount * 2;
+        laserBeamMesh.Clear(false);
+        laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
+        laserBeamMesh.SetIndices(laserIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
+        laserBeamObject.SetActive(true);
+    }
+
     internal void HideLaserBeams()
     {
         if (laserBeamObject != null) laserBeamObject.SetActive(false);
@@ -142,6 +181,27 @@ public sealed class RougeDefenseTower : MonoBehaviour
     {
         if (billboard == null || rotatingHead == null) return;
         billboard.SetWorldDirection(worldTarget - transform.position);
+    }
+
+    internal void TriggerCannonRecoil()
+    {
+        if (towerType == RougeTowerType.Cannon) recoilTimer = CannonRecoilDuration;
+    }
+
+    internal void UpdatePresentation(float dt)
+    {
+        if (rotatingHead == null) return;
+        recoilTimer = Mathf.Max(0f, recoilTimer - Mathf.Max(0f, dt));
+        if (recoilTimer <= 0f)
+        {
+            rotatingHead.localPosition = rotatingHeadRestPosition;
+            return;
+        }
+
+        float normalized = 1f - recoilTimer / CannonRecoilDuration;
+        float recoil = Mathf.Sin(normalized * Mathf.PI) * CannonRecoilDistance;
+        Vector3 barrelDirection = rotatingHead.localRotation * Vector3.up;
+        rotatingHead.localPosition = rotatingHeadRestPosition - barrelDirection * recoil;
     }
 
     internal void SetBossInterference(bool active, float speedMultiplier)
@@ -171,6 +231,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private void OnValidate()
     {
         level = Mathf.Clamp(level, 1, TowerDefenseVisuals.MaxTowerLevel);
+        isTargetedDamage = GetDefaultTargetedDamage(towerType);
     }
 
     private void BuildVisual(bool preview)
@@ -178,6 +239,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
         ReleaseLaserBeamMesh();
         TowerDefenseVisuals.DestroyChildren(transform);
         rotatingHead = null;
+        rotatingHeadRestPosition = Vector3.zero;
+        recoilTimer = 0f;
         bossInterferenceMarker = null;
         attackSpeedMultiplier = 1f;
 
@@ -266,6 +329,12 @@ public sealed class RougeDefenseTower : MonoBehaviour
         SpriteRenderer top = RougeSpriteAssets.CreateRenderer("Rotating Turret Sprite", visualRoot,
             RougeSpriteAssets.Load(topPath), new Vector3(0f, 0.22f, 0f), topScale, 11, topColor);
         rotatingHead = top.transform;
+        rotatingHeadRestPosition = rotatingHead.localPosition;
         billboard.SetRotatingContent(rotatingHead);
+    }
+
+    private static bool GetDefaultTargetedDamage(RougeTowerType type)
+    {
+        return type != RougeTowerType.Ice && type != RougeTowerType.OrbitSphere;
     }
 }
