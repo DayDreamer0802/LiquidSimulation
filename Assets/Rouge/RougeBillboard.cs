@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -88,6 +90,27 @@ public sealed class RougeBillboard : MonoBehaviour
     private Camera _camera;
     private Vector3 _worldDirection;
     private bool _hasWorldDirection;
+    private Vector3 _floatingBasePosition;
+    private Vector3 _shootMoveBasePosition;
+    private Vector3 _shootScaleBaseScale;
+    private bool _hasFloatingBase;
+    private bool _hasShootMoveBase;
+    private bool _hasShootScaleBase;
+    private Coroutine _shootAnimation;
+    private float _animationStartTime;
+
+    /// <summary>The world-space origin authored in the tower prefab for projectiles and beams.</summary>
+    public Vector3 ShootPosition => shootPoint != null ? shootPoint.position : transform.position;
+
+    private void Awake()
+    {
+        CacheAnimationBases();
+    }
+
+    private void OnEnable()
+    {
+        _animationStartTime = Time.time;
+    }
 
     public void SetRotatingContent(Transform content)
     {
@@ -101,12 +124,148 @@ public sealed class RougeBillboard : MonoBehaviour
         if (_hasWorldDirection) _worldDirection = direction.normalized;
     }
 
+    /// <summary>
+    /// Plays the prefab-authored firing motion and invokes <paramref name="onShotFired"/> at
+    /// the release frame. Towers with no firing motion release immediately. Rapid-fire towers
+    /// keep their gameplay cadence while the currently visible recoil completes.
+    /// </summary>
+    public void PlayShootAnimation(Action onShotFired)
+    {
+        CacheAnimationBases();
+        bool hasMove = shootMoveContent != null;
+        bool hasScale = shootScaleContent != null;
+        if (!hasMove && !hasScale)
+        {
+            InvokeShot(onShotFired);
+            return;
+        }
+
+        // A machine gun may fire multiple times within a single visual recoil. Do not queue or
+        // discard those shots: only the first one owns the visual, later shots keep the DPS timing.
+        if (_shootAnimation != null)
+        {
+            InvokeShot(onShotFired);
+            return;
+        }
+        _shootAnimation = StartCoroutine(PlayShootAnimationRoutine(onShotFired, hasMove, hasScale));
+    }
+
+    private IEnumerator PlayShootAnimationRoutine(Action onShotFired, bool hasMove, bool hasScale)
+    {
+        Vector3 recoilPosition = _shootMoveBasePosition + Vector3.up * shootMoveY;
+        Vector3 scaleOne = GetScaledShootScale(shootScale1);
+        Vector3 scaleTwo = GetScaledShootScale(shootScale2);
+
+        float phaseOneDuration = Mathf.Max(hasMove ? Mathf.Max(0f, shootMoveYTime1) : 0f,
+            hasScale ? Mathf.Max(0f, shootScale1Time) : 0f);
+        yield return AnimatePhase(phaseOneDuration, t =>
+        {
+            if (hasMove) shootMoveContent.localPosition = Vector3.LerpUnclamped(_shootMoveBasePosition, recoilPosition, t);
+            if (hasScale) shootScaleContent.localScale = Vector3.LerpUnclamped(_shootScaleBaseScale, scaleOne, t);
+        });
+
+        // A recoil-only tower fires at the end of its recoil. Scale-driven towers fire after the
+        // second squash phase, when the authored vertical scale reaches its minimum.
+        if (!hasScale) InvokeShot(onShotFired);
+
+        float phaseTwoDuration = Mathf.Max(hasMove ? Mathf.Max(0f, shootMoveYTime2) : 0f,
+            hasScale ? Mathf.Max(0f, shootScale2Time) : 0f);
+        yield return AnimatePhase(phaseTwoDuration, t =>
+        {
+            if (hasMove) shootMoveContent.localPosition = Vector3.LerpUnclamped(recoilPosition, _shootMoveBasePosition, t);
+            if (hasScale) shootScaleContent.localScale = Vector3.LerpUnclamped(scaleOne, scaleTwo, t);
+        });
+
+        if (hasScale) InvokeShot(onShotFired);
+
+        if (hasScale)
+        {
+            yield return AnimatePhase(Mathf.Max(0f, shootScale3Time), t =>
+                shootScaleContent.localScale = Vector3.LerpUnclamped(scaleTwo, _shootScaleBaseScale, t));
+        }
+
+        RestoreShootState();
+        _shootAnimation = null;
+    }
+
+    private IEnumerator AnimatePhase(float duration, Action<float> apply)
+    {
+        if (duration <= 0f)
+        {
+            apply(1f);
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            apply(Mathf.Clamp01(elapsed / duration));
+            yield return null;
+        }
+    }
+
+    private Vector3 GetScaledShootScale(Vector2 multiplier)
+    {
+        return new Vector3(_shootScaleBaseScale.x * multiplier.x,
+            _shootScaleBaseScale.y * multiplier.y, _shootScaleBaseScale.z);
+    }
+
+    private void CacheAnimationBases()
+    {
+        if (floatingContent != null && !_hasFloatingBase)
+        {
+            _floatingBasePosition = floatingContent.localPosition;
+            _hasFloatingBase = true;
+        }
+        if (shootMoveContent != null && !_hasShootMoveBase)
+        {
+            _shootMoveBasePosition = shootMoveContent.localPosition;
+            _hasShootMoveBase = true;
+        }
+        if (shootScaleContent != null && !_hasShootScaleBase)
+        {
+            _shootScaleBaseScale = shootScaleContent.localScale;
+            _hasShootScaleBase = true;
+        }
+    }
+
+    private void RestoreShootState()
+    {
+        if (shootMoveContent != null) shootMoveContent.localPosition = _shootMoveBasePosition;
+        if (shootScaleContent != null) shootScaleContent.localScale = _shootScaleBaseScale;
+    }
+
+    private static void InvokeShot(Action onShotFired)
+    {
+        try
+        {
+            onShotFired?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (_shootAnimation != null) StopCoroutine(_shootAnimation);
+        _shootAnimation = null;
+        RestoreShootState();
+    }
+
     private void LateUpdate()
     {
         if (_camera == null) _camera = RougeCameraFollow.ResolveCamera();
         if (_camera == null) return;
 
         transform.rotation = Quaternion.LookRotation(-_camera.transform.forward, _camera.transform.up);
+        if (floatingContent != null && flaotingTargetTime > 0.0001f)
+        {
+            float phase = (Time.time - _animationStartTime) * Mathf.PI * 2f / flaotingTargetTime;
+            floatingContent.localPosition = _floatingBasePosition + Vector3.up * (Mathf.Sin(phase) * floatingTargetY);
+        }
         if (rotatingContent == null || !_hasWorldDirection) return;
 
         Vector3 localDirection = transform.InverseTransformDirection(_worldDirection);

@@ -19,7 +19,6 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal int cannonBurstShotsRemaining;
     [System.NonSerialized] internal float cannonBurstTimer;
     [System.NonSerialized] internal Vector3 cannonBurstTarget;
-    [System.NonSerialized] internal Transform rotatingHead;
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
     [System.NonSerialized] internal LineRenderer attackRing;
@@ -35,12 +34,6 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private float overclockRemaining;
     private ParticleSystem overclockParticles;
     private Material overclockParticleMaterial;
-    private Transform orbitSphereOrb;
-    private Vector3 orbitSphereOrbRestPosition;
-    private Vector3 rotatingHeadRestPosition;
-    private float recoilTimer;
-    private const float CannonRecoilDuration = 0.16f;
-    private const float CannonRecoilDistance = 0.26f;
 
     private RougeTowerStats Stats => TowerDefenseVisuals.GetStats(towerType, level);
     public RougeTowerType TowerType => towerType;
@@ -82,7 +75,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         targetIndex = -1;
         cannonBurstShotsRemaining = 0;
         cannonBurstTimer = 0f;
-        BuildVisual(preview);
+        InitializePrefabVisuals(preview);
     }
 
     internal void FinalizePlacement()
@@ -98,7 +91,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         TowerDefenseVisuals.GetBaseStats(towerType, out _, out _, out _, out placementRadius, out purchaseCost);
         isTargetedDamage = GetDefaultTargetedDamage(towerType);
         investedGold = Mathf.Max(investedGold, purchaseCost);
-        if (billboard == null) BuildVisual(false);
+        InitializePrefabVisuals(false);
     }
 
     internal void SetPreviewState(bool valid)
@@ -192,43 +185,28 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void AimAt(Vector3 worldTarget)
     {
-        if (billboard == null || rotatingHead == null) return;
-        billboard.SetWorldDirection(worldTarget - transform.position);
+        if (billboard != null) billboard.SetWorldDirection(worldTarget - transform.position);
     }
 
-    internal void TriggerCannonRecoil()
+    internal Vector3 GetShootPosition()
     {
-        if (towerType == RougeTowerType.Cannon) recoilTimer = CannonRecoilDuration;
+        return billboard != null ? billboard.ShootPosition : transform.position + Vector3.up * 3f;
+    }
+
+    internal void PlayAttackAnimation(System.Action onShotFired)
+    {
+        if (billboard != null) billboard.PlayShootAnimation(onShotFired);
+        else onShotFired?.Invoke();
     }
 
     internal void UpdatePresentation(float dt)
     {
         UpdateOverclock(dt);
-        if (orbitSphereOrb != null)
-        {
-            float bob = Mathf.Sin(Time.time * 2.4f + GetInstanceID() * 0.017f) * 0.12f;
-            orbitSphereOrb.localPosition = orbitSphereOrbRestPosition + Vector3.up * bob;
-        }
-
-        if (rotatingHead == null) return;
-        recoilTimer = Mathf.Max(0f, recoilTimer - Mathf.Max(0f, dt));
-        if (recoilTimer <= 0f)
-        {
-            rotatingHead.localPosition = rotatingHeadRestPosition;
-            return;
-        }
-
-        float normalized = 1f - recoilTimer / CannonRecoilDuration;
-        float recoil = Mathf.Sin(normalized * Mathf.PI) * CannonRecoilDistance;
-        Vector3 barrelDirection = rotatingHead.localRotation * Vector3.up;
-        rotatingHead.localPosition = rotatingHeadRestPosition - barrelDirection * recoil;
     }
 
     internal Vector3 GetCrystalLaserOrigin()
     {
-        return orbitSphereOrb != null
-            ? orbitSphereOrb.position
-            : transform.position + Vector3.up * 3f;
+        return GetShootPosition();
     }
 
     internal void SetBossInterference(bool active, float speedMultiplier)
@@ -333,63 +311,27 @@ public sealed class RougeDefenseTower : MonoBehaviour
         isTargetedDamage = GetDefaultTargetedDamage(towerType);
     }
 
-    private void BuildVisual(bool preview)
+    private void InitializePrefabVisuals(bool preview)
     {
         ReleaseLaserBeamMesh();
-        TowerDefenseVisuals.DestroyChildren(transform);
-        rotatingHead = null;
-        rotatingHeadRestPosition = Vector3.zero;
-        orbitSphereOrb = null;
-        orbitSphereOrbRestPosition = Vector3.zero;
-        recoilTimer = 0f;
-        bossInterferenceMarker = null;
-        bossAttackSpeedMultiplier = 1f;
-        overclockAttackSpeedMultiplier = 1f;
-        overclockDamageMultiplier = 1f;
-        overclockRemaining = 0f;
-        overclockParticles = null;
-
-        GameObject visualRoot = new GameObject("Tower 2D Billboard");
-        visualRoot.transform.SetParent(transform, false);
-        visualRoot.transform.localPosition = new Vector3(0f, 2.65f, 0f);
-        billboard = visualRoot.AddComponent<RougeBillboard>();
-
-        switch (towerType)
+        billboard = GetComponentInChildren<RougeBillboard>(true);
+        if (billboard == null)
         {
-            case RougeTowerType.Ice:
-                RougeSpriteAssets.CreateRenderer("Ice Tower Sprite", visualRoot.transform,
-                    RougeSpriteAssets.Load("Sprites/tower_ice"), Vector3.zero, 1.12f, 10, Color.white);
-                break;
-            case RougeTowerType.MachineGun:
-                BuildDirectionalSpriteVisual(visualRoot.transform, "Sprites/tower_machine_top", 0.76f, Color.white);
-                break;
-            case RougeTowerType.Cannon:
-                BuildDirectionalSpriteVisual(visualRoot.transform, "Sprites/tower_cannon_top", 0.78f, Color.white);
-                break;
-            case RougeTowerType.Flame:
-                RougeSpriteAssets.CreateRenderer("Flame Tower Sprite", visualRoot.transform,
-                    RougeSpriteAssets.Load("Sprites/tower_flame"), Vector3.zero, 1.12f, 10, Color.white);
-                break;
-            case RougeTowerType.Laser:
-                BuildDirectionalSpriteVisual(visualRoot.transform, "Sprites/tower_laser_top", 0.76f, Color.white);
-                break;
-            case RougeTowerType.PiercingLaser:
-                BuildDirectionalSpriteVisual(visualRoot.transform, "Sprites/tower_laser_top", 0.88f,
-                    new Color(1f, 0.55f, 1f, 1f));
-                break;
-            case RougeTowerType.OrbitSphere:
-                BuildOrbitSphereSpriteVisual(visualRoot.transform);
-                break;
+            Debug.LogError($"Tower prefab '{name}' is missing RougeBillboard.", this);
         }
 
-        SphereCollider towerCollider = gameObject.GetComponent<SphereCollider>();
-        if (towerCollider == null) towerCollider = gameObject.AddComponent<SphereCollider>();
-        towerCollider.radius = placementRadius;
-        towerCollider.center = new Vector3(0f, 0.8f, 0f);
-        towerCollider.isTrigger = true;
-        towerCollider.enabled = !preview;
-        collisionRing = TowerDefenseVisuals.CreateCircleRenderer("Placement Range", transform);
-        attackRing = TowerDefenseVisuals.CreateCircleRenderer("Attack Range", transform);
+        SphereCollider towerCollider = GetComponent<SphereCollider>();
+        if (towerCollider != null)
+        {
+            towerCollider.radius = placementRadius;
+            towerCollider.center = new Vector3(0f, 0.8f, 0f);
+            towerCollider.isTrigger = true;
+            towerCollider.enabled = !preview;
+        }
+        else Debug.LogError($"Tower prefab '{name}' is missing its placement SphereCollider.", this);
+
+        if (collisionRing == null) collisionRing = TowerDefenseVisuals.CreateCircleRenderer("Placement Range", transform);
+        if (attackRing == null) attackRing = TowerDefenseVisuals.CreateCircleRenderer("Attack Range", transform);
         SetRangeVisibility(preview);
     }
 
@@ -430,27 +372,6 @@ public sealed class RougeDefenseTower : MonoBehaviour
             if (Application.isPlaying) Destroy(overclockParticleMaterial);
             else DestroyImmediate(overclockParticleMaterial);
         }
-    }
-
-    private void BuildOrbitSphereSpriteVisual(Transform visualRoot)
-    {
-        RougeSpriteAssets.CreateRenderer("Crystal Tower Base", visualRoot,
-            RougeSpriteAssets.Load("Sprites/tower_orbit_base"), new Vector3(0f, -0.18f, 0f), 0.48f, 10, Color.white);
-        SpriteRenderer crystal = RougeSpriteAssets.CreateRenderer("Floating Crystal", visualRoot,
-            RougeSpriteAssets.Load("Sprites/tower_crystal"), new Vector3(0f, 1.02f, 0.02f), 0.52f, 11, Color.white);
-        orbitSphereOrb = crystal.transform;
-        orbitSphereOrbRestPosition = orbitSphereOrb.localPosition;
-    }
-
-    private void BuildDirectionalSpriteVisual(Transform visualRoot, string topPath, float topScale, Color topColor)
-    {
-        RougeSpriteAssets.CreateRenderer("Tower Base Sprite", visualRoot,
-            RougeSpriteAssets.Load("Sprites/tower_directional_base"), Vector3.zero, 1.08f, 10, Color.white);
-        SpriteRenderer top = RougeSpriteAssets.CreateRenderer("Rotating Turret Sprite", visualRoot,
-            RougeSpriteAssets.Load(topPath), new Vector3(0f, 0.22f, 0f), topScale, 11, topColor);
-        rotatingHead = top.transform;
-        rotatingHeadRestPosition = rotatingHead.localPosition;
-        billboard.SetRotatingContent(rotatingHead);
     }
 
     private static bool GetDefaultTargetedDamage(RougeTowerType type)

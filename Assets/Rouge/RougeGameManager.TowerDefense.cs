@@ -13,6 +13,16 @@ public partial class RougeGameManager
     private const byte EnemyArchetypeMask = 0x3F;
     private const int LegacyTowerDefenseStartingGold = 500;
     private const int DefaultTowerDefenseStartingGold = 2000;
+    private static readonly string[] TowerPrefabResourcePaths =
+    {
+        "Prefab/tower/Ice",
+        "Prefab/tower/MachineGun",
+        "Prefab/tower/Cannon",
+        "Prefab/tower/Flame",
+        "Prefab/tower/Laser",
+        "Prefab/tower/PiercingLaser",
+        "Prefab/tower/OrbitSphere"
+    };
     public static bool TowerDefenseBuildModeActive { get; private set; }
 
     [Header("Tower Defense")]
@@ -543,11 +553,48 @@ public partial class RougeGameManager
         _towerBuildSelectionActive = true;
         if (!_towerPlacementMode) return;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
-        GameObject go = new GameObject("Tower Preview - " + TowerDefenseVisuals.GetTowerName(type));
-        _towerPreview = go.AddComponent<RougeDefenseTower>();
+        GameObject go = InstantiateTowerPrefab(type);
+        if (go == null)
+        {
+            _towerPreview = null;
+            _towerBuildSelectionActive = false;
+            RefreshTowerDefenseUi();
+            return;
+        }
+        go.name = "Tower Preview - " + TowerDefenseVisuals.GetTowerName(type);
+        _towerPreview = go.GetComponent<RougeDefenseTower>();
         _towerPreview.Configure(type, true);
         SelectPlacedTower(null);
         RefreshTowerDefenseUi();
+    }
+
+    private static GameObject InstantiateTowerPrefab(RougeTowerType type)
+    {
+        int typeIndex = (int)type;
+        if (typeIndex < 0 || typeIndex >= TowerPrefabResourcePaths.Length)
+        {
+            Debug.LogError($"No tower prefab path is configured for tower type {type}.");
+            return null;
+        }
+
+        string resourcePath = TowerPrefabResourcePaths[typeIndex];
+        GameObject prefab = Resources.Load<GameObject>(resourcePath);
+        if (prefab == null)
+        {
+            Debug.LogError($"Tower prefab missing at Resources/{resourcePath}. Tower creation was cancelled.");
+            return null;
+        }
+
+        RougeDefenseTower tower = prefab.GetComponent<RougeDefenseTower>();
+        if (tower == null)
+        {
+            Debug.LogError($"Tower prefab at Resources/{resourcePath} is missing RougeDefenseTower. Tower creation was cancelled.");
+            return null;
+        }
+
+        GameObject instance = Instantiate(prefab);
+        instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        return instance;
     }
 
     private void BeginTowerBuild(RougeTowerType type)
@@ -1447,6 +1494,7 @@ public partial class RougeGameManager
         if (count <= 0) return false;
         tower.targetIndex = _towerTargetIndices[0];
         AimTowerAt(tower, _towerTargetPositions[0]);
+        tower.PlayAttackAnimation(null);
         Vector3 start = GetTowerMuzzlePosition(tower);
         for (int i = 0; i < count; i++)
         {
@@ -1574,12 +1622,16 @@ public partial class RougeGameManager
         int catchUpShots = 0;
         while (tower.cannonBurstTimer <= 0f && tower.cannonBurstShotsRemaining > 0 && catchUpShots < 3)
         {
-            Vector3 start = GetTowerMuzzlePosition(tower);
-            float distance = Vector2.Distance(new Vector2(start.x, start.z),
-                new Vector2(tower.cannonBurstTarget.x, tower.cannonBurstTarget.z));
-            SpawnTowerProjectile(RougeTowerType.Cannon, start, tower.cannonBurstTarget, tower.Damage,
-                tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1);
-            tower.TriggerCannonRecoil();
+            Vector3 target = tower.cannonBurstTarget;
+            tower.PlayAttackAnimation(() =>
+            {
+                if (tower == null) return;
+                Vector3 start = GetTowerMuzzlePosition(tower);
+                float distance = Vector2.Distance(new Vector2(start.x, start.z),
+                    new Vector2(target.x, target.z));
+                SpawnTowerProjectile(RougeTowerType.Cannon, start, target, tower.Damage,
+                    tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1);
+            });
             tower.cannonBurstShotsRemaining--;
             tower.cannonBurstTimer += 0.12f;
             catchUpShots++;
@@ -1588,55 +1640,70 @@ public partial class RougeGameManager
 
     private void FireTower(RougeDefenseTower tower, Vector3 target)
     {
-        Vector3 start = GetTowerMuzzlePosition(tower);
         switch (tower.TowerType)
         {
             case RougeTowerType.Ice:
             {
-                Vector3 p = tower.transform.position;
-                TryAddSkillArea(new RougeSkillArea
+                tower.PlayAttackAnimation(() =>
                 {
-                    Type = 13,
-                    Position = new float2(p.x, p.z),
-                    Radius = tower.AttackRange,
-                    Damage = tower.Damage,
-                    EffectFlags = (int)SkillHitEffectTag.Slow,
-                    EffectSlowPercent = tower.EffectPercent,
-                    EffectSlowDuration = tower.EffectDuration,
-                    SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                    if (tower == null) return;
+                    Vector3 p = tower.transform.position;
+                    TryAddSkillArea(new RougeSkillArea
+                    {
+                        Type = 13,
+                        Position = new float2(p.x, p.z),
+                        Radius = tower.AttackRange,
+                        Damage = tower.Damage,
+                        EffectFlags = (int)SkillHitEffectTag.Slow,
+                        EffectSlowPercent = tower.EffectPercent,
+                        EffectSlowDuration = tower.EffectDuration,
+                        SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                    });
+                    SpawnAOERing(new Vector3(p.x, renderHeight + 0.08f, p.z), tower.AttackRange, 0.45f,
+                        new Color(0.2f, 0.85f, 1f, 1f));
                 });
-                SpawnAOERing(new Vector3(p.x, renderHeight + 0.08f, p.z), tower.AttackRange, 0.45f,
-                    new Color(0.2f, 0.85f, 1f, 1f));
                 break;
             }
             case RougeTowerType.Cannon:
                 BeginCannonBurst(tower, target);
                 break;
             case RougeTowerType.Flame:
-                SpawnTowerProjectile(RougeTowerType.Flame, start, target, tower.Damage, tower.AoeRadius,
-                    0.85f, 8f, tower.targetIndex, tower.EffectDuration, tower.TickInterval);
+            {
+                int targetIndex = tower.targetIndex;
+                tower.PlayAttackAnimation(() =>
+                {
+                    if (tower == null) return;
+                    SpawnTowerProjectile(RougeTowerType.Flame, GetTowerMuzzlePosition(tower), target, tower.Damage,
+                        tower.AoeRadius, 0.85f, 8f, targetIndex, tower.EffectDuration, tower.TickInterval);
+                });
                 break;
+            }
             case RougeTowerType.PiercingLaser:
             {
-                Vector2 direction2 = new Vector2(target.x - start.x, target.z - start.z).normalized;
-                float beamLength = tower.AttackRange * 2f;
-                const float beamWidth = 5f;
-                Vector3 end = start + new Vector3(direction2.x, 0f, direction2.y) * beamLength;
-                TryAddSkillArea(new RougeSkillArea
+                tower.PlayAttackAnimation(() =>
                 {
-                    Type = 15,
-                    Position = new float2(start.x, start.z),
-                    Direction = new float2(direction2.x, direction2.y),
-                    Length = beamLength,
-                    Radius = beamWidth,
-                    Damage = tower.Damage,
-                    SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                    if (tower == null) return;
+                    Vector3 start = GetTowerMuzzlePosition(tower);
+                    Vector2 direction2 = new Vector2(target.x - start.x, target.z - start.z).normalized;
+                    float beamLength = tower.AttackRange * 2f;
+                    const float beamWidth = 5f;
+                    Vector3 end = start + new Vector3(direction2.x, 0f, direction2.y) * beamLength;
+                    TryAddSkillArea(new RougeSkillArea
+                    {
+                        Type = 15,
+                        Position = new float2(start.x, start.z),
+                        Direction = new float2(direction2.x, direction2.y),
+                        Length = beamLength,
+                        Radius = beamWidth,
+                        Damage = tower.Damage,
+                        SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                    });
+                    SpawnTowerBeam(start, end, beamWidth, 0.2f);
                 });
-                SpawnTowerBeam(start, end, beamWidth, 0.2f);
                 break;
             }
             case RougeTowerType.OrbitSphere:
-                StartOrbitSphereAttack(tower);
+                tower.PlayAttackAnimation(() => { StartOrbitSphereAttack(tower); });
                 break;
         }
     }
@@ -1763,9 +1830,7 @@ public partial class RougeGameManager
 
     private static Vector3 GetTowerMuzzlePosition(RougeDefenseTower tower)
     {
-        return tower.rotatingHead != null
-            ? tower.rotatingHead.position + Vector3.up * 1.5f
-            : tower.transform.position + Vector3.up * 3f;
+        return tower.GetShootPosition();
     }
 
     private void SpawnTowerProjectile(RougeTowerType type, Vector3 start, Vector3 end, float damage, float radius,
