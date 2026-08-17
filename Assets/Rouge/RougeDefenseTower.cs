@@ -319,6 +319,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
         {
             Debug.LogError($"Tower prefab '{name}' is missing RougeBillboard.", this);
         }
+        else
+        {
+            billboard.SetRotatingContentAngleOffset(180f);
+        }
 
         SphereCollider towerCollider = GetComponent<SphereCollider>();
         if (towerCollider != null)

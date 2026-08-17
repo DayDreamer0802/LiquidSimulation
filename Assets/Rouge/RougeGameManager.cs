@@ -234,6 +234,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private NativeArray<RougeSkillArea> _skillAreasDb;
     private int _skillAreaCount;
+    private readonly List<RougeSkillArea> _pendingSkillAreas = new List<RougeSkillArea>();
     private float _tornadoCooldownTimer;
     private int _pillarStrikesDone = 999;
     private int _pillarStrikesTotal = 0;
@@ -707,6 +708,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (UsesTowerDefenseSpawners())
         {
+            FlushPendingSkillAreas();
             _skillAreaCount = 0;
             _activeBulletCount = 0;
             _bulletMin = float2.zero;
@@ -714,6 +716,10 @@ public partial class RougeGameManager : MonoBehaviour
         }
         else
         {
+            if (_pendingSkillAreas.Count > 0)
+            {
+                _pendingSkillAreas.Clear();
+            }
             UpdateSkills(dt);
             ApplyPendingPlayerContactSkill();
         }
@@ -2996,6 +3002,10 @@ public partial class RougeGameManager : MonoBehaviour
         _simulationHandle.Complete();
         FinalizeCompletedSimulationBuffers();
         _simulationHandle = default;
+        if (_pendingSkillAreas.Count > 0)
+        {
+            _pendingSkillAreas.Clear();
+        }
         DisposeTowerDefense();
         _initialized = false;
         _activeBulletCount = 0;

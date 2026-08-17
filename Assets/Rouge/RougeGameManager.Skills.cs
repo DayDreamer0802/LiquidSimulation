@@ -83,6 +83,11 @@ public partial class RougeGameManager
 
     private bool TryAddSkillArea(RougeSkillArea area)
     {
+        if (UsesTowerDefenseSpawners() && _simulationResultBackBufferReady)
+        {
+            return TryQueuePendingSkillArea(area);
+        }
+
         if (_skillAreaCount >= _skillAreasDb.Length)
         {
             return false;
@@ -90,6 +95,29 @@ public partial class RougeGameManager
 
         _skillAreasDb[_skillAreaCount++] = area;
         return true;
+    }
+
+    private bool TryQueuePendingSkillArea(RougeSkillArea area)
+    {
+        if (_pendingSkillAreas.Count >= _skillAreasDb.Length)
+        {
+            return false;
+        }
+
+        _pendingSkillAreas.Add(area);
+        return true;
+    }
+
+    private void FlushPendingSkillAreas()
+    {
+        int remainingCapacity = _skillAreasDb.Length - _skillAreaCount;
+        int countToApply = Mathf.Min(_pendingSkillAreas.Count, Mathf.Max(0, remainingCapacity));
+        for (int i = 0; i < countToApply; i++)
+        {
+            _skillAreasDb[_skillAreaCount++] = _pendingSkillAreas[i];
+        }
+
+        _pendingSkillAreas.Clear();
     }
 
     private bool TryAddSkillArea(RougeSkillArea area, ResolvedSkillHitEffectConfig effects)

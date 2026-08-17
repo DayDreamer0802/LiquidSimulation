@@ -98,6 +98,7 @@ public sealed class RougeBillboard : MonoBehaviour
     private bool _hasShootScaleBase;
     private Coroutine _shootAnimation;
     private float _animationStartTime;
+    private float _rotatingContentAngleOffset;
 
     /// <summary>The world-space origin authored in the tower prefab for projectiles and beams.</summary>
     public Vector3 ShootPosition => shootPoint != null ? shootPoint.position : transform.position;
@@ -115,6 +116,11 @@ public sealed class RougeBillboard : MonoBehaviour
     public void SetRotatingContent(Transform content)
     {
         rotatingContent = content;
+    }
+
+    public void SetRotatingContentAngleOffset(float angleDegrees)
+    {
+        _rotatingContentAngleOffset = angleDegrees;
     }
 
     public void SetWorldDirection(Vector3 direction)
@@ -271,7 +277,7 @@ public sealed class RougeBillboard : MonoBehaviour
         Vector3 localDirection = transform.InverseTransformDirection(_worldDirection);
         Vector2 screenDirection = new Vector2(localDirection.x, localDirection.y);
         if (screenDirection.sqrMagnitude <= 0.000001f) return;
-        float angle = Mathf.Atan2(-screenDirection.x, screenDirection.y) * Mathf.Rad2Deg;
+        float angle = Mathf.Atan2(-screenDirection.x, screenDirection.y) * Mathf.Rad2Deg + _rotatingContentAngleOffset;
         rotatingContent.localRotation = Quaternion.Euler(0f, 0f, angle);
     }
 }
