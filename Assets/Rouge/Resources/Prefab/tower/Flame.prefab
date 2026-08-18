@@ -454,10 +454,10 @@ MonoBehaviour:
   shootMoveYTime2: 0.1
   shootScaleContent: {fileID: 6372167628294704122}
   shootScale1: {x: 0.9, y: 1.1}
-  shootScale1Time: 0.15
+  shootScale1Time: 0.1
   shootScale2: {x: 1.1, y: 0.8}
-  shootScale2Time: 0.3
-  shootScale3Time: 0.2
+  shootScale2Time: 0.2
+  shootScale3Time: 0.1
 --- !u!1 &5104437404767436050
 GameObject:
   m_ObjectHideFlags: 0

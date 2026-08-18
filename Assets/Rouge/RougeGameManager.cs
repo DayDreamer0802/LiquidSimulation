@@ -708,8 +708,11 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (UsesTowerDefenseSpawners())
         {
-            FlushPendingSkillAreas();
             _skillAreaCount = 0;
+            // Animation release callbacks can run after the previous simulation has been
+            // scheduled. Those areas are queued until that job is complete, then become the
+            // first areas consumed by this frame's simulation.
+            FlushPendingSkillAreas();
             _activeBulletCount = 0;
             _bulletMin = float2.zero;
             _bulletMax = float2.zero;

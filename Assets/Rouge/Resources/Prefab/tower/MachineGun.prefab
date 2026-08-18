@@ -112,12 +112,11 @@ Transform:
   m_GameObject: {fileID: 4896061059838898476}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.11, y: 1, z: 0}
+  m_LocalPosition: {x: -0.11, y: 0.98, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6190752719139686622}
-  - {fileID: 4394706934391496801}
   m_Father: {fileID: 3843199812126969770}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5202730673382722486
@@ -427,7 +426,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 0.76, y: 0.76000005, z: 0.76}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 4394706934391496801}
   m_Father: {fileID: 8706866922163167198}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 180}
 --- !u!212 &2421191380248435545
@@ -711,12 +711,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7953648043877667954}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -1.89, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -1, w: -0.000000029802326}
+  m_LocalPosition: {x: 0, y: 2.4868438, z: 0}
+  m_LocalScale: {x: 1.3157895, y: 1.3157893, z: 1.3157896}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 8706866922163167198}
+  m_Father: {fileID: 6190752719139686622}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &8692257633129869900
 GameObject:
@@ -769,10 +769,10 @@ MonoBehaviour:
   floatingContent: {fileID: 0}
   floatingTargetY: 0.22
   flaotingTargetTime: 2
-  shootMoveContent: {fileID: 8706866922163167198}
-  shootMoveY: 0.25
-  shootMoveYTime1: 0.1
-  shootMoveYTime2: 0.1
+  shootMoveContent: {fileID: 6190752719139686622}
+  shootMoveY: 0.1
+  shootMoveYTime1: 0.02
+  shootMoveYTime2: 0.02
   shootScaleContent: {fileID: 0}
   shootScale1: {x: 0.9, y: 1.1}
   shootScale1Time: 0.15

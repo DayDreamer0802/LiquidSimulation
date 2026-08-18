@@ -3122,9 +3122,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 180
+  spawnCount: 1000
   spawnInterval: 1
-  startDelay: 150
+  startDelay: 0
   enemyTypeIndex: 0
   enemyTypeWeights:
   - enemyTypeIndex: 0
@@ -5079,7 +5079,7 @@ MonoBehaviour:
   techPanelShader: {fileID: 4800000, guid: b4ba5ac408e2f8c438946b210d667e04, type: 3}
   laserBeamShader: {fileID: 4800000, guid: e021425b141e2b74c9ac24c0919cd339, type: 3}
   urpLitShader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
-  enemyCount: 150000
+  enemyCount: 100000
   enemyMaxHealth: 24
   enemyRadius: 1.2
   enemyMaxSpeed: 7
@@ -6887,6 +6887,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 18
         attackInterval: 4.5
         attackRange: 28
@@ -6899,6 +6900,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 26
         attackInterval: 4
         attackRange: 32
@@ -6911,6 +6913,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 32
         attackInterval: 3.5
         attackRange: 36
@@ -6923,6 +6926,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 40
         attackInterval: 3
         attackRange: 40
@@ -6935,6 +6939,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 1
       placementRadius: 2
       purchaseCost: 400
@@ -6951,6 +6956,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 8
         attackInterval: 0.05
         attackRange: 44
@@ -6963,6 +6969,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 12
         attackInterval: 0.05
         attackRange: 52
@@ -6975,6 +6982,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 15
         attackInterval: 0.05
         attackRange: 60
@@ -6987,6 +6995,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 20
         attackInterval: 0.05
         attackRange: 72
@@ -6999,6 +7008,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 2
       placementRadius: 2.7
       purchaseCost: 750
@@ -7015,6 +7025,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 75
         attackInterval: 2.7
         attackRange: 52
@@ -7027,6 +7038,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 100
         attackInterval: 2.4
         attackRange: 60
@@ -7039,6 +7051,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 125
         attackInterval: 2.2
         attackRange: 68
@@ -7051,6 +7064,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 200
         attackInterval: 2
         attackRange: 80
@@ -7063,6 +7077,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 3
       placementRadius: 2.4
       purchaseCost: 625
@@ -7079,6 +7094,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 12
         attackInterval: 5
         attackRange: 24
@@ -7091,6 +7107,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 14
         attackInterval: 5
         attackRange: 28
@@ -7103,6 +7120,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 16
         attackInterval: 5
         attackRange: 32
@@ -7115,6 +7133,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 20
         attackInterval: 5
         attackRange: 36
@@ -7127,6 +7146,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 4
       placementRadius: 2.3
       purchaseCost: 750
@@ -7143,6 +7163,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 3
         attackInterval: 0.016666668
         attackRange: 34
@@ -7155,6 +7176,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 4
         attackInterval: 0.016666668
         attackRange: 38
@@ -7167,6 +7189,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 5
         attackInterval: 0.016666668
         attackRange: 42
@@ -7179,6 +7202,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 7
         attackInterval: 0.016666668
         attackRange: 48
@@ -7191,6 +7215,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 5
       placementRadius: 2.8
       purchaseCost: 1000
@@ -7207,6 +7232,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 300
         attackInterval: 4.75
         attackRange: 44
@@ -7219,6 +7245,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 400
         attackInterval: 4.5
         attackRange: 48
@@ -7231,6 +7258,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 500
         attackInterval: 4.25
         attackRange: 52
@@ -7243,6 +7271,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 1000
         attackInterval: 4
         attackRange: 60
@@ -7255,6 +7284,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
     - towerType: 6
       placementRadius: 2.5
       purchaseCost: 900
@@ -7271,6 +7301,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.2
         orbitRadialSpeed: 8
         orbitAngularSpeed: 180
+        orbitOuterHoldDuration: 1.5
       - damage: 45
         attackInterval: 2.8
         attackRange: 30
@@ -7283,6 +7314,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.3
         orbitRadialSpeed: 9
         orbitAngularSpeed: 210
+        orbitOuterHoldDuration: 1.5
       - damage: 65
         attackInterval: 2.6
         attackRange: 36
@@ -7295,6 +7327,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.4
         orbitRadialSpeed: 10
         orbitAngularSpeed: 240
+        orbitOuterHoldDuration: 1.5
       - damage: 90
         attackInterval: 2.4
         attackRange: 42
@@ -7307,6 +7340,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.5
         orbitRadialSpeed: 11
         orbitAngularSpeed: 270
+        orbitOuterHoldDuration: 1.5
       - damage: 125
         attackInterval: 2.2
         attackRange: 50
@@ -7319,6 +7353,7 @@ MonoBehaviour:
         orbitSphereRadius: 1.7
         orbitRadialSpeed: 12
         orbitAngularSpeed: 320
+        orbitOuterHoldDuration: 1.5
   enemyBalance:
     normalKillGold: 1
     eliteKillGold: 20
@@ -7395,47 +7430,19 @@ MonoBehaviour:
       initialCost: 2500
       costMultiplier: 1.5
       cooldown: 15
-      ice:
-        radius: 30
-        freezeDuration: 5
-      machineGun:
-        duration: 5
-        interval: 0.05
-        positionsPerVolley: 20
-        radius: 30
-        impactRadius: 2
-        damage: 50
-        projectileTravelDuration: 0.3
-        projectileArcHeight: 4
-      cannon:
-        explosionRadius: 50
-        damage: 3000
-        projectileScale: 5
-        flightDuration: 0.8
-        arcHeight: 12
-      flame:
-        duration: 5
-        interval: 0.25
-        radius: 30
-        damage: 50
-      laser:
-        duration: 3
-        interval: 0.25
-        sweepDuration: 0.5
-        range: 30
-        width: 3
-        damage: 300
-      piercingLaser:
-        range: 100
-        width: 10
-        damage: 2000
-        visualDuration: 0.6
-      orbitSphere:
-        sphereCount: 8
-        statMultiplier: 2
-        outerHoldDuration: 4
-        activeExplosionRadiusMultiplier: 4
-        activeExplosionDamage: 100
+      duration: 7
+      attackSpeedMultiplier: 1.3
+      damageMultiplier: 1.3
+    missileBarrage:
+      cooldown: 25
+      selectionRadius: 50
+      duration: 10
+      minimumInterval: 0.3
+      maximumInterval: 0.4
+      impactRadius: 5
+      impactDamage: 100
+      fallHeight: 35
+      fallDuration: 0.45
   bossSpawnPoint: {fileID: 0}
 --- !u!4 &1458908833
 Transform:
@@ -9463,7 +9470,7 @@ Transform:
   m_GameObject: {fileID: 2027147787}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 30}
+  m_LocalPosition: {x: -0.0000013113416, y: 0, z: 30}
   m_LocalScale: {x: 10, y: 10, z: 10}
   m_ConstrainProportionsScale: 0
   m_Children: []

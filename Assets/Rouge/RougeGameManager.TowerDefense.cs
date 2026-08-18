@@ -787,6 +787,11 @@ public partial class RougeGameManager
             return;
         }
 
+        // Target-index damage can be produced by projectile impacts as well as continuous
+        // lasers, so establish the frame before either system updates.
+        _towerLaserDamageFrame++;
+        if (_towerLaserDamageFrame == 0) _towerLaserDamageFrame = 1;
+
         if (mainTower != null)
         {
             mainTower.aoeCooldownRemaining = Mathf.Max(0f, mainTower.aoeCooldownRemaining - dt);
@@ -1346,8 +1351,6 @@ public partial class RougeGameManager
 
     private void UpdateDefenseTowers(float dt)
     {
-        _towerLaserDamageFrame++;
-        if (_towerLaserDamageFrame == 0) _towerLaserDamageFrame = 1;
         for (int i = _defenseTowers.Count - 1; i >= 0; i--)
         {
             RougeDefenseTower tower = _defenseTowers[i];
@@ -1441,11 +1444,12 @@ public partial class RougeGameManager
             Vector3 position = tower.transform.position;
             bool focusedBossLaser = tower.TowerType == RougeTowerType.Laser &&
                 tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+            bool usesSingleAimDirection = focusedBossLaser || tower.TowerType == RougeTowerType.MachineGun;
             _towerTargetRequests[i] = new RougeTowerTargetRequest
             {
                 Position = new float2(position.x, position.z),
                 Range = tower.AttackRange,
-                TargetCount = focusedBossLaser || !tower.IsTargetedDamage
+                TargetCount = usesSingleAimDirection || !tower.IsTargetedDamage
                     ? 1
                     : math.clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower),
                 PriorityMode = tower.IsTargetedDamage
@@ -1490,29 +1494,30 @@ public partial class RougeGameManager
 
     private bool FireMachineGunVolley(RougeDefenseTower tower, int towerListIndex)
     {
-        int count = CollectTowerTargets(tower, towerListIndex, tower.TargetCount);
+        int count = CollectTowerTargets(tower, towerListIndex, 1);
         if (count <= 0) return false;
         tower.targetIndex = _towerTargetIndices[0];
         AimTowerAt(tower, _towerTargetPositions[0]);
         tower.PlayAttackAnimation(null);
         Vector3 start = GetTowerMuzzlePosition(tower);
-        for (int i = 0; i < count; i++)
+        Vector3 primaryTarget = _towerTargetPositions[0];
+        Vector2 planar = new Vector2(primaryTarget.x - start.x, primaryTarget.z - start.z);
+        float distance = Mathf.Max(0.1f, planar.magnitude);
+        float2 baseDirection = new float2(planar.x / distance, planar.y / distance);
+        int pelletCount = Mathf.Clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower);
+        const float halfSpreadDegrees = 9f;
+        const float pelletHitRadius = 1.5f;
+        for (int i = 0; i < pelletCount; i++)
         {
-            Vector3 target = _towerTargetPositions[i];
-            Vector2 planar = new Vector2(target.x - start.x, target.z - start.z);
-            float distance = Mathf.Max(0.1f, planar.magnitude);
-            // The bullets fan out naturally because every pellet has its own enemy.
-            // Keep only a tiny angular jitter so the snapshot projectile still lands
-            // inside its impact radius at the doubled maximum range.
-            float spreadDegrees = count <= 1 ? 0f : Mathf.Lerp(-0.65f, 0.65f, i / (float)(count - 1));
+            float spreadDegrees = pelletCount <= 1
+                ? 0f
+                : Mathf.Lerp(-halfSpreadDegrees, halfSpreadDegrees, i / (float)(pelletCount - 1));
             float spreadRadians = spreadDegrees * Mathf.Deg2Rad;
-            float2 direction = Rotate(new float2(planar.x / distance, planar.y / distance), spreadRadians);
-            Vector3 spreadTarget = new Vector3(start.x + direction.x * distance, target.y, start.z + direction.y * distance);
-            AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[i], tower.Damage);
-            // Damage is target-index based and independent from the capped visual pool.
-            // This keeps every pellet functional when hundreds of towers are firing.
-            SpawnTowerProjectile(RougeTowerType.MachineGun, start, spreadTarget, 0f,
-                1.1f, Mathf.Max(0.04f, distance / 70f), 0f, -1);
+            float2 direction = Rotate(baseDirection, spreadRadians);
+            Vector3 spreadTarget = new Vector3(start.x + direction.x * distance,
+                renderHeight + 0.12f, start.z + direction.y * distance);
+            SpawnTowerProjectile(RougeTowerType.MachineGun, start, spreadTarget, tower.Damage,
+                pelletHitRadius, Mathf.Max(0.04f, distance / 70f), 0f, -1);
         }
         return true;
     }
@@ -1529,6 +1534,11 @@ public partial class RougeGameManager
         }
 
         Vector3 start = GetTowerMuzzlePosition(tower);
+        // Laser damage is authored per attack tick (for example 10 damage every 0.02s).
+        // Convert that tick damage to this frame's share so the continuous beam remains
+        // frame-rate independent without accidentally treating the configured value as DPS.
+        float tickScale = Mathf.Max(0f, dt) /
+            Mathf.Max(0.001f, tower.AttackInterval);
         tower.targetIndex = _towerTargetIndices[0];
         AimTowerAt(tower, _towerTargetPositions[0]);
         if (focusedBossMode)
@@ -1537,7 +1547,7 @@ public partial class RougeGameManager
             tower.ShowFocusedLaserBeams(start, _towerTargetPositions[0], beamCount);
             float perBeamDamage = Mathf.Max(1f, tower.Damage * 0.33f);
             AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[0],
-                perBeamDamage * beamCount * dt * tower.AttackSpeedMultiplier);
+                perBeamDamage * beamCount * tickScale * tower.AttackSpeedMultiplier);
             return;
         }
 
@@ -1545,7 +1555,7 @@ public partial class RougeGameManager
         for (int i = 0; i < count; i++)
         {
             AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[i],
-                tower.Damage * dt * tower.AttackSpeedMultiplier);
+                tower.Damage * tickScale * tower.AttackSpeedMultiplier);
         }
     }
 
@@ -1924,7 +1934,15 @@ public partial class RougeGameManager
     private void ResolveTowerProjectileImpact(TowerProjectile projectile)
     {
         float2 impact = new float2(projectile.End.x, projectile.End.z);
-        if (projectile.Type == RougeTowerType.MachineGun && projectile.Damage <= 0f) return;
+        if (projectile.Type == RougeTowerType.MachineGun)
+        {
+            if (projectile.Damage > 0f &&
+                TryFindEnemyAtMachineGunImpact(impact, projectile.Radius, out int enemyIndex))
+            {
+                AccumulateTowerTargetDamage(RougeTowerType.MachineGun, enemyIndex, projectile.Damage);
+            }
+            return;
+        }
         if (projectile.Type == RougeTowerType.Flame)
         {
             AddTowerFireZone(projectile.End, projectile.Radius, projectile.EffectDuration,
@@ -1946,6 +1964,44 @@ public partial class RougeGameManager
             SpawnExplosionVFX(projectile.End + Vector3.up * 0.4f, projectile.Radius * 0.75f);
             SpawnAOERing(projectile.End, projectile.Radius, 0.38f, new Color(1f, 0.42f, 0.08f, 1f));
         }
+    }
+
+    private bool TryFindEnemyAtMachineGunImpact(float2 impact, float radius, out int enemyIndex)
+    {
+        enemyIndex = -1;
+        if (!_enemyTargetCellHeads.IsCreated || !_enemyTargetCellNext.IsCreated ||
+            !_positionsA.IsCreated || !_stateA.IsCreated)
+            return false;
+
+        float safeRadius = Mathf.Max(0f, radius);
+        float radiusSq = safeRadius * safeRadius;
+        float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+        int2 minCell = RougeMortonGridUtility.WorldToGrid(
+            impact - new float2(safeRadius), _flowGridOrigin, invCellSize, _flowGridDim);
+        int2 maxCell = RougeMortonGridUtility.WorldToGrid(
+            impact + new float2(safeRadius), _flowGridOrigin, invCellSize, _flowGridDim);
+        float nearestDistanceSq = float.MaxValue;
+
+        for (int y = minCell.y; y <= maxCell.y; y++)
+        {
+            for (int x = minCell.x; x <= maxCell.x; x++)
+            {
+                int cell = RougeMortonGridUtility.EncodeMorton(x, y);
+                for (int candidate = _enemyTargetCellHeads[cell];
+                     candidate >= 0;
+                     candidate = _enemyTargetCellNext[candidate])
+                {
+                    if ((uint)candidate >= (uint)_currentMaxEnemies || _stateA[candidate].x <= 0f)
+                        continue;
+                    float distanceSq = math.lengthsq(_positionsA[candidate].xz - impact);
+                    if (distanceSq > radiusSq || distanceSq >= nearestDistanceSq) continue;
+                    nearestDistanceSq = distanceSq;
+                    enemyIndex = candidate;
+                }
+            }
+        }
+
+        return enemyIndex >= 0;
     }
 
     private void RecycleTowerProjectileVisual(GameObject visual)
