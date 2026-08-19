@@ -237,6 +237,234 @@ public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
 }
 
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
+{
+    private const int MaxStoredNeighbors = 32;
+
+    [ReadOnly] public NativeArray<float4> Positions;
+    [ReadOnly] public NativeArray<float4> Velocities;
+    [ReadOnly] public NativeArray<float4> States;
+    [ReadOnly] public NativeArray<RougeEnemyEffectState> Effects;
+    [ReadOnly] public NativeArray<int> CellHeads;
+    [ReadOnly] public NativeArray<int> CellNext;
+    [ReadOnly] public NativeArray<byte> BlockedCells;
+    [NativeDisableParallelForRestriction] public NativeArray<float4> ProjectedPositions;
+    public float2 GridOrigin;
+    public float InvCellSize;
+    public int GridDim;
+    public int CurrentMaxEnemies;
+    public int BossEnemyIndex;
+    public float RenderHeight;
+    public int MaxCandidates;
+    public int MaxNeighbors;
+    public float Stiffness;
+    public float RadiusScale;
+    public float MaxCorrectionSpeed;
+    public float DeltaTime;
+    public uint FrameSeed;
+
+    public void Execute(int startIndex, int count)
+    {
+        float4* positionPtr = (float4*)Positions.GetUnsafeReadOnlyPtr();
+        float4* velocityPtr = (float4*)Velocities.GetUnsafeReadOnlyPtr();
+        float4* statePtr = (float4*)States.GetUnsafeReadOnlyPtr();
+        RougeEnemyEffectState* effectPtr = (RougeEnemyEffectState*)Effects.GetUnsafeReadOnlyPtr();
+        int* headPtr = (int*)CellHeads.GetUnsafeReadOnlyPtr();
+        int* nextPtr = (int*)CellNext.GetUnsafeReadOnlyPtr();
+        byte* blockedPtr = (byte*)BlockedCells.GetUnsafeReadOnlyPtr();
+        float4* outputPtr = (float4*)ProjectedPositions.GetUnsafePtr();
+        int end = math.min(startIndex + count, CurrentMaxEnemies);
+        int candidateLimit = math.max(1, MaxCandidates);
+        int neighborLimit = math.clamp(MaxNeighbors, 1, MaxStoredNeighbors);
+        float stiffness = math.saturate(Stiffness);
+        float radiusScale = math.max(0.1f, RadiusScale);
+
+        for (int sourceIndex = startIndex; sourceIndex < end; sourceIndex++)
+        {
+            float4 sourcePosition = positionPtr[sourceIndex];
+            float4 sourceState = statePtr[sourceIndex];
+            float4 sourceVelocity = velocityPtr[sourceIndex];
+            RougeEnemyEffectState sourceEffects = effectPtr[sourceIndex];
+            outputPtr[sourceIndex] = sourcePosition;
+            if (sourceIndex == BossEnemyIndex || sourceState.x <= 0f ||
+                IsAirborne(sourcePosition, sourceVelocity, sourceEffects))
+                continue;
+
+            int* selectedNeighbors = stackalloc int[MaxStoredNeighbors];
+            int selectedCount = 0;
+            int overlappingSeen = 0;
+            int candidatesScanned = 0;
+            int2 centerCell = RougeMortonGridUtility.WorldToGrid(
+                sourcePosition.xz, GridOrigin, InvCellSize, GridDim);
+            int firstNeighborCell = (int)(Hash((uint)sourceIndex, FrameSeed, 0x85EBCA6Bu) % 9u);
+
+            for (int cellStep = 0; cellStep < 9 && candidatesScanned < candidateLimit; cellStep++)
+            {
+                int packedOffset = (firstNeighborCell + cellStep) % 9;
+                int offsetX = packedOffset % 3 - 1;
+                int offsetY = packedOffset / 3 - 1;
+                int cellY = centerCell.y + offsetY;
+                if (cellY < 0 || cellY >= GridDim) continue;
+                int cellX = centerCell.x + offsetX;
+                if (cellX < 0 || cellX >= GridDim) continue;
+                int cell = RougeMortonGridUtility.EncodeMorton(cellX, cellY);
+                for (int candidate = headPtr[cell];
+                     candidate >= 0 && candidatesScanned < candidateLimit;
+                     candidate = nextPtr[candidate])
+                {
+                    if (candidate == sourceIndex || (uint)candidate >= (uint)CurrentMaxEnemies)
+                        continue;
+                    candidatesScanned++;
+                    float4 otherPosition = positionPtr[candidate];
+                    float4 otherState = statePtr[candidate];
+                    float4 otherVelocity = velocityPtr[candidate];
+                    RougeEnemyEffectState otherEffects = effectPtr[candidate];
+                    if (otherState.x <= 0f || IsAirborne(otherPosition, otherVelocity, otherEffects))
+                        continue;
+
+                    float minimumDistance = math.max(0.02f,
+                        (sourcePosition.w + otherPosition.w) * radiusScale);
+                    if (math.lengthsq(sourcePosition.xz - otherPosition.xz) >=
+                        minimumDistance * minimumDistance)
+                        continue;
+
+                    overlappingSeen++;
+                    if (selectedCount < neighborLimit)
+                    {
+                        selectedNeighbors[selectedCount++] = candidate;
+                        continue;
+                    }
+
+                    // Reservoir replacement rotates the constrained subset over time. Dense
+                    // cells therefore keep their aggregate density pressure without permanently
+                    // starving units that happen to be late in the linked list.
+                    uint random = Hash((uint)sourceIndex, (uint)candidate, FrameSeed);
+                    int replacement = (int)(random % (uint)overlappingSeen);
+                    if (replacement < neighborLimit) selectedNeighbors[replacement] = candidate;
+                }
+            }
+
+            if (selectedCount <= 0) continue;
+            float sourceMobility = GetMobility(sourceVelocity.xyz, sourceState.z, sourceEffects);
+            float2 correction = float2.zero;
+            for (int selected = 0; selected < selectedCount; selected++)
+            {
+                int neighborIndex = selectedNeighbors[selected];
+                float4 otherPosition = positionPtr[neighborIndex];
+                float4 otherVelocity = velocityPtr[neighborIndex];
+                float4 otherState = statePtr[neighborIndex];
+                RougeEnemyEffectState otherEffects = effectPtr[neighborIndex];
+                float2 difference = sourcePosition.xz - otherPosition.xz;
+                float distanceSq = math.lengthsq(difference);
+                float minimumDistance = math.max(0.02f,
+                    (sourcePosition.w + otherPosition.w) * radiusScale);
+                float distance = math.sqrt(math.max(distanceSq, 0.000001f));
+                float overlap = minimumDistance - distance;
+                if (overlap <= 0f) continue;
+
+                float2 direction;
+                if (distanceSq > 0.000001f) direction = difference / distance;
+                else
+                {
+                    float angle = Hash01(Hash((uint)sourceIndex, (uint)neighborIndex, 0x9E3779B9u)) *
+                        (math.PI * 2f);
+                    direction = new float2(math.cos(angle), math.sin(angle));
+                }
+
+                float otherMobility = GetMobility(otherVelocity.xyz, otherState.z, otherEffects);
+                float mobilitySum = math.max(sourceMobility + otherMobility, 0.0001f);
+                correction += direction * (overlap * (sourceMobility / mobilitySum));
+            }
+
+            correction *= stiffness;
+            // Resolve deep piles over several frames. A radius-only cap allowed a unit to move
+            // more than its full diameter in one projection, which looked like teleportation.
+            float radiusLimit = math.max(sourcePosition.w * radiusScale * 0.25f, 0.015f);
+            float speedLimit = math.max(MaxCorrectionSpeed, 0.5f) *
+                math.clamp(DeltaTime, 0.001f, 0.05f);
+            float maxCorrection = math.min(radiusLimit, speedLimit);
+            float correctionLengthSq = math.lengthsq(correction);
+            if (correctionLengthSq > maxCorrection * maxCorrection)
+                correction *= maxCorrection * math.rsqrt(correctionLengthSq);
+
+            float2 planarVelocity = sourceVelocity.xz;
+            float speedSq = math.lengthsq(planarVelocity);
+            float authoritySpeed = math.max(sourceState.z * 1.25f, 0.5f);
+            if (speedSq > authoritySpeed * authoritySpeed)
+            {
+                float2 motionDirection = planarVelocity * math.rsqrt(speedSq);
+                float opposing = math.dot(correction, motionDirection);
+                if (opposing < 0f) correction -= motionDirection * opposing;
+            }
+
+            float2 projected = sourcePosition.xz + correction;
+            if (IsBlocked(projected, blockedPtr))
+            {
+                float2 xOnly = sourcePosition.xz + new float2(correction.x, 0f);
+                float2 yOnly = sourcePosition.xz + new float2(0f, correction.y);
+                projected = !IsBlocked(xOnly, blockedPtr) ? xOnly :
+                    !IsBlocked(yOnly, blockedPtr) ? yOnly : sourcePosition.xz;
+            }
+            outputPtr[sourceIndex] = new float4(projected.x, sourcePosition.y,
+                projected.y, sourcePosition.w);
+        }
+    }
+
+    private bool IsBlocked(float2 worldPosition, byte* blockedPtr)
+    {
+        int2 cell = RougeMortonGridUtility.WorldToGrid(
+            worldPosition, GridOrigin, InvCellSize, GridDim);
+        return blockedPtr[RougeMortonGridUtility.EncodeMorton(cell.x, cell.y)] != 0;
+    }
+
+    private bool IsAirborne(float4 position, float4 velocity, RougeEnemyEffectState effects)
+    {
+        return velocity.w > 2.5f || velocity.y > 0.05f ||
+            position.y > RenderHeight + 0.05f || effects.LaunchMotionTimer > 0f ||
+            effects.LaunchStackTimer > 0f || effects.LaunchLandingRadius > 0f ||
+            effects.LaunchLandingDamage > 0f;
+    }
+
+    private static float GetMobility(float3 velocity, float maxSpeed, RougeEnemyEffectState effects)
+    {
+        float speed = math.length(velocity.xz);
+        float authority = math.saturate((speed - math.max(maxSpeed, 0.1f)) /
+            math.max(maxSpeed * 2f, 0.5f));
+        float mobility = math.lerp(1f, 0.15f, authority);
+        if (effects.FreezeTimer > 0f) mobility *= 0.15f;
+        return math.max(mobility, 0.02f);
+    }
+
+    private static uint Hash(uint a, uint b, uint seed)
+    {
+        uint value = a * 747796405u + b * 2891336453u + seed;
+        value = (value ^ (value >> 16)) * 2246822519u;
+        value = (value ^ (value >> 13)) * 3266489917u;
+        return value ^ (value >> 16);
+    }
+
+    private static float Hash01(uint value)
+    {
+        return (value & 0x00FFFFFFu) * (1f / 16777215f);
+    }
+}
+
+[BurstCompile]
+public unsafe struct CopyProjectedPositionsJob : IJobParallelForBatch
+{
+    [ReadOnly] public NativeArray<float4> Source;
+    [NativeDisableParallelForRestriction] public NativeArray<float4> Destination;
+
+    public void Execute(int startIndex, int count)
+    {
+        UnsafeUtility.MemCpy(
+            (float4*)Destination.GetUnsafePtr() + startIndex,
+            (float4*)Source.GetUnsafeReadOnlyPtr() + startIndex,
+            count * sizeof(float4));
+    }
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct FindTowerTargetsJob : IJobParallelFor
 {
     public const int MaxTargetsPerTower = 30;
@@ -503,6 +731,55 @@ public unsafe struct BuildEnemyDensityFieldJob : IJobParallelForBatch
             System.Threading.Interlocked.Add(ref densityPtr[RougeMortonGridUtility.EncodeMorton(x1, y0)], w10);
             System.Threading.Interlocked.Add(ref densityPtr[RougeMortonGridUtility.EncodeMorton(x0, y1)], w01);
             System.Threading.Interlocked.Add(ref densityPtr[RougeMortonGridUtility.EncodeMorton(x1, y1)], w11);
+        }
+    }
+}
+
+[BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
+public unsafe struct SmoothDensityFieldJob : IJobParallelForBatch
+{
+    [ReadOnly] public NativeArray<int> DensityIn;
+    [ReadOnly] public NativeArray<byte> BlockedCells;
+    [NativeDisableParallelForRestriction] public NativeArray<int> DensityOut;
+    public int GridDim;
+
+    public void Execute(int startIndex, int count)
+    {
+        int* sourcePtr = (int*)DensityIn.GetUnsafeReadOnlyPtr();
+        byte* blockedPtr = (byte*)BlockedCells.GetUnsafeReadOnlyPtr();
+        int* outputPtr = (int*)DensityOut.GetUnsafePtr();
+        int end = math.min(startIndex + count, DensityOut.Length);
+
+        for (int index = startIndex; index < end; index++)
+        {
+            if (blockedPtr[index] != 0)
+            {
+                outputPtr[index] = 0;
+                continue;
+            }
+
+            int2 cell = RougeMortonGridUtility.DecodeMorton(index);
+            long weightedDensity = 0;
+            int totalWeight = 0;
+            for (int offsetY = -1; offsetY <= 1; offsetY++)
+            {
+                int sampleY = cell.y + offsetY;
+                if (sampleY < 0 || sampleY >= GridDim) continue;
+                int weightY = offsetY == 0 ? 2 : 1;
+                for (int offsetX = -1; offsetX <= 1; offsetX++)
+                {
+                    int sampleX = cell.x + offsetX;
+                    if (sampleX < 0 || sampleX >= GridDim) continue;
+                    int sampleIndex = RougeMortonGridUtility.EncodeMorton(sampleX, sampleY);
+                    if (blockedPtr[sampleIndex] != 0) continue;
+                    int weight = weightY * (offsetX == 0 ? 2 : 1);
+                    weightedDensity += (long)sourcePtr[sampleIndex] * weight;
+                    totalWeight += weight;
+                }
+            }
+
+            long smoothedDensity = totalWeight > 0 ? weightedDensity / totalWeight : 0;
+            outputPtr[index] = (int)math.min(smoothedDensity, (long)int.MaxValue);
         }
     }
 }
@@ -1216,6 +1493,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<RougeObstacle> Obstacles;
     [NativeDisableParallelForRestriction] public NativeArray<int> PlayerDamageCount;
     [NativeDisableParallelForRestriction] public NativeArray<int> MainTowerDamageCount;
+    [NativeDisableParallelForRestriction] public NativeArray<int> BossReachedGoalCount;
     [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
     [ReadOnly] public NativeArray<byte> EnemyKinds;
     [NativeDisableParallelForRestriction] public NativeArray<int> TowerDefenseGoldEarned;
@@ -1271,6 +1549,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public float BossShieldMinimumDamage;
     public int BossEnemyIndex;
     public float BossNavigationRadius;
+    public float BossMaximumSlowPercent;
     public bool TowerDefenseRewardsEnabled;
     public int NormalKillGold;
     public int EliteKillGold;
@@ -1344,6 +1623,25 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float health = state4.x;
             float radius = state4.y;
             float maxSpeed = state4.z;
+            bool isBoss = sourceIndex == BossEnemyIndex;
+            if (isBoss)
+            {
+                // A boss never carries displacement/airborne state across frames.
+                pos.y = RenderHeight;
+                vel.y = 0f;
+                tornadoMark = 0f;
+                effects.LaunchMotionTimer = 0f;
+                effects.LaunchStackTimer = 0f;
+                effects.LaunchLandingRadius = 0f;
+                effects.LaunchLandingDamage = 0f;
+                if (effects.FreezeTimer > 0f)
+                {
+                    effects.SlowTimer = math.max(effects.SlowTimer, effects.FreezeTimer);
+                    effects.SlowPercent = math.max(effects.SlowPercent, BossMaximumSlowPercent);
+                    effects.FreezeTimer = 0f;
+                }
+                effects.SlowPercent = math.clamp(effects.SlowPercent, 0f, BossMaximumSlowPercent);
+            }
             float flashTimer = math.frac(math.max(state4.w, 0f));
             int visualFlags = DecodeVisualFlags(state4.w);
             bool isDeadVisual = (visualFlags & DeadVisualFlag) != 0;
@@ -1499,11 +1797,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 float densityThreshold = math.max(0f, DensitySoftThreshold + signedVariation * DensityResponseJitter);
                 float densityResponseScale = math.max(0.35f, 1f + signedVariation * (DensityResponseJitter * 0.75f));
                 float density = SampleDensity(pos.xz, densityPtr);
-                float densityPressure = math.saturate(density - densityThreshold);
+                float densityExcess = math.max(0f, density - densityThreshold);
+                // Preserve differences between moderately and extremely crowded cells instead
+                // of hard-clamping every excess above one to the same pressure.
+                float densityPressure = densityExcess / (densityExcess + 1f);
                 densityPressure *= math.lerp(1f, 0.15f, snapWeight);
-                if (densityPressure > 0f)
+                if (!isBoss && densityPressure > 0f)
                 {
-                    float2 densityGradient =  SampleDensityGradient(pos.xz, densityPtr);
+                    float2 densityGradient = SampleDensityGradient(pos.xz, densityPtr);
                     float gradientLengthSq = math.lengthsq(densityGradient);
                     if (gradientLengthSq > 0.000001f)
                     {
@@ -1511,8 +1812,27 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                         float2 gradientDir = densityGradient / gradientLength;
                         acceleration.xz += -gradientDir * (math.min(gradientLength, DensityGradientClamp) * DensityRepulsionStrength * densityPressure * densityResponseScale);
                     }
+
+                    // A density-only gradient is nearly zero inside a uniformly packed plateau,
+                    // which lets enemies remain stacked until they reach its edge. Give each
+                    // enemy a stable, balanced micro direction there to break the overlap without
+                    // doing any per-neighbor search. The force fades out as a real gradient appears.
+                    float plateauGradientLength = math.sqrt(gradientLengthSq);
+                    float plateauWeight = 1f - math.saturate(plateauGradientLength /
+                        math.max(DensityGradientClamp * 0.35f, 0.001f));
+                    if (plateauWeight > 0f && DensityResponseJitter > 0f)
+                    {
+                        float microAngle = Hash01(((uint)sourceIndex + 1u) * 747796405u + 2891336453u) *
+                            (math.PI * 2f);
+                        float2 microDirection = new float2(math.cos(microAngle), math.sin(microAngle));
+                        acceleration.xz += microDirection * (DensityRepulsionStrength *
+                            DensityResponseJitter * densityPressure * plateauWeight);
+                    }
                 }
             }
+
+            float3 bossUnaffectedAcceleration = acceleration;
+            float3 bossUnaffectedVelocity = vel;
 
             if (SkillAreaCount > 0)
             {
@@ -1686,6 +2006,29 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 }
             }
 
+            if (isBoss)
+            {
+                // Damage and non-motion status effects still apply, but all direct pulls,
+                // knockback and launch impulses are discarded. Freeze becomes the boss's
+                // maximum allowed slow instead of stopping or lifting it.
+                acceleration = bossUnaffectedAcceleration;
+                vel = bossUnaffectedVelocity;
+                vel.y = 0f;
+                pos.y = RenderHeight;
+                tornadoMark = 0f;
+                effects.LaunchMotionTimer = 0f;
+                effects.LaunchStackTimer = 0f;
+                effects.LaunchLandingRadius = 0f;
+                effects.LaunchLandingDamage = 0f;
+                if (effects.FreezeTimer > 0f)
+                {
+                    effects.SlowTimer = math.max(effects.SlowTimer, effects.FreezeTimer);
+                    effects.SlowPercent = math.max(effects.SlowPercent, BossMaximumSlowPercent);
+                    effects.FreezeTimer = 0f;
+                }
+                effects.SlowPercent = math.clamp(effects.SlowPercent, 0f, BossMaximumSlowPercent);
+            }
+
             float incomingDamage = healthBeforeShieldedDamage - health;
             if (BossShieldActive && incomingDamage > 0f &&
                 math.lengthsq(pos.xz - BossShieldPosition) <= BossShieldRadius * BossShieldRadius)
@@ -1716,7 +2059,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float towerContactDistance = radius + MainTowerContactRadius;
             if (MainTowerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToGoalSq < towerContactDistance * towerContactDistance)
             {
-                System.Threading.Interlocked.Increment(ref ((int*)MainTowerDamageCount.GetUnsafePtr())[0]);
+                if (isBoss)
+                    System.Threading.Interlocked.Increment(ref ((int*)BossReachedGoalCount.GetUnsafePtr())[0]);
+                else
+                    System.Threading.Interlocked.Increment(ref ((int*)MainTowerDamageCount.GetUnsafePtr())[0]);
                 health = -1f;
                 hitPlayer = true;
             }
@@ -1973,12 +2319,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
     private float2 SampleFlowDirection(float2 worldPos, float2* flowPtr)
     {
-        // Use the containing integer cell directly. Blending four discrete path
-        // choices can cancel opposite directions on obstacle corners and leave an
-        // enemy with a zero vector even though its own cell has a valid route.
-        int2 cell = RougeMortonGridUtility.WorldToGrid(
+        // Do not blend navigation vectors across opposite sides of a wall. Density is
+        // smoothed separately on the grid while navigation keeps an exact valid cell route.
+        int2 containingCell = RougeMortonGridUtility.WorldToGrid(
             worldPos, GridOrigin, GridInvCellSize, GridDim);
-        return flowPtr[RougeMortonGridUtility.EncodeMorton(cell.x, cell.y)];
+        return flowPtr[RougeMortonGridUtility.EncodeMorton(containingCell.x, containingCell.y)];
     }
 
     private float SampleDensity(float2 worldPos, int* densityPtr)

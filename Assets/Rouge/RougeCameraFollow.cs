@@ -17,6 +17,10 @@ public class RougeCameraFollow : MonoBehaviour
     public RougeCameraBounds movementBounds;
     public Vector2 fallbackBoundsCenter = Vector2.zero;
     public Vector2 fallbackBoundsSize = new Vector2(180f, 180f);
+    [Header("Debug Free Camera")]
+    [Min(0.1f)] public float debugFreeMoveSpeed = 25f;
+    [Min(1f)] public float debugFreeFastMultiplier = 4f;
+    [Min(0.01f)] public float debugFreeLookSensitivity = 0.12f;
 
     private float _baseFov = -1f;
     private Camera _camera;
@@ -28,6 +32,16 @@ public class RougeCameraFollow : MonoBehaviour
     private bool _cinematicFocusActive;
     private Vector3 _cinematicFocusPoint;
     private float _cinematicShakeIntensity;
+    private bool _debugFreeViewActive;
+    private float _debugFreeYaw;
+    private float _debugFreePitch;
+    private Vector3 _debugRestorePosition;
+    private Quaternion _debugRestoreRotation;
+    private bool _debugRestoreOrthographic;
+    private float _debugRestoreFov;
+    private float _debugRestoreNearClip;
+    private CursorLockMode _debugRestoreCursorLock;
+    private bool _debugRestoreCursorVisible;
 
     public static void SetRuntimeEffects(float heightOffset, float fovOffset, float zoomScale = 1f)
     {
@@ -74,6 +88,7 @@ public class RougeCameraFollow : MonoBehaviour
 
     private void OnDisable()
     {
+        if (_debugFreeViewActive) EndDebugFreeView();
         if (s_primaryCamera == _camera)
         {
             s_primaryCamera = null;
@@ -82,6 +97,12 @@ public class RougeCameraFollow : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (_debugFreeViewActive)
+        {
+            UpdateDebugFreeView();
+            return;
+        }
+
         if (_cinematicFocusActive)
         {
             UpdateCinematicFocus();
@@ -132,6 +153,80 @@ public class RougeCameraFollow : MonoBehaviour
         {
             movementBounds = FindFirstObjectByType<RougeCameraBounds>();
         }
+    }
+
+    public void BeginDebugFreeView()
+    {
+        Camera camera = _camera != null ? _camera : GetComponent<Camera>();
+        if (_debugFreeViewActive) return;
+        _debugRestorePosition = transform.position;
+        _debugRestoreRotation = transform.rotation;
+        _debugRestoreCursorLock = Cursor.lockState;
+        _debugRestoreCursorVisible = Cursor.visible;
+        if (camera != null)
+        {
+            _debugRestoreOrthographic = camera.orthographic;
+            _debugRestoreFov = camera.fieldOfView;
+            _debugRestoreNearClip = camera.nearClipPlane;
+            camera.orthographic = false;
+            camera.fieldOfView = 75f;
+            camera.nearClipPlane = 0.03f;
+        }
+        Vector3 euler = transform.eulerAngles;
+        _debugFreeYaw = euler.y;
+        _debugFreePitch = NormalizeSignedAngle(euler.x);
+        _debugFreeViewActive = true;
+        _dragging = false;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+    }
+
+    public void EndDebugFreeView()
+    {
+        if (!_debugFreeViewActive) return;
+        _debugFreeViewActive = false;
+        transform.SetPositionAndRotation(_debugRestorePosition, _debugRestoreRotation);
+        Camera camera = _camera != null ? _camera : GetComponent<Camera>();
+        if (camera != null)
+        {
+            camera.orthographic = _debugRestoreOrthographic;
+            camera.fieldOfView = _debugRestoreFov;
+            camera.nearClipPlane = _debugRestoreNearClip;
+        }
+        Cursor.lockState = _debugRestoreCursorLock;
+        Cursor.visible = _debugRestoreCursorVisible;
+    }
+
+    private void UpdateDebugFreeView()
+    {
+        Mouse mouse = Mouse.current;
+        if (mouse != null)
+        {
+            Vector2 look = mouse.delta.ReadValue() * debugFreeLookSensitivity;
+            _debugFreeYaw += look.x;
+            _debugFreePitch = Mathf.Clamp(_debugFreePitch - look.y, -89f, 89f);
+        }
+        transform.rotation = Quaternion.Euler(_debugFreePitch, _debugFreeYaw, 0f);
+
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null) return;
+        float horizontal = (keyboard.dKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed ? 1f : 0f);
+        float forwardInput = (keyboard.wKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed ? 1f : 0f);
+        float vertical = (keyboard.spaceKey.isPressed || keyboard.eKey.isPressed ? 1f : 0f) -
+            (keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed || keyboard.qKey.isPressed ? 1f : 0f);
+        Vector3 planarForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+        if (planarForward.sqrMagnitude < 0.0001f) planarForward = Vector3.forward;
+        Vector3 planarRight = Vector3.Cross(Vector3.up, planarForward).normalized;
+        Vector3 movement = planarRight * horizontal + planarForward * forwardInput + Vector3.up * vertical;
+        if (movement.sqrMagnitude > 1f) movement.Normalize();
+        bool fast = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+        float speed = debugFreeMoveSpeed * (fast ? debugFreeFastMultiplier : 1f);
+        transform.position += movement * speed * Time.unscaledDeltaTime;
+    }
+
+    private static float NormalizeSignedAngle(float angle)
+    {
+        return angle > 180f ? angle - 360f : angle;
     }
 
     public void BeginCinematicFocus(Vector3 worldPoint)

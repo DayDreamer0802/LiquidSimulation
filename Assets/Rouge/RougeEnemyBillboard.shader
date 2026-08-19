@@ -6,6 +6,9 @@ Shader "Rouge/EnemyBillboard"
         _EnemySheet0("Enemy Sheet 0", 2D) = "white" {}
         _EnemySheet1("Enemy Sheet 1", 2D) = "white" {}
         _EnemySheet2("Enemy Sheet 2", 2D) = "white" {}
+        [HideInInspector] _EnemySheetAnimation0("Enemy Sheet Animation 0", Vector) = (3,2,9,0)
+        [HideInInspector] _EnemySheetAnimation1("Enemy Sheet Animation 1", Vector) = (3,2,9,0)
+        [HideInInspector] _EnemySheetAnimation2("Enemy Sheet Animation 2", Vector) = (3,2,9,0)
         _BaseColor("Tint", Color) = (1,1,1,1)
         _ScaleMultiplier("Scale", Float) = 1
     }
@@ -42,6 +45,9 @@ Shader "Rouge/EnemyBillboard"
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _MainTex_ST;
+                float4 _EnemySheetAnimation0;
+                float4 _EnemySheetAnimation1;
+                float4 _EnemySheetAnimation2;
                 float4 _BaseColor;
                 float _ScaleMultiplier;
             CBUFFER_END
@@ -81,21 +87,40 @@ Shader "Rouge/EnemyBillboard"
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 output.positionHCS = TransformWorldToHClip(positionWS);
                 float dead = step(0.5, fmod(floor(visualFlags * 0.5), 2.0));
-                float movementFrame = fmod(floor(_Time.y * 9.0 + fmod(input.instanceID * 0.618, 4.0)), 4.0);
-                float deathFrame = lerp(5.0, 4.0, step(0.5, frac(max(state.w, 0.0))));
-                float frame = lerp(movementFrame, deathFrame, dead);
+                int enemyKind = _EnemyKindBuffer[input.instanceID];
+                float4 animation = _EnemySheetAnimation0;
+                if (enemyKind == 1) animation = _EnemySheetAnimation1;
+                else if (enemyKind == 2) animation = _EnemySheetAnimation2;
+
+                int atlasColumns = max(1, (int)floor(animation.x + 0.5));
+                int atlasRows = max(1, (int)floor(animation.y + 0.5));
+                float animationFps = max(0.01, animation.z);
+                int totalFrameCount = atlasColumns * atlasRows;
+
+                int deathFrameCount = clamp((int)floor(animation.w + 0.5), 0, totalFrameCount - 1);
+                // The final configured cells are reserved for death. Every
+                // living enemy loops only through the preceding cells.
+                int movementFrameCount = max(1, totalFrameCount - deathFrameCount);
+                uint phaseHash = input.instanceID * 1664525u + 1013904223u;
+                int instancePhase = (int)(phaseHash % (uint)movementFrameCount);
+                int movementFrame = (((int)floor(_Time.y * animationFps)) + instancePhase) % movementFrameCount;
+                int firstDeathFrame = min(movementFrameCount, totalFrameCount - 1);
+                int finalDeathFrame = max(firstDeathFrame, totalFrameCount - 1);
+                int hitFrame = firstDeathFrame;
+                int deathFrame = (frac(max(state.w, 0.0)) >= 0.5) ? hitFrame : finalDeathFrame;
+                int frame = dead > 0.5 ? deathFrame : movementFrame;
                 float2 frameUv = input.uv;
                 if (velocity.x < -0.01) frameUv.x = 1.0 - frameUv.x;
-                float column = fmod(frame, 3.0);
-                float topRow = floor(frame / 3.0);
-                frameUv.x = (frameUv.x + column) / 3.0;
-                frameUv.y = (frameUv.y + (1.0 - topRow)) / 2.0;
+                int column = frame % atlasColumns;
+                int topRow = frame / atlasColumns;
+                frameUv.x = (frameUv.x + column) / (float)atlasColumns;
+                frameUv.y = (frameUv.y + (atlasRows - 1 - topRow)) / (float)atlasRows;
                 output.uv = frameUv;
                 output.flash = frac(max(state.w, 0.0));
                 output.curse = step(0.5, fmod(visualFlags, 2.0));
                 output.dead = dead;
                 output.slow = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
-                output.enemyKind = _EnemyKindBuffer[input.instanceID];
+                output.enemyKind = enemyKind;
                 return output;
             }
 

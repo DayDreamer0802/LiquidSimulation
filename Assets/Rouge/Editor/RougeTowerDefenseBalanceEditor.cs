@@ -205,7 +205,9 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("growthInterval"),
             new GUIContent("Enemy Level Interval (seconds)"));
-        DrawGrowthPercentField(balance.FindPropertyRelative("healthGrowthMultiplier"), "Health / Level (%)");
+        EditorGUILayout.HelpBox(
+            "Enemy HP milestones: 3m x8, 6m x24, 9m x48, 12m x72, 15m x144, 20m x288.",
+            MessageType.Info);
         DrawGrowthPercentField(balance.FindPropertyRelative("speedGrowthMultiplier"), "Speed / Level (%)");
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("eliteHealthMultiplier"));
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("eliteSpeedMultiplier"));
@@ -228,6 +230,11 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("baseSpeed"), new GUIContent("Move Speed"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("size"), new GUIContent("Size"));
                 DrawResourceTextureField(enemy.FindPropertyRelative("spriteResourcePath"), "Enemy Sprite Sheet");
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("spriteSheetColumns"), new GUIContent("Sprite Columns"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("spriteSheetRows"), new GUIContent("Sprite Rows"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("spriteAnimationFps"), new GUIContent("Animation FPS"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("spriteDeathFrameCount"), new GUIContent("Death Animation Frames"));
+                EditorGUILayout.HelpBox("The final configured cells are reserved for death; all preceding cells loop as movement.", MessageType.Info);
             }
         }
     }

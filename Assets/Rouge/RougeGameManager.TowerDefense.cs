@@ -13,6 +13,9 @@ public partial class RougeGameManager
     private const byte EnemyArchetypeMask = 0x3F;
     private const int LegacyTowerDefenseStartingGold = 500;
     private const int DefaultTowerDefenseStartingGold = 2000;
+    private const int InitialTowerDefenseEnemyCap = 1000;
+    private const int TowerDefenseEnemyCapPerMinute = 5000;
+    private const int MaximumTowerDefenseEnemyCap = 100000;
     private static readonly string[] TowerPrefabResourcePaths =
     {
         "Prefab/tower/Ice",
@@ -87,6 +90,7 @@ public partial class RougeGameManager
     private float _bossShieldPulseTimer;
     private float _bossHastePulseTimer;
     private float _bossCurrentHealth;
+    private float _bossBaseMoveSpeed;
     private int _bossEnemyIndex = -1;
     private bool _bossSpawned;
     private bool _bossDefeated;
@@ -189,6 +193,7 @@ public partial class RougeGameManager
         _bossShieldActive = false;
         _bossHasteActive = false;
         _bossCurrentHealth = 0f;
+        _bossBaseMoveSpeed = 0f;
         _bossDeathSequenceActive = false;
         _bossDeathSequenceTimer = 0f;
         _bossDeathShockwaveStep = 0;
@@ -233,6 +238,8 @@ public partial class RougeGameManager
     private void DisposeTowerDefense()
     {
         if (!_towerDefenseInitialized) return;
+
+        if (_debugUnitViewMode) ExitDebugUnitView();
 
         DisableBossTowerInterferenceMarkers();
         DestroyBossPhaseVisuals();
@@ -427,7 +434,16 @@ public partial class RougeGameManager
 
     private void ApplyMainTowerContactDamage()
     {
-        if (!_towerDefenseInitialized || !_mainTowerDamageCount.IsCreated || mainTower == null) return;
+        if (!_towerDefenseInitialized) return;
+        if (_bossReachedGoalCount.IsCreated && _bossReachedGoalCount[0] > 0)
+        {
+            _bossReachedGoalCount[0] = 0;
+            if (_mainTowerDamageCount.IsCreated) _mainTowerDamageCount[0] = 0;
+            _towerDefenseAliveEstimate = Mathf.Max(0, _towerDefenseAliveEstimate - 1);
+            TriggerTowerDefenseGameOver("BOSS REACHED MAIN TOWER");
+            return;
+        }
+        if (!_mainTowerDamageCount.IsCreated || mainTower == null) return;
         int contacts = _mainTowerDamageCount[0];
         if (contacts <= 0) return;
         _mainTowerDamageCount[0] = 0;
@@ -456,6 +472,8 @@ public partial class RougeGameManager
             }
             return;
         }
+
+        if (UpdateDebugUnitViewInput(keyboard, mouse)) return;
 
         if (keyboard != null && keyboard.tabKey.wasPressedThisFrame)
         {
@@ -875,11 +893,12 @@ public partial class RougeGameManager
         Vector3 spawn = bossSpawnPoint != null
             ? bossSpawnPoint.transform.position
             : bossBalance.fallbackSpawnPosition;
+        _bossBaseMoveSpeed = CalculateBossMoveSpeedAtSpawn(spawn);
         float radius = Mathf.Max(0.5f, bossBalance.radius);
         _positionsA[index] = new float4(spawn.x, renderHeight, spawn.z, radius);
         _velocitiesA[index] = float4.zero;
         _stateA[index] = new float4(Mathf.Max(1f, bossBalance.maxHealth), radius,
-            Mathf.Max(0.1f, bossBalance.moveSpeed), 0f);
+            _bossBaseMoveSpeed, 0f);
         _effectStateA[index] = default;
         _towerDefenseEnemyKinds[index] = BossEnemyFlag;
         // Kind 3 is clipped by the instanced enemy shader; the Boss is rendered by
@@ -897,6 +916,36 @@ public partial class RougeGameManager
         }
         _towerDefenseAliveEstimate++;
         RefreshTowerDefenseUi();
+    }
+
+    private float CalculateBossMoveSpeedAtSpawn(Vector3 spawn)
+    {
+        float2 spawnPosition = new float2(spawn.x, spawn.z);
+        float2 goalPosition = GetEnemyTowerDefenseGoal(float2.zero);
+        float routeDistance = math.distance(spawnPosition, goalPosition);
+
+        if (_flowDistanceField.IsCreated && _flowFieldReady)
+        {
+            float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+            int2 cell = RougeMortonGridUtility.WorldToGrid(
+                spawnPosition, _flowGridOrigin, invCellSize, _flowGridDim);
+            int cellIndex = RougeMortonGridUtility.EncodeMorton(cell.x, cell.y);
+            float flowDistance = _flowDistanceField[cellIndex];
+            if (math.isfinite(flowDistance) && flowDistance > 0f && flowDistance < 1e17f)
+            {
+                float2 cellCenter = _flowGridOrigin +
+                    new float2(cell.x + 0.5f, cell.y + 0.5f) * _flowFieldRuntimeCellSize;
+                routeDistance = flowDistance + math.distance(spawnPosition, cellCenter);
+            }
+        }
+
+        float travelSeconds = Mathf.Max(30f,
+            bossBalance.targetArrivalTimeSeconds - _survivalTime);
+        float dampingCompensation = Mathf.Clamp(velocityDamping, 0.1f, 1f);
+        float calculatedSpeed = routeDistance / travelSeconds / dampingCompensation;
+        if (!float.IsFinite(calculatedSpeed) || calculatedSpeed <= 0f)
+            return Mathf.Max(0.1f, bossBalance.moveSpeed);
+        return Mathf.Max(0.1f, calculatedSpeed);
     }
 
     private void BeginBossDeathSequence()
@@ -1115,6 +1164,9 @@ public partial class RougeGameManager
     private void SpawnEnemyBatch(RougeEnemySpawnPoint point, int count)
     {
         if (!_positionsA.IsCreated || count <= 0) return;
+        int remainingCapacity = GetTowerDefenseAliveEnemyCap() - _towerDefenseAliveEstimate;
+        if (remainingCapacity <= 0) return;
+        count = Mathf.Min(count, remainingCapacity);
         int spawned = 0;
 
         // Only scan old slots when the alive estimate says reusable holes may exist.
@@ -1141,6 +1193,16 @@ public partial class RougeGameManager
             spawned++;
         }
         _towerDefenseAliveEstimate += spawned;
+    }
+
+    private int GetTowerDefenseAliveEnemyCap()
+    {
+        // Open capacity continuously so minute boundaries do not release a large
+        // accumulated wave all at once: +5k per minute, reaching 100k at 20m.
+        int timeBasedCap = Mathf.CeilToInt(
+            Mathf.Max(0f, _survivalTime) * TowerDefenseEnemyCapPerMinute / 60f);
+        return Mathf.Min(enemyCount,
+            Mathf.Clamp(timeBasedCap, InitialTowerDefenseEnemyCap, MaximumTowerDefenseEnemyCap));
     }
 
     private bool ActivateEnemySlot(int index, RougeEnemySpawnPoint point)
@@ -1177,6 +1239,12 @@ public partial class RougeGameManager
                 ? null
                 : Resources.Load<Texture2D>(type.spriteResourcePath);
             enemyMaterial.SetTexture("_EnemySheet" + i, sheet != null ? sheet : fallback);
+            enemyMaterial.SetVector("_EnemySheetAnimation" + i, new Vector4(
+                Mathf.Max(1, type.spriteSheetColumns),
+                Mathf.Max(1, type.spriteSheetRows),
+                Mathf.Max(0.01f, type.spriteAnimationFps),
+                Mathf.Clamp(type.spriteDeathFrameCount, 0,
+                    Mathf.Max(0, type.spriteSheetColumns * type.spriteSheetRows - 1))));
         }
         enemyMaterial.SetTexture("_MainTex", fallback);
     }
@@ -1278,10 +1346,33 @@ public partial class RougeGameManager
         return Mathf.Pow(Mathf.Max(1f, growthMultiplier), Mathf.Max(0, level - 1));
     }
 
+    private float GetTowerDefenseEnemyHealthMultiplier()
+    {
+        int step = GetTowerDefenseEnemyPowerStep();
+
+        // Designer milestones at one power step per 15 seconds:
+        // 0m x1, 3m x8, 6m x24, 9m x48, 12m x72,
+        // 15m x144 and 20m x288. Log interpolation keeps the percentage
+        // increase constant inside each segment instead of creating HP jumps.
+        if (step <= 12)
+            return Mathf.Pow(8f, step / 12f);
+        if (step <= 24)
+            return 8f * Mathf.Pow(3f, (step - 12) / 12f);
+        if (step <= 36)
+            return 24f * Mathf.Pow(2f, (step - 24) / 12f);
+        if (step <= 48)
+            return 48f * Mathf.Pow(1.5f, (step - 36) / 12f);
+        if (step <= 60)
+            return 72f * Mathf.Pow(2f, (step - 48) / 12f);
+        if (step <= 80)
+            return 144f * Mathf.Pow(2f, (step - 60) / 20f);
+        return 288f;
+    }
+
     private float GetTowerDefenseEnemyHealth()
     {
         return Mathf.Max(1f, enemyBalance.enemyTypes[0].baseHealth) *
-            GetTowerDefenseEnemyLevelMultiplier(enemyBalance.healthGrowthMultiplier, GetTowerDefenseEnemyLevel());
+            GetTowerDefenseEnemyHealthMultiplier();
     }
 
     private float GetTowerDefenseEnemySpeed()
@@ -1295,8 +1386,7 @@ public partial class RougeGameManager
         if ((kind & BossEnemyFlag) != 0) return Mathf.Max(1f, bossBalance.maxHealth);
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(1f, enemyBalance.eliteHealthMultiplier) : 1f;
-        float levelMultiplier = GetTowerDefenseEnemyLevelMultiplier(
-            enemyBalance.healthGrowthMultiplier, GetTowerDefenseEnemyLevel());
+        float levelMultiplier = GetTowerDefenseEnemyHealthMultiplier();
         return Mathf.Max(0.01f, archetype.baseHealth) * levelMultiplier * eliteMultiplier;
     }
 
@@ -1304,7 +1394,8 @@ public partial class RougeGameManager
     {
         if ((kind & BossEnemyFlag) != 0)
         {
-            return Mathf.Max(0.1f, bossBalance.moveSpeed) * (_bossHasteActive ? bossBalance.hasteSpeedMultiplier : 1f);
+            float baseSpeed = _bossBaseMoveSpeed > 0f ? _bossBaseMoveSpeed : bossBalance.moveSpeed;
+            return Mathf.Max(0.1f, baseSpeed) * (_bossHasteActive ? bossBalance.hasteSpeedMultiplier : 1f);
         }
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(0.1f, enemyBalance.eliteSpeedMultiplier) : 1f;
@@ -2125,6 +2216,7 @@ public partial class RougeGameManager
             return;
         }
         if (_towerDefenseGameOver) return;
+        if (_debugUnitViewMode) ExitDebugUnitView();
         _towerDefenseGameOver = true;
         _towerDefenseGameOverReason = reason;
         _towerPlacementMode = false;
@@ -2346,8 +2438,7 @@ public partial class RougeGameManager
             float bossCountdown = Mathf.Max(0f, bossBalance.spawnTimeSeconds - _survivalTime);
             string bossTime = _bossSpawned ? "BOSS ACTIVE" : _bossDefeated ? "BOSS DEFEATED" : $"BOSS IN {FormatGameTime(bossCountdown)}";
             int enemyLevel = GetTowerDefenseEnemyLevel();
-            float enemyHealthBonus = (GetTowerDefenseEnemyLevelMultiplier(
-                enemyBalance.healthGrowthMultiplier, enemyLevel) - 1f) * 100f;
+            float enemyHealthBonus = (GetTowerDefenseEnemyHealthMultiplier() - 1f) * 100f;
             float enemySpeedBonus = (GetTowerDefenseEnemyLevelMultiplier(
                 enemyBalance.speedGrowthMultiplier, enemyLevel) - 1f) * 100f;
             _towerDefenseStatusText.text =
@@ -2355,7 +2446,7 @@ public partial class RougeGameManager
                 $"GOLD {_towerDefenseGold}   NORMAL +{enemyBalance.normalKillGold}   ELITE +{enemyBalance.eliteKillGold}\n" +
                 $"KILLS {totalKills}   TIME {FormatGameTime(_survivalTime)}   {bossTime}\n" +
                 $"ENEMY LV {enemyLevel} (NEW)   HP +{enemyHealthBonus:0.#}%   SPEED +{enemySpeedBonus:0.#}%\n" +
-                $"ENEMIES ~ {_towerDefenseAliveEstimate}   HP {GetTowerDefenseEnemyHealth():0.#}   SPEED {GetTowerDefenseEnemySpeed():0.0}\n" +
+                $"ENEMIES ~ {_towerDefenseAliveEstimate} / {GetTowerDefenseAliveEnemyCap()}   HP {GetTowerDefenseEnemyHealth():0.#}   SPEED {GetTowerDefenseEnemySpeed():0.0}\n" +
                 $"SPAWNERS {activeSpawners}/{_towerDefenseSpawners.Count}";
         }
         if (_mainTowerHealthFill != null)
@@ -2408,7 +2499,11 @@ public partial class RougeGameManager
         }
         if (_towerDefenseModeText != null)
         {
-            if (_towerPlacementMode)
+            if (_debugUnitViewMode)
+            {
+                _towerDefenseModeText.text = GetDebugUnitViewStatusText();
+            }
+            else if (_towerPlacementMode)
             {
                 string tactical = GetTacticalSkillModeText();
                 string selected = !string.IsNullOrEmpty(tactical)
@@ -2422,7 +2517,7 @@ public partial class RougeGameManager
             }
             else
             {
-                _towerDefenseModeText.text = "CLICK TOWER TO EDIT  |  CLICK BUILD BUTTON  |  LEFT-DRAG  |  WHEEL ZOOM";
+                _towerDefenseModeText.text = "F1 FREE CAMERA  |  CLICK TOWER TO EDIT  |  CLICK BUILD BUTTON  |  LEFT-DRAG  |  WHEEL ZOOM";
             }
         }
         if (_towerUpgradeButton != null)

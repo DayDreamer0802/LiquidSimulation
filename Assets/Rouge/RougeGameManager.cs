@@ -77,7 +77,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField, Range(0f, 4f)] private float denseSeparationBoost = 1.25f;
     [SerializeField, Range(1, 32)] private int denseNeighborThreshold = 6;
     [SerializeField] private float flowFieldCellSize = 1.5f;
-    [SerializeField, Range(1, 4)] private int flowFieldIterations = 3;
+    [SerializeField, Range(1, 12)] private int flowFieldIterations = 8;
     [SerializeField, Range(64, 512)] private int flowFieldMaxGridDim = 512;
     [SerializeField, Range(0.05f, 2f)] private float flowFieldRefreshInterval = 0.5f;
     [SerializeField] private float densitySoftThreshold = 1.35f;
@@ -85,6 +85,12 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float densityGradientClamp = 2.5f;
     [SerializeField, Range(0f, 0.6f)] private float densityResponseJitter = 0.18f;
     [SerializeField, Range(0f, 2f)] private float crowdReliefMaxDensityPressure = 0.75f;
+    [SerializeField] private bool enableCrowdPbd = true;
+    [SerializeField, Range(8, 128)] private int crowdPbdMaxCandidates = 64;
+    [SerializeField, Range(4, 32)] private int crowdPbdMaxNeighbors = 16;
+    [SerializeField, Range(0.1f, 1f)] private float crowdPbdStiffness = 0.55f;
+    [SerializeField, Range(0.1f, 2f)] private float crowdPbdRadiusScale = 1f;
+    [SerializeField, Range(0.5f, 20f)] private float crowdPbdMaxCorrectionSpeed = 4f;
     [SerializeField] private float flowFieldObstaclePadding = 1.2f;
     [SerializeField] private float obstaclePadding = 1.5f;
     [SerializeField] private float obstacleLookAhead = 3f;
@@ -168,10 +174,14 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _skillCellNext;
     private NativeArray<int> _enemyTargetCellHeads;
     private NativeArray<int> _enemyTargetCellNext;
+    private NativeArray<int> _crowdPbdCellHeads;
+    private NativeArray<int> _crowdPbdCellNext;
+    private NativeArray<float4> _crowdPbdPositions;
     private NativeArray<RougeTowerTargetRequest> _towerTargetRequests;
     private NativeArray<int> _towerTargetResultIndices;
     private NativeArray<float> _towerTargetResultDistances;
     private NativeArray<int> _densityFieldFixed;
+    private NativeArray<int> _smoothedDensityFieldFixed;
     private NativeArray<float> _flowDistanceField;
     private NativeArray<float> _flowDistanceScratch;
     private NativeArray<float2> _flowDirectionField;
@@ -186,6 +196,7 @@ public partial class RougeGameManager : MonoBehaviour
     private readonly List<Transform> _runtimeExtraTargets = new List<Transform>();
     private NativeArray<int> _playerDamageCount;
     private NativeArray<int> _mainTowerDamageCount;
+    private NativeArray<int> _bossReachedGoalCount;
     private NativeArray<int> _enemyKillCount;
     private NativeQueue<float2> _explosionQueue;
     private NativeQueue<RougeSkillEvent> _skillEventQueue;
@@ -664,6 +675,11 @@ public partial class RougeGameManager : MonoBehaviour
 
         ApplyMainTowerContactDamage();
 
+        if (_towerDefenseGameOver)
+        {
+            return;
+        }
+
         if ((!UsesTowerDefenseSpawners() && playerHealth <= 0f) || IsMainTowerDestroyed())
         {
             TriggerTowerDefenseGameOver(!UsesTowerDefenseSpawners() && playerHealth <= 0f
@@ -996,6 +1012,9 @@ public partial class RougeGameManager : MonoBehaviour
         _skillCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _enemyTargetCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _enemyTargetCellNext = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _crowdPbdCellHeads = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _crowdPbdCellNext = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _crowdPbdPositions = new NativeArray<float4>(enemyCount, Allocator.Persistent);
         _towerTargetRequests = new NativeArray<RougeTowerTargetRequest>(MaxJobifiedTowerCount, Allocator.Persistent);
         _towerTargetResultIndices = new NativeArray<int>(
             MaxJobifiedTowerCount * FindTowerTargetsJob.MaxTargetsPerTower, Allocator.Persistent);
@@ -1013,6 +1032,7 @@ public partial class RougeGameManager : MonoBehaviour
         _histograms = new NativeArray<int>(math.max(_chunkCount * 256, 256), Allocator.Persistent);
         _binTotals = new NativeArray<int>(256, Allocator.Persistent);
         _densityFieldFixed = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
+        _smoothedDensityFieldFixed = new NativeArray<int>(_flowGridCellCount, Allocator.Persistent);
         _flowDistanceField = new NativeArray<float>(_flowGridCellCount, Allocator.Persistent);
         _flowDistanceScratch = new NativeArray<float>(_flowGridCellCount, Allocator.Persistent);
         _flowDirectionField = new NativeArray<float2>(_flowGridCellCount, Allocator.Persistent);
@@ -1022,6 +1042,7 @@ public partial class RougeGameManager : MonoBehaviour
         ResizeBulletStorage(maxBullets);
         _playerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
         _mainTowerDamageCount = new NativeArray<int>(1, Allocator.Persistent);
+        _bossReachedGoalCount = new NativeArray<int>(1, Allocator.Persistent);
         _enemyKillCount = new NativeArray<int>(1, Allocator.Persistent);
         _explosionQueue = new NativeQueue<float2>(Allocator.Persistent);
         _skillEventQueue = new NativeQueue<RougeSkillEvent>(Allocator.Persistent);
@@ -2381,7 +2402,7 @@ public partial class RougeGameManager : MonoBehaviour
 
         float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
         int gridBatchSize = 1024;
-        int flowIterationCount = math.clamp(flowFieldIterations, 1, 4);
+        int flowIterationCount = math.clamp(flowFieldIterations, 1, 12);
         float2 playerPos = player != null ? player.PlanarPosition : float2.zero;
         float2 enemyGoalPos = GetEnemyTowerDefenseGoal(playerPos);
         float2 enemySpawnCenter = GetEnemyTowerDefenseSpawnCenter(playerPos);
@@ -2435,6 +2456,17 @@ public partial class RougeGameManager : MonoBehaviour
             RenderHeight = renderHeight
         }.ScheduleBatch(activeEnemyCount, simulationBatchSize, clearGridHandle);
 
+        JobHandle smoothedDensityHandle = new SmoothDensityFieldJob
+        {
+            DensityIn = _densityFieldFixed,
+            DensityOut = _smoothedDensityFieldFixed,
+            BlockedCells = _flowBlockedCells,
+            GridDim = _flowGridDim
+        }.ScheduleBatch(
+            _flowGridCellCount,
+            gridBatchSize,
+            JobHandle.CombineDependencies(densityHandle, obstacleHandle));
+
         JobHandle flowDirectionHandle = default;
         if (refreshFlowField)
         {
@@ -2451,7 +2483,9 @@ public partial class RougeGameManager : MonoBehaviour
                 GridDim = _flowGridDim,
                 CellSize = _flowFieldRuntimeCellSize,
                 IterationCount = flowIterationCount
-            }.Schedule(obstacleHandle);
+            // SmoothDensityFieldJob reads the obstacle mask while SolveFlowFieldJob
+            // may temporarily open goal cells in it, so these jobs cannot overlap.
+            }.Schedule(smoothedDensityHandle);
 
             flowDirectionHandle = new BuildFlowFieldDirectionsJob
             {
@@ -2509,7 +2543,7 @@ public partial class RougeGameManager : MonoBehaviour
             VelocityOut = _velocitiesB,
             StateOut = _stateB,
             EffectStateOut = _effectStateB,
-            DensityFieldFixed = _densityFieldFixed,
+            DensityFieldFixed = _smoothedDensityFieldFixed,
             FlowDirections = _flowDirectionField,
             Bullets = _bullets,
             BulletCellHeads = _bulletCellHeads,
@@ -2526,6 +2560,7 @@ public partial class RougeGameManager : MonoBehaviour
             SpawnCenter = enemySpawnCenter,
             PlayerDamageCount = _playerDamageCount,
             MainTowerDamageCount = _mainTowerDamageCount,
+            BossReachedGoalCount = _bossReachedGoalCount,
             EnemyKillCount = _enemyKillCount,
             EnemyKinds = _towerDefenseEnemyKinds,
             TowerDefenseGoldEarned = _towerDefenseGoldEarned,
@@ -2545,6 +2580,7 @@ public partial class RougeGameManager : MonoBehaviour
             BossShieldMinimumDamage = Mathf.Max(1f, bossBalance.minimumShieldedDamage),
             BossEnemyIndex = _bossSpawned ? _bossEnemyIndex : -1,
             BossNavigationRadius = Mathf.Max(0.1f, bossBalance.navigationRadius),
+            BossMaximumSlowPercent = Mathf.Clamp(bossBalance.maximumSlowPercent, 0f, 95f),
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
             EnemyMaxHealth = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemyHealth() : enemyMaxHealth * (1f + currentLevel * 0.15f),
@@ -2600,8 +2636,61 @@ public partial class RougeGameManager : MonoBehaviour
             activeEnemyCount,
             simulationBatchSize,
             JobHandle.CombineDependencies(
-                JobHandle.CombineDependencies(densityHandle, flowDirectionHandle),
+                JobHandle.CombineDependencies(smoothedDensityHandle, flowDirectionHandle),
                 JobHandle.CombineDependencies(bulletHandle, skillAreaHandle)));
+
+        if (enableCrowdPbd)
+        {
+            JobHandle clearCrowdPbdGridHandle = new ClearBulletGridHeadsJob
+            {
+                CellHeads = _crowdPbdCellHeads
+            }.ScheduleBatch(_flowGridCellCount, gridBatchSize);
+
+            JobHandle buildCrowdPbdGridHandle = new BuildEnemyTargetGridJob
+            {
+                Positions = _positionsB,
+                States = _stateB,
+                CellHeads = _crowdPbdCellHeads,
+                CellNext = _crowdPbdCellNext,
+                GridOrigin = _flowGridOrigin,
+                InvCellSize = invCellSize,
+                GridDim = _flowGridDim
+            }.ScheduleBatch(
+                activeEnemyCount,
+                simulationBatchSize,
+                JobHandle.CombineDependencies(handle, clearCrowdPbdGridHandle));
+
+            JobHandle crowdPbdHandle = new CrowdPbdProjectionJob
+            {
+                Positions = _positionsB,
+                Velocities = _velocitiesB,
+                States = _stateB,
+                Effects = _effectStateB,
+                CellHeads = _crowdPbdCellHeads,
+                CellNext = _crowdPbdCellNext,
+                BlockedCells = _flowBlockedCells,
+                ProjectedPositions = _crowdPbdPositions,
+                GridOrigin = _flowGridOrigin,
+                InvCellSize = invCellSize,
+                GridDim = _flowGridDim,
+                CurrentMaxEnemies = activeEnemyCount,
+                BossEnemyIndex = _bossSpawned ? _bossEnemyIndex : -1,
+                RenderHeight = renderHeight,
+                MaxCandidates = math.clamp(crowdPbdMaxCandidates, 8, 128),
+                MaxNeighbors = math.clamp(crowdPbdMaxNeighbors, 4, 32),
+                Stiffness = math.saturate(crowdPbdStiffness),
+                RadiusScale = math.max(0.1f, crowdPbdRadiusScale),
+                MaxCorrectionSpeed = math.max(0.5f, crowdPbdMaxCorrectionSpeed),
+                DeltaTime = dt,
+                FrameSeed = (uint)((Time.frameCount >> 2) * 22695477 + 1)
+            }.ScheduleBatch(activeEnemyCount, simulationBatchSize, buildCrowdPbdGridHandle);
+
+            handle = new CopyProjectedPositionsJob
+            {
+                Source = _crowdPbdPositions,
+                Destination = _positionsB
+            }.ScheduleBatch(activeEnemyCount, simulationBatchSize, crowdPbdHandle);
+        }
 
         int scheduledTowerCount = math.min(_towerTargetRequestCount, MaxJobifiedTowerCount);
         if (scheduledTowerCount > 0)
@@ -3120,6 +3209,9 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _skillCellNext);
         ReleaseNative(ref _enemyTargetCellHeads);
         ReleaseNative(ref _enemyTargetCellNext);
+        ReleaseNative(ref _crowdPbdCellHeads);
+        ReleaseNative(ref _crowdPbdCellNext);
+        ReleaseNative(ref _crowdPbdPositions);
         ReleaseNative(ref _towerTargetRequests);
         ReleaseNative(ref _towerTargetResultIndices);
         ReleaseNative(ref _towerTargetResultDistances);
@@ -3132,6 +3224,7 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _towerDamageByTypeFrames);
         ReleaseNative(ref _towerDamageTotalsFixed);
         ReleaseNative(ref _densityFieldFixed);
+        ReleaseNative(ref _smoothedDensityFieldFixed);
         ReleaseNative(ref _flowDistanceField);
         ReleaseNative(ref _flowDistanceScratch);
         ReleaseNative(ref _flowDirectionField);
@@ -3145,6 +3238,7 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _obstacles);
         ReleaseNative(ref _playerDamageCount);
         ReleaseNative(ref _mainTowerDamageCount);
+        ReleaseNative(ref _bossReachedGoalCount);
         ReleaseNative(ref _enemyKillCount);
         if (_explosionQueue.IsCreated) _explosionQueue.Dispose();
         if (_skillEventQueue.IsCreated) _skillEventQueue.Dispose();

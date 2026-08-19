@@ -584,7 +584,7 @@
         "eliteKillGold": 20,
         "growthInterval": 15.0,
         "healthGrowthMultiplier": 1.100000023841858,
-        "speedGrowthMultiplier": 1.0099999904632569,
+        "speedGrowthMultiplier": 1.0069999694824219,
         "eliteHealthMultiplier": 20.0,
         "eliteSpeedMultiplier": 1.25,
         "eliteSizeMultiplier": 2.0,
@@ -592,30 +592,44 @@
             {
                 "displayName": "Standard",
                 "baseHealth": 10.0,
-                "baseSpeed": 6.0,
+                "baseSpeed": 7.5,
                 "size": 1.0,
-                "spriteResourcePath": "Sprites/enemy_standard_sheet"
+                "spriteResourcePath": "Sprites/enemy_standard_sheet",
+                "spriteSheetColumns": 8,
+                "spriteSheetRows": 1,
+                "spriteAnimationFps": 12.0,
+                "spriteDeathFrameCount": 3
             },
             {
                 "displayName": "Swift",
-                "baseHealth": 8.199999809265137,
-                "baseSpeed": 7.0,
+                "baseHealth": 7.5,
+                "baseSpeed": 9.0,
                 "size": 0.8999999761581421,
-                "spriteResourcePath": "Sprites/enemy_swift_sheet"
+                "spriteResourcePath": "Sprites/enemy_swift_sheet",
+                "spriteSheetColumns": 3,
+                "spriteSheetRows": 2,
+                "spriteAnimationFps": 9.0,
+                "spriteDeathFrameCount": 2
             },
             {
                 "displayName": "Heavy",
-                "baseHealth": 13.5,
-                "baseSpeed": 5.300000190734863,
+                "baseHealth": 15.0,
+                "baseSpeed": 5.0,
                 "size": 1.1799999475479127,
-                "spriteResourcePath": "Sprites/enemy_heavy_sheet"
+                "spriteResourcePath": "Sprites/enemy_heavy_sheet",
+                "spriteSheetColumns": 3,
+                "spriteSheetRows": 2,
+                "spriteAnimationFps": 9.0,
+                "spriteDeathFrameCount": 2
             }
         ]
     },
     "bossBalance": {
-        "spawnTimeSeconds": 480.0,
+        "spawnTimeSeconds": 900.0,
+        "targetArrivalTimeSeconds": 1200.0,
         "maxHealth": 1000000.0,
         "moveSpeed": 3.5,
+        "maximumSlowPercent": 20.0,
         "radius": 5.0,
         "navigationRadius": 1.25,
         "fallbackSpawnPosition": {

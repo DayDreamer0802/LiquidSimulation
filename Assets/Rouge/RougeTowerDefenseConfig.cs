@@ -127,6 +127,22 @@ public sealed class RougeEnemyArchetypeConfig
     [Min(0.1f)] public float size = 1f;
     [Tooltip("Texture under an Assets/.../Resources folder, without extension.")]
     public string spriteResourcePath = "Sprites/enemy_standard_sheet";
+    [Min(1)] public int spriteSheetColumns = 3;
+    [Min(1)] public int spriteSheetRows = 2;
+    [Min(0.01f)] public float spriteAnimationFps = 9f;
+    [Min(0)] public int spriteDeathFrameCount = 2;
+
+    public void EnsureDefaults()
+    {
+        bool isStandardSheet = !string.IsNullOrEmpty(spriteResourcePath) &&
+            spriteResourcePath.EndsWith("enemy_standard_sheet", StringComparison.OrdinalIgnoreCase);
+        if (spriteSheetColumns < 1) spriteSheetColumns = 3;
+        if (spriteSheetRows < 1) spriteSheetRows = isStandardSheet ? 3 : 2;
+        if (spriteAnimationFps <= 0f) spriteAnimationFps = isStandardSheet ? 14f : 9f;
+        if (spriteDeathFrameCount < 0) spriteDeathFrameCount = 2;
+        spriteDeathFrameCount = Mathf.Min(spriteDeathFrameCount,
+            Mathf.Max(0, spriteSheetColumns * spriteSheetRows - 1));
+    }
 }
 
 [Serializable]
@@ -135,8 +151,8 @@ public sealed class RougeEnemyBalanceConfig
     [Min(0)] public int normalKillGold = 1;
     [Min(0)] public int eliteKillGold = 20;
     [Min(1f)] public float growthInterval = 15f;
-    [Min(1f)] public float healthGrowthMultiplier = 1.10f;
-    [Min(1f)] public float speedGrowthMultiplier = 1.01f;
+    [HideInInspector] public float healthGrowthMultiplier = 1.10f; // Legacy scene data; HP now follows milestones.
+    [Min(1f)] public float speedGrowthMultiplier = 1.007f;
     [Min(1f)] public float eliteHealthMultiplier = 20f;
     [Min(0.1f)] public float eliteSpeedMultiplier = 1.25f;
     [Min(1f)] public float eliteSizeMultiplier = 2f;
@@ -148,22 +164,31 @@ public sealed class RougeEnemyBalanceConfig
         if (enemyTypes.Count == 0)
         {
             enemyTypes.Add(new RougeEnemyArchetypeConfig
-                { displayName = "Standard", baseHealth = 10f, baseSpeed = 6f, size = 1f, spriteResourcePath = "Sprites/enemy_standard_sheet" });
+                { displayName = "Standard", baseHealth = 10f, baseSpeed = 6f, size = 1f,
+                    spriteResourcePath = "Sprites/enemy_standard_sheet", spriteSheetColumns = 3,
+                    spriteSheetRows = 3, spriteAnimationFps = 14f, spriteDeathFrameCount = 2 });
             enemyTypes.Add(new RougeEnemyArchetypeConfig
                 { displayName = "Swift", baseHealth = 8.2f, baseSpeed = 7f, size = 0.9f, spriteResourcePath = "Sprites/enemy_swift_sheet" });
             enemyTypes.Add(new RougeEnemyArchetypeConfig
                 { displayName = "Heavy", baseHealth = 13.5f, baseSpeed = 5.3f, size = 1.18f, spriteResourcePath = "Sprites/enemy_heavy_sheet" });
         }
         while (enemyTypes.Count < 3) enemyTypes.Add(new RougeEnemyArchetypeConfig { displayName = "Variant " + (enemyTypes.Count + 1) });
+        for (int i = 0; i < enemyTypes.Count; i++)
+        {
+            enemyTypes[i] ??= new RougeEnemyArchetypeConfig();
+            enemyTypes[i].EnsureDefaults();
+        }
     }
 }
 
 [Serializable]
 public sealed class RougeBossBalanceConfig
 {
-    [Min(1f)] public float spawnTimeSeconds = 480f;
+    [Min(1f)] public float spawnTimeSeconds = 900f;
+    [Min(1f)] public float targetArrivalTimeSeconds = 1200f;
     [Min(1f)] public float maxHealth = 1000000f;
-    [Min(0.1f)] public float moveSpeed = 3.5f;
+    [Min(0.1f)] public float moveSpeed = 3.5f; // Fallback when no valid route distance is available.
+    [Range(0f, 95f)] public float maximumSlowPercent = 20f;
     [Min(0.5f)] public float radius = 5f;
     [Min(0.1f)] public float navigationRadius = 1.25f;
     public Vector3 fallbackSpawnPosition = new Vector3(0f, 0.25f, 135f);
@@ -182,7 +207,10 @@ public sealed class RougeBossBalanceConfig
 
     public void EnsureDefaults()
     {
-        if (spawnTimeSeconds <= 0f) spawnTimeSeconds = 480f;
+        if (spawnTimeSeconds <= 0f) spawnTimeSeconds = 900f;
+        if (targetArrivalTimeSeconds <= spawnTimeSeconds)
+            targetArrivalTimeSeconds = spawnTimeSeconds + 300f;
+        maximumSlowPercent = Mathf.Clamp(maximumSlowPercent, 0f, 95f);
         if (navigationRadius <= 0f) navigationRadius = 1.25f;
         if (string.IsNullOrWhiteSpace(spriteResourcePath)) spriteResourcePath = "Sprites/boss_overlord";
         spriteSheetColumns = Mathf.Clamp(spriteSheetColumns, 1, 8);
