@@ -63,6 +63,10 @@ public partial class RougeGameManager
     private bool _previewValid;
     private Vector2Int _previewTowerAnchor;
     private bool[] _previewCellValidity;
+    private bool _towerMiddleClickPending;
+    private Vector2 _towerMiddleClickStartPosition;
+    private RougeDefenseTower _towerMiddleClickTarget;
+    private const float TowerMiddleClickDragThreshold = 10f;
     private static readonly Vector2Int DefaultTowerFootprintSize = new Vector2Int(4, 4);
     private bool _pendingMainTowerAoe;
     private Canvas _towerDefenseCanvas;
@@ -256,6 +260,8 @@ public partial class RougeGameManager
         if (disposingCamera != null) disposingCamera.EndCinematicFocus();
         Time.timeScale = 1f;
         TowerDefenseBuildModeActive = false;
+        _towerPlacementMode = false;
+        RefreshTowerEditHints();
         if (player != null)
         {
             player.gameObject.SetActive(_towerDefensePlayerWasActive);
@@ -516,6 +522,8 @@ public partial class RougeGameManager
             return;
         }
 
+        UpdateSelectedTowerMiddleClick(mouse, pointerOverUi);
+
         if (keyboard != null)
         {
             if (keyboard.digit1Key.wasPressedThisFrame || keyboard.numpad1Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.Ice);
@@ -553,10 +561,47 @@ public partial class RougeGameManager
         }
     }
 
+    private void UpdateSelectedTowerMiddleClick(Mouse mouse, bool pointerOverUi)
+    {
+        if (mouse == null)
+        {
+            _towerMiddleClickPending = false;
+            _towerMiddleClickTarget = null;
+            return;
+        }
+
+        Vector2 pointer = mouse.position.ReadValue();
+        if (mouse.middleButton.wasPressedThisFrame)
+        {
+            _towerMiddleClickTarget = !pointerOverUi && _selectedTower != null &&
+                _selectedTower.IsTargetedDamage ? _selectedTower : null;
+            _towerMiddleClickPending = _towerMiddleClickTarget != null;
+            _towerMiddleClickStartPosition = pointer;
+        }
+        if (_towerMiddleClickPending && mouse.middleButton.isPressed &&
+            (pointer - _towerMiddleClickStartPosition).sqrMagnitude >
+            TowerMiddleClickDragThreshold * TowerMiddleClickDragThreshold)
+        {
+            _towerMiddleClickPending = false;
+        }
+        if (!mouse.middleButton.wasReleasedThisFrame) return;
+
+        RougeDefenseTower target = _towerMiddleClickPending ? _towerMiddleClickTarget : null;
+        _towerMiddleClickPending = false;
+        _towerMiddleClickTarget = null;
+        if (target == null || target != _selectedTower || pointerOverUi) return;
+        ToggleSelectedTowerTargetPriority();
+    }
+
     private void SetTowerPlacementMode(bool enabled)
     {
         _towerPlacementMode = enabled;
         TowerDefenseBuildModeActive = enabled;
+        if (!enabled)
+        {
+            _towerMiddleClickPending = false;
+            _towerMiddleClickTarget = null;
+        }
         SetTowerPlaceVisualsVisible(enabled);
         Time.timeScale = enabled ? 0.5f : 1f;
 
@@ -571,6 +616,7 @@ public partial class RougeGameManager
             _towerPreview = null;
             SelectPlacedTower(null);
         }
+        RefreshTowerEditHints();
         RefreshTowerDefenseUi();
     }
 
@@ -816,7 +862,18 @@ public partial class RougeGameManager
         RougeDefenseTower placed = _towerPreview;
         _towerPreview = null;
         _towerTargetScheduledCount = 0;
-        SelectTowerBuildType(_selectedBuildType);
+        if (_towerDefenseGold >= placed.PurchaseCost)
+        {
+            SelectTowerBuildType(_selectedBuildType);
+        }
+        else
+        {
+            // Keep edit mode active, but stop repeating this build type when the
+            // remaining gold cannot purchase another copy.
+            _towerBuildSelectionActive = false;
+            _previewValid = false;
+            SetTowerPlaceVisualsVisible(true);
+        }
         SelectPlacedTower(placed);
         RefreshTowerDefenseUi();
     }
@@ -826,7 +883,8 @@ public partial class RougeGameManager
         if (_selectedTower != null) _selectedTower.SetRangeVisibility(false);
         _selectedTower = tower;
         if (_selectedTower != null) _selectedTower.SetRangeVisibility(true);
-        RefreshTowerDefenseUi();
+        RefreshTowerEditHints();
+        RefreshTowerDefenseUi(true);
     }
 
     private void DeleteTower(RougeDefenseTower tower)
@@ -859,7 +917,7 @@ public partial class RougeGameManager
         _towerDefenseGold -= cost;
         _selectedTower.name = _selectedTower.DisplayName + " Lv." + _selectedTower.Level;
         _selectedTower.SetRangeVisibility(true);
-        RefreshTowerDefenseUi();
+        RefreshTowerDefenseUi(true);
     }
 
     private void ToggleSelectedTowerTargetPriority()
@@ -871,6 +929,17 @@ public partial class RougeGameManager
         // completes that job before rebuilding the request array.
         _towerTargetScheduledCount = 0;
         RefreshTowerDefenseUi(true);
+    }
+
+    private void RefreshTowerEditHints()
+    {
+        for (int i = _defenseTowers.Count - 1; i >= 0; i--)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null) continue;
+            bool upgradeAvailable = tower.CanUpgrade && _towerDefenseGold >= tower.UpgradeCost;
+            tower.SetEditHintState(_towerPlacementMode, tower == _selectedTower, upgradeAvailable);
+        }
     }
 
     private void UpdateTowerDefenseSimulation(float dt)
@@ -1039,6 +1108,7 @@ public partial class RougeGameManager
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         SetTowerPlaceVisualsVisible(false);
+        RefreshTowerEditHints();
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
         if (_bossSpriteAnimator != null) _bossSpriteAnimator.BeginDeath();
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
@@ -2300,6 +2370,7 @@ public partial class RougeGameManager
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         SetTowerPlaceVisualsVisible(false);
+        RefreshTowerEditHints();
         Time.timeScale = 0f;
         if (player != null) player.SuppressMovement = true;
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
@@ -2505,6 +2576,7 @@ public partial class RougeGameManager
         if (_towerDefenseCanvas == null) return;
         if (!force && Time.unscaledTime < _nextTowerDefenseUiRefreshTime) return;
         _nextTowerDefenseUiRefreshTime = Time.unscaledTime + 0.1f;
+        RefreshTowerEditHints();
         if (_towerDefenseStatusText != null)
         {
             float hp = mainTower != null ? mainTower.CurrentHealth : 0f;
@@ -2554,8 +2626,8 @@ public partial class RougeGameManager
             if (showPriority && _towerTargetPriorityButtonText != null)
             {
                 _towerTargetPriorityButtonText.text = _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                    ? "TARGET MODE\nBOSS FIRST"
-                    : "TARGET MODE\nNEAREST GOAL";
+                    ? "[MMB] TARGET\nBOSS FIRST"
+                    : "[MMB] TARGET\nNEAREST GOAL";
             }
         }
         if (_bossPanel != null)
@@ -2587,7 +2659,11 @@ public partial class RougeGameManager
                 string selected = !string.IsNullOrEmpty(tactical)
                     ? tactical
                     : _selectedTower != null
-                    ? $"SELECTED: {_selectedTower.DisplayName}  LV {_selectedTower.Level}/{_selectedTower.MaxLevel}  {GetTowerUiStats(_selectedTower)}"
+                    ? $"SELECTED: {_selectedTower.DisplayName}  LV {_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
+                      $"{GetTowerUiStats(_selectedTower)}" +
+                      (_selectedTower.IsTargetedDamage
+                          ? $"  |  TARGET {(_selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst ? "BOSS FIRST" : "NEAREST GOAL")}  |  MMB SWITCH"
+                          : string.Empty)
                     : _towerBuildSelectionActive
                         ? $"BUILD: {TowerDefenseVisuals.GetTowerName(_selectedBuildType)}  |  LEFT CLICK PLACE/SELECT"
                         : "BUILD CANCELLED  |  SELECT A TOWER BUTTON TO BUILD";

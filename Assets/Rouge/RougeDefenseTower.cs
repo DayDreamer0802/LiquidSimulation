@@ -22,6 +22,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
     [System.NonSerialized] internal LineRenderer attackRing;
+    [System.NonSerialized] private LineRenderer editHintRing;
     private const int MaxLaserConnections = 30;
     private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 2];
     private readonly int[] laserIndices = new int[MaxLaserConnections * 2];
@@ -34,6 +35,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private float overclockRemaining;
     private ParticleSystem overclockParticles;
     private Material overclockParticleMaterial;
+    private GameObject editHintRoot;
+    private TextMesh editHintText;
+    private bool editHintSelected;
+    private bool editHintUpgradeAvailable;
 
     private RougeTowerStats Stats => TowerDefenseVisuals.GetStats(towerType, level);
     public RougeTowerType TowerType => towerType;
@@ -128,6 +133,36 @@ public sealed class RougeDefenseTower : MonoBehaviour
             new Color(0.15f, 0.72f, 1f, 0.78f), visible);
     }
 
+    internal void SetEditHintState(bool editMode, bool selected, bool upgradeAvailable)
+    {
+        bool visible = editMode && (selected || upgradeAvailable);
+        if (!visible)
+        {
+            if (editHintRoot != null) editHintRoot.SetActive(false);
+            if (editHintRing != null) editHintRing.enabled = false;
+            editHintSelected = false;
+            editHintUpgradeAvailable = false;
+            return;
+        }
+
+        EnsureEditHintVisuals();
+        editHintRoot.SetActive(true);
+        Color color = selected
+            ? new Color(1f, 0.78f, 0.08f, 1f)
+            : new Color(0.18f, 1f, 0.38f, 1f);
+        if (editHintSelected != selected || editHintUpgradeAvailable != upgradeAvailable)
+        {
+            editHintText.text = selected
+                ? upgradeAvailable ? "SELECTED\nUPGRADE READY" : "SELECTED"
+                : "UPGRADE READY";
+            editHintText.color = color;
+        }
+        editHintSelected = selected;
+        editHintUpgradeAvailable = upgradeAvailable;
+        TowerDefenseVisuals.UpdateCircle(editHintRing, transform.position,
+            Mathf.Max(1.1f, placementRadius * 1.25f), color, true);
+    }
+
     internal void ShowLaserBeams(Vector3 start, Vector3[] targets, int count)
     {
         int connectionCount = Mathf.Min(count, MaxLaserConnections);
@@ -202,6 +237,11 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void UpdatePresentation(float dt)
     {
         UpdateOverclock(dt);
+        if (editHintRoot != null && editHintRoot.activeSelf)
+        {
+            float pulse = 1f + Mathf.Sin(Time.unscaledTime * 5f) * 0.055f;
+            editHintRoot.transform.localScale = Vector3.one * pulse;
+        }
     }
 
     internal Vector3 GetCrystalLaserOrigin()
@@ -330,6 +370,33 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (collisionRing == null) collisionRing = TowerDefenseVisuals.CreateCircleRenderer("Placement Range", transform);
         if (attackRing == null) attackRing = TowerDefenseVisuals.CreateCircleRenderer("Attack Range", transform);
         SetRangeVisibility(preview);
+    }
+
+    private void EnsureEditHintVisuals()
+    {
+        if (editHintRoot == null)
+        {
+            editHintRoot = new GameObject("Tower Edit Hint");
+            editHintRoot.transform.SetParent(transform, false);
+            editHintRoot.transform.localPosition = new Vector3(0f, 6.2f, 0f);
+            editHintRoot.AddComponent<RougeBillboard>();
+            editHintText = editHintRoot.AddComponent<TextMesh>();
+            editHintText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            editHintText.fontSize = 64;
+            editHintText.characterSize = 0.075f;
+            editHintText.anchor = TextAnchor.MiddleCenter;
+            editHintText.alignment = TextAlignment.Center;
+            editHintText.fontStyle = FontStyle.Bold;
+            MeshRenderer textRenderer = editHintRoot.GetComponent<MeshRenderer>();
+            if (textRenderer != null)
+            {
+                textRenderer.sortingOrder = 110;
+                textRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                textRenderer.receiveShadows = false;
+            }
+        }
+        if (editHintRing == null)
+            editHintRing = TowerDefenseVisuals.CreateCircleRenderer("Tower Edit Hint Ring", transform);
     }
 
     private void EnsureLaserBeamMesh()
