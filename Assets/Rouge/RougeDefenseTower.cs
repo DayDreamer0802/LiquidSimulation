@@ -43,6 +43,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float Damage => Stats.Damage * overclockDamageMultiplier;
     public float AttackInterval => Stats.AttackInterval;
     public float AttackRange => Stats.AttackRadius;
+    public Vector2Int FootprintCells => TowerDefenseVisuals.GetFootprintSize(towerType);
     public int TargetCount => Stats.TargetCount;
     public int ProjectileCount => Stats.ProjectileCount;
     public float AoeRadius => Stats.AoeRadius;
@@ -82,7 +83,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     {
         investedGold = purchaseCost;
         Collider collider = GetComponent<Collider>();
-        if (collider != null) collider.enabled = true;
+        if (collider != null) collider.enabled = false;
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, false, Color.white);
     }
 
@@ -94,7 +95,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         InitializePrefabVisuals(false);
     }
 
-    internal void SetPreviewState(bool valid)
+    internal void SetPreviewState(bool valid, bool[] cellValidity = null)
     {
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, true,
             valid ? new Color(0.2f, 1f, 0.35f, 0.62f) : new Color(1f, 0.15f, 0.12f, 0.62f));
@@ -122,8 +123,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void SetRangeVisibility(bool visible, bool valid = true)
     {
-        TowerDefenseVisuals.UpdateCircle(collisionRing, transform.position, placementRadius,
-            valid ? new Color(0.2f, 1f, 0.45f, 0.85f) : new Color(1f, 0.12f, 0.1f, 0.9f), visible);
+        if (collisionRing != null) collisionRing.enabled = false;
         TowerDefenseVisuals.UpdateCircle(attackRing, transform.position, AttackRange,
             new Color(0.15f, 0.72f, 1f, 0.78f), visible);
     }
@@ -324,15 +324,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
             billboard.SetRotatingContentAngleOffset(180f);
         }
 
-        SphereCollider towerCollider = GetComponent<SphereCollider>();
-        if (towerCollider != null)
-        {
-            towerCollider.radius = placementRadius;
-            towerCollider.center = new Vector3(0f, 0.8f, 0f);
-            towerCollider.isTrigger = true;
-            towerCollider.enabled = !preview;
-        }
-        else Debug.LogError($"Tower prefab '{name}' is missing its placement SphereCollider.", this);
+        Collider towerCollider = GetComponent<Collider>();
+        if (towerCollider != null) towerCollider.enabled = false;
 
         if (collisionRing == null) collisionRing = TowerDefenseVisuals.CreateCircleRenderer("Placement Range", transform);
         if (attackRing == null) attackRing = TowerDefenseVisuals.CreateCircleRenderer("Attack Range", transform);

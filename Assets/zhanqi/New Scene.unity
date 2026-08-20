@@ -713,7 +713,7 @@ MonoBehaviour:
   enemyMaxHealth: 24
   enemyRadius: 0.35
   enemyMaxSpeed: 7
-  enemyVisualScale: 1.35
+  enemySpriteSize: {x: 1.35, y: 1.35}
   arenaHalfExtent: 220
   spawnRadiusMin: 50
   spawnRadiusMax: 180

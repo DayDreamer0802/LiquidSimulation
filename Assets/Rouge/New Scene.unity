@@ -404,23 +404,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 200
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 180
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 60
-  - enemyTypeIndex: 1
-    weightPercent: 25
-  - enemyTypeIndex: 2
-    weightPercent: 15
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.003
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 36.9
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &161299226
 GameObject:
   m_ObjectHideFlags: 0
@@ -576,7 +565,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &192031727
 Transform:
   m_ObjectHideFlags: 0
@@ -799,23 +788,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 200
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 240
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 60
-  - enemyTypeIndex: 1
-    weightPercent: 25
-  - enemyTypeIndex: 2
-    weightPercent: 15
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.004
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 29.6
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &257098204
 GameObject:
   m_ObjectHideFlags: 0
@@ -1121,6 +1099,21 @@ MonoBehaviour:
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+--- !u!115 &319914071
+MonoScript:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: 
+  serializedVersion: 7
+  m_DefaultReferences: {}
+  m_Icon: {fileID: 0}
+  m_Type: 0
+  m_ExecutionOrder: 0
+  m_ClassName: RougeMapSurface
+  m_Namespace: 
+  m_AssemblyName: Assembly-CSharp
 --- !u!1 &339316280
 GameObject:
   m_ObjectHideFlags: 0
@@ -1139,7 +1132,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!64 &339316281
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -1661,7 +1654,7 @@ GameObject:
   m_Component:
   - component: {fileID: 440471314}
   m_Layer: 0
-  m_Name: GameObject (1)
+  m_Name: Tower Defense Map Loader - Camera Clamp
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1866,23 +1859,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 200
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 330
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 50
-  - enemyTypeIndex: 1
-    weightPercent: 30
-  - enemyTypeIndex: 2
-    weightPercent: 20
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.004
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 29.6
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &548312575
 GameObject:
   m_ObjectHideFlags: 0
@@ -1898,7 +1880,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &548312576
 Transform:
   m_ObjectHideFlags: 0
@@ -2206,6 +2188,53 @@ Transform:
   m_Children: []
   m_Father: {fileID: 192031727}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!1 &613537615
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 613537617}
+  - component: {fileID: 613537616}
+  m_Layer: 0
+  m_Name: GameObject (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &613537616
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 613537615}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 086e5338cb080b14aad060d9977c3f7d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  map: {fileID: 11400000, guid: 04dd93d95e5618a48bb11f8984112d3d, type: 2}
+  loadOnEnable: 1
+  clearOnDisable: 1
+--- !u!4 &613537617
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 613537615}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &631963178
 GameObject:
   m_ObjectHideFlags: 0
@@ -2253,16 +2282,9 @@ MonoBehaviour:
   spawnCount: 45
   spawnInterval: 1
   startDelay: 15
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 100
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 20
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &636509856
 GameObject:
   m_ObjectHideFlags: 0
@@ -2571,18 +2593,9 @@ MonoBehaviour:
   spawnCount: 60
   spawnInterval: 1
   startDelay: 45
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 90
-  - enemyTypeIndex: 1
-    weightPercent: 10
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 20
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &745579632
 GameObject:
   m_ObjectHideFlags: 0
@@ -2767,23 +2780,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 200
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 360
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 45
-  - enemyTypeIndex: 1
-    weightPercent: 30
-  - enemyTypeIndex: 2
-    weightPercent: 25
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.004
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 35.58
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &771872831
 GameObject:
   m_ObjectHideFlags: 0
@@ -3125,23 +3127,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 150
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 150
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 75
-  - enemyTypeIndex: 1
-    weightPercent: 15
-  - enemyTypeIndex: 2
-    weightPercent: 10
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.002
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 36.9
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &992246605
 GameObject:
   m_ObjectHideFlags: 0
@@ -3298,7 +3289,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &994862807
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3338,6 +3329,7 @@ GameObject:
   - component: {fileID: 995686287}
   - component: {fileID: 995686286}
   - component: {fileID: 995686285}
+  - component: {fileID: 995686288}
   m_Layer: 0
   m_Name: Camera Movement Bounds
   m_TagString: Untagged
@@ -3376,8 +3368,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 833.9189, y: 1, z: 971.051}
-  m_Center: {x: -25.180756, y: 0, z: 53.441162}
+  m_Size: {x: 152, y: 1, z: 152}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &995686287
 Transform:
   m_ObjectHideFlags: 0
@@ -3393,6 +3385,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &995686288
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 995686284}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 319914071}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  blocksNavigation: 0
 --- !u!1 &998066663
 GameObject:
   m_ObjectHideFlags: 0
@@ -3833,7 +3838,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1051678198
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4314,21 +4319,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 120
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 90
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 80
-  - enemyTypeIndex: 1
-    weightPercent: 20
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 36.9
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &1190207448
 GameObject:
   m_ObjectHideFlags: 0
@@ -4373,23 +4369,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 200
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 270
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 60
-  - enemyTypeIndex: 1
-    weightPercent: 25
-  - enemyTypeIndex: 2
-    weightPercent: 15
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.004
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 26.9
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &1202991522
 GameObject:
   m_ObjectHideFlags: 0
@@ -4434,21 +4419,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 90
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 60
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 85
-  - enemyTypeIndex: 1
-    weightPercent: 15
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 20
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &1221385185
 GameObject:
   m_ObjectHideFlags: 0
@@ -4604,7 +4580,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1223097368
 Transform:
   m_ObjectHideFlags: 0
@@ -5086,7 +5062,7 @@ MonoBehaviour:
   enemyMaxHealth: 24
   enemyRadius: 1.2
   enemyMaxSpeed: 7
-  enemyVisualScale: 1
+  enemySpriteSize: {x: 1, y: 1}
   enemyVariationStrength: 0.18
   enemyBreakupScale: 3.8
   enemyBreakupStrength: 0.16
@@ -6882,6 +6858,9 @@ MonoBehaviour:
     towers:
     - towerType: 0
       placementRadius: 2.2
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 625
       levels:
       - damage: 10
@@ -6951,6 +6930,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 1
       placementRadius: 2
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 400
       levels:
       - damage: 5
@@ -7020,6 +7002,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 2
       placementRadius: 2.7
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 750
       levels:
       - damage: 50
@@ -7089,6 +7074,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 3
       placementRadius: 2.4
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 625
       levels:
       - damage: 10
@@ -7158,6 +7146,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 4
       placementRadius: 2.3
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 750
       levels:
       - damage: 2
@@ -7227,6 +7218,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 5
       placementRadius: 2.8
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 1000
       levels:
       - damage: 200
@@ -7296,6 +7290,9 @@ MonoBehaviour:
         orbitOuterHoldDuration: 1.5
     - towerType: 6
       placementRadius: 2.5
+      footprintSize: 4
+      footprintWidth: 4
+      footprintHeight: 4
       purchaseCost: 900
       levels:
       - damage: 30
@@ -7368,7 +7365,256 @@ MonoBehaviour:
     eliteKillGold: 20
     growthInterval: 15
     healthGrowthMultiplier: 1.1
+    healthMultiplierByLevel:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0.5833333
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 13
+        value: 8
+        inSlope: 0.5833333
+        outSlope: 1.3333334
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 25
+        value: 24
+        inSlope: 1.3333334
+        outSlope: 2
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 37
+        value: 48
+        inSlope: 2
+        outSlope: 2
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 49
+        value: 72
+        inSlope: 2
+        outSlope: 6
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 61
+        value: 144
+        inSlope: 6
+        outSlope: 7.2
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 81
+        value: 288
+        inSlope: 7.2
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 100
+        value: 288
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
     speedGrowthMultiplier: 1.007
+    speedMultiplierByLevel:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0.007199208
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 10
+        value: 1.0647929
+        inSlope: 0.007199208
+        outSlope: 0.0076927305
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 20
+        value: 1.1417202
+        inSlope: 0.0076927305
+        outSlope: 0.00824852
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 30
+        value: 1.2242054
+        inSlope: 0.00824852
+        outSlope: 0.008844435
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 40
+        value: 1.3126497
+        inSlope: 0.008844435
+        outSlope: 0.009483409
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 50
+        value: 1.4074838
+        inSlope: 0.009483409
+        outSlope: 0.010168552
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 60
+        value: 1.5091693
+        inSlope: 0.010168552
+        outSlope: 0.010903204
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 70
+        value: 1.6182014
+        inSlope: 0.010903204
+        outSlope: 0.011690915
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 80
+        value: 1.7351105
+        inSlope: 0.011690915
+        outSlope: 0.012535537
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 90
+        value: 1.8604659
+        inSlope: 0.012535537
+        outSlope: 0.013441181
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 100
+        value: 1.9948777
+        inSlope: 0.013441181
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    spawnSpeedMultiplierByLevel:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0.025
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 41
+        value: 2
+        inSlope: 0.025
+        outSlope: 0.025
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 81
+        value: 3
+        inSlope: 0.025
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 100
+        value: 3
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    eliteChancePermilleByLevel:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0.04040404
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 100
+        value: 5
+        inSlope: 0.04040404
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
     eliteHealthMultiplier: 20
     eliteSpeedMultiplier: 1.25
     eliteSizeMultiplier: 2
@@ -7660,7 +7906,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!64 &1472587571
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -7935,23 +8181,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a836d64f2a7f41d49bf1043c68ee4121, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  spawnCount: 150
+  spawnCount: 64
   spawnInterval: 1
   startDelay: 120
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 80
-  - enemyTypeIndex: 1
-    weightPercent: 15
-  - enemyTypeIndex: 2
-    weightPercent: 5
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 36.9
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &1622365203
 GameObject:
   m_ObjectHideFlags: 0
@@ -8958,16 +9193,9 @@ MonoBehaviour:
   spawnCount: 30
   spawnInterval: 1
   startDelay: 3
+  enemyType: 0
   enemyTypeIndex: 0
-  enemyTypeWeights:
-  - enemyTypeIndex: 0
-    weightPercent: 100
-  eliteChancePercent: 0.1
-  eliteChanceIncreasePercentPer15Seconds: 0.001
-  spawnCountGrowthPercent: 5
-  spawnSpeedGrowthPercent: 2.5
-  spawnRadius: 20
-  minimumRadius: 0
+  spawnCellSize: 8
 --- !u!1 &1951526289
 GameObject:
   m_ObjectHideFlags: 0
@@ -9409,7 +9637,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!135 &2027147788
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -9604,6 +9832,7 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 288212303}
+  - {fileID: 613537617}
   - {fileID: 636509858}
   - {fileID: 771872832}
   - {fileID: 902506096}

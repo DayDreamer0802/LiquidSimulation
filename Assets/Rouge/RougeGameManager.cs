@@ -12,6 +12,17 @@ using UnityEngine.SceneManagement;
 [DefaultExecutionOrder(-50)]
 public partial class RougeGameManager : MonoBehaviour
 {
+    public void ConfigureArenaFromMap(float mapWorldWidth, float mapWorldHeight)
+    {
+        _usesMapArenaBounds = true;
+        _mapArenaHalfExtents = new float2(
+            Mathf.Max(8f, mapWorldWidth * 0.5f),
+            Mathf.Max(8f, mapWorldHeight * 0.5f));
+        float halfExtent = math.cmax(_mapArenaHalfExtents);
+        arenaHalfExtent = Mathf.Max(8f, halfExtent);
+        despawnDistance = Mathf.Max(despawnDistance, arenaHalfExtent + 40f);
+    }
+
     private static readonly int PositionScaleBufferId = Shader.PropertyToID("_PositionScaleBuffer");
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly int ScaleMultiplierId = Shader.PropertyToID("_ScaleMultiplier");
@@ -50,20 +61,23 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private float enemyMaxHealth = 10f;
     [SerializeField] private float enemyRadius = 0.3f;
     [SerializeField] private float enemyMaxSpeed = 6f;
-    [SerializeField] private float enemyVisualScale = 1.35f;
+    [SerializeField, Tooltip("Enemy sprite width and height multipliers.")]
+    private Vector2 enemySpriteSize = new Vector2(1.35f, 1.35f);
     [SerializeField, Range(0f, 0.4f)] private float enemyVariationStrength = 0.18f;
     [SerializeField, Range(0.5f, 8f)] private float enemyBreakupScale = 3.8f;
     [SerializeField, Range(0f, 0.35f)] private float enemyBreakupStrength = 0.16f;
 
     [Header("Arena")]
     [SerializeField] private float arenaHalfExtent = 220f;
+    private bool _usesMapArenaBounds;
+    private float2 _mapArenaHalfExtents;
     [SerializeField] private float spawnRadiusMin = 50f;
     [SerializeField] private float spawnRadiusMax = 180f;
     [SerializeField] private float despawnDistance = 260f;
     [SerializeField] private float renderHeight = 0f;
 
     [Header("Camera")]
-    [SerializeField, Range(0.5f, 5f)] private float cameraZoomMultiplier = 1f;
+    [SerializeField, Min(0.01f)] private float cameraZoomMultiplier = 1f;
     [SerializeField, Range(0.02f, 0.5f)] private float cameraZoomScrollStep = 0.15f;
 
     [Header("Steering")]
@@ -545,8 +559,10 @@ public partial class RougeGameManager : MonoBehaviour
         Vector3 pos = player.transform.position;
         
         // Boundary
-        pos.x = Mathf.Clamp(pos.x, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
-        pos.z = Mathf.Clamp(pos.z, -arenaHalfExtent + 1f, arenaHalfExtent - 1f);
+        float playerLimitX = _usesMapArenaBounds ? _mapArenaHalfExtents.x : arenaHalfExtent;
+        float playerLimitZ = _usesMapArenaBounds ? _mapArenaHalfExtents.y : arenaHalfExtent;
+        pos.x = Mathf.Clamp(pos.x, -playerLimitX + 1f, playerLimitX - 1f);
+        pos.z = Mathf.Clamp(pos.z, -playerLimitZ + 1f, playerLimitZ - 1f);
         
         // Obstacles
         if (_obstacles.IsCreated)
@@ -970,7 +986,9 @@ public partial class RougeGameManager : MonoBehaviour
         enemyMaterial = CreateRuntimeMaterial("Rouge/EnemyBillboard", "Enemy 2D Billboard", true);
         _ownsEnemyBillboardMaterial = true;
         ApplyEnemySpriteSheetTextures();
-        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier, 0.5f, 5f);
+        cameraZoomMultiplier = Mathf.Max(0.01f, cameraZoomMultiplier);
+        enemySpriteSize.x = Mathf.Max(0.01f, enemySpriteSize.x);
+        enemySpriteSize.y = Mathf.Max(0.01f, enemySpriteSize.y);
 
         _bulletMesh = enemyMesh;
         _bulletMaterial = CreateRuntimeMaterial("Rouge/SpriteInstanced", "Bullet 2D Sprite", true);
@@ -1692,7 +1710,11 @@ public partial class RougeGameManager : MonoBehaviour
             return;
         }
 
-        cameraZoomMultiplier = Mathf.Clamp(cameraZoomMultiplier - scroll * cameraZoomScrollStep, 0.5f, 5f);
+        float requestedZoom = cameraZoomMultiplier - scroll * cameraZoomScrollStep;
+        RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
+        cameraZoomMultiplier = follow != null
+            ? follow.ClampZoomScale(requestedZoom)
+            : Mathf.Max(0.01f, requestedZoom);
     }
 
     private int GetInitialSkillProgressionLevel(int progressionIndex)
@@ -1800,6 +1822,8 @@ public partial class RougeGameManager : MonoBehaviour
         {
             Collider collider = colliders[i];
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
+            RougeMapSurface mapSurface = collider.GetComponentInParent<RougeMapSurface>();
+            if (mapSurface != null && !mapSurface.BlocksNavigation) continue;
             if (collider.GetComponentInParent<RougeMainTower>() != null) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
@@ -1822,6 +1846,8 @@ public partial class RougeGameManager : MonoBehaviour
         {
             Collider collider = colliders[i];
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy) continue;
+            RougeMapSurface mapSurface = collider.GetComponentInParent<RougeMapSurface>();
+            if (mapSurface != null && !mapSurface.BlocksNavigation) continue;
             if (collider.GetComponentInParent<RougeMainTower>() != null) continue;
             if ((obstacleLayers.value & (1 << collider.gameObject.layer)) == 0) continue;
             if (player != null && collider.transform == player.transform) continue;
@@ -1850,9 +1876,41 @@ public partial class RougeGameManager : MonoBehaviour
         {
             UnsafeUtility.MemClear(_staticBlockedCells.GetUnsafePtr(), _staticBlockedCells.Length * sizeof(byte));
         }
-        if (_staticObstacleCount <= 0) return;
 
         float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+        float boundaryPadding = math.max(enemyRadius, 0.05f);
+        float2 walkableHalfExtents = _usesMapArenaBounds
+            ? math.max(float2.zero, _mapArenaHalfExtents - boundaryPadding)
+            : new float2(math.max(0f, arenaHalfExtent - boundaryPadding));
+        RougeTowerDefenseMap activeMap = RougeTowerDefenseMapLoader.ActiveMap;
+
+        // The Morton grid is rounded up to a power of two and is usually larger than the
+        // playable arena. Treat that padding as blocked; otherwise the flow solver can find
+        // a shorter route through off-arena cells while movement clamps enemies to the edge,
+        // producing long boundary-following queues.
+        for (int y = 0; y < _flowGridDim; y++)
+        {
+            for (int x = 0; x < _flowGridDim; x++)
+            {
+                float2 cellCenter = _flowGridOrigin +
+                    new float2(x + 0.5f, y + 0.5f) * _flowFieldRuntimeCellSize;
+                bool blocked = math.abs(cellCenter.x) > walkableHalfExtents.x ||
+                               math.abs(cellCenter.y) > walkableHalfExtents.y;
+                if (!blocked && activeMap != null)
+                {
+                    Vector3 world = new Vector3(cellCenter.x, 0f, cellCenter.y);
+                    blocked = !activeMap.WorldToCell(world, out Vector2Int mapCell) ||
+                              activeMap.IsNavigationBlocked(mapCell);
+                }
+                if (blocked)
+                {
+                    _staticBlockedCells[RougeMortonGridUtility.EncodeMorton(x, y)] = 1;
+                }
+            }
+        }
+
+        if (_staticObstacleCount <= 0) return;
+
         // 同步执行（一次性）
         new RasterizeObstacleGridJob
         {
@@ -2355,7 +2413,8 @@ public partial class RougeGameManager : MonoBehaviour
         enemyMaterial.SetBuffer("_VelocityBuffer", _velocityRenderBuffer);
         enemyMaterial.SetBuffer("_EnemyKindBuffer", _enemyKindRenderBuffer);
        // enemyMaterial.SetColor(BaseColorId, new Color(0.88f, 0.18f, 0.18f, 1f));
-        enemyMaterial.SetFloat(ScaleMultiplierId, enemyVisualScale);
+        enemyMaterial.SetVector(ScaleMultiplierId,
+            new Vector4(enemySpriteSize.x, enemySpriteSize.y, 0f, 0f));
         enemyMaterial.SetFloat(VariationStrengthId, enemyVariationStrength);
         enemyMaterial.SetFloat(BreakupScaleId, enemyBreakupScale);
         enemyMaterial.SetFloat(BreakupStrengthId, enemyBreakupStrength);
@@ -2586,7 +2645,7 @@ public partial class RougeGameManager : MonoBehaviour
             EnemyMaxHealth = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemyHealth() : enemyMaxHealth * (1f + currentLevel * 0.15f),
             EnemyRadius = Mathf.Min(enemyRadius*2f, enemyRadius * (0.8f+ currentLevel * 0.0001f)),
             EnemyMaxSpeed = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemySpeed() : enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
-            ArenaHalfExtent = arenaHalfExtent,
+            ArenaHalfExtents = _usesMapArenaBounds ? _mapArenaHalfExtents : new float2(arenaHalfExtent),
             SpawnRadiusMin = spawnRadiusMin,
             SpawnRadiusMax = spawnRadiusMax,
             DespawnDistanceSq = despawnDistance * despawnDistance,
@@ -2676,6 +2735,7 @@ public partial class RougeGameManager : MonoBehaviour
                 CurrentMaxEnemies = activeEnemyCount,
                 BossEnemyIndex = _bossSpawned ? _bossEnemyIndex : -1,
                 RenderHeight = renderHeight,
+                ArenaHalfExtents = _usesMapArenaBounds ? _mapArenaHalfExtents : new float2(arenaHalfExtent),
                 MaxCandidates = math.clamp(crowdPbdMaxCandidates, 8, 128),
                 MaxNeighbors = math.clamp(crowdPbdMaxNeighbors, 4, 32),
                 Stiffness = math.saturate(crowdPbdStiffness),

@@ -61,6 +61,9 @@ public partial class RougeGameManager
     private RougeDefenseTower _towerPreview;
     private RougeDefenseTower _selectedTower;
     private bool _previewValid;
+    private Vector2Int _previewTowerAnchor;
+    private bool[] _previewCellValidity;
+    private static readonly Vector2Int DefaultTowerFootprintSize = new Vector2Int(4, 4);
     private bool _pendingMainTowerAoe;
     private Canvas _towerDefenseCanvas;
     private Text _towerDefenseStatusText;
@@ -182,7 +185,7 @@ public partial class RougeGameManager
         _towerDefenseGameOverReason = string.Empty;
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
-        _towerBuildSelectionActive = true;
+        _towerBuildSelectionActive = false;
         _pendingMainTowerAoe = false;
         Time.timeScale = 1f;
         InitializeTacticalSkills();
@@ -211,11 +214,15 @@ public partial class RougeGameManager
             _towerDefenseHudWasActive = _uiText.gameObject.activeSelf;
             _uiText.gameObject.SetActive(false);
         }
-        RougeCameraFollow cameraFollow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
-        if (cameraFollow != null) cameraFollow.SetTowerDefensePan(true);
-
         AssignNamedTowerPlaceLayers();
+        SetTowerPlaceVisualsVisible(false);
         ResolveMainTower();
+        RougeCameraFollow cameraFollow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
+        if (cameraFollow != null)
+        {
+            cameraFollow.SetTowerDefensePan(true);
+            if (mainTower != null) cameraFollow.FocusGroundPointImmediately(mainTower.transform.position);
+        }
         ResolveEnemySpawnPoints();
         ResolveExistingDefenseTowers();
         PrepareTowerTargetRequests();
@@ -257,6 +264,7 @@ public partial class RougeGameManager
         if (_uiText != null) _uiText.gameObject.SetActive(_towerDefenseHudWasActive);
         RougeCameraFollow cameraFollow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (cameraFollow != null) cameraFollow.SetTowerDefensePan(false);
+        SetTowerPlaceVisualsVisible(false);
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
         _towerPreview = null;
         DisposeTacticalSkills();
@@ -321,6 +329,14 @@ public partial class RougeGameManager
         }
     }
 
+    private void SetTowerPlaceVisualsVisible(bool visible)
+    {
+        RougeDefenseTower gridPreview = visible && _towerPreview != null &&
+            _towerPreview.gameObject.activeInHierarchy ? _towerPreview : null;
+        RougeTowerDefenseMapLoader.Active?.SetTowerPlaceGridState(
+            visible, _defenseTowers, gridPreview);
+    }
+
     private void ResolveMainTower()
     {
         if (mainTower == null) mainTower = UnityEngine.Object.FindFirstObjectByType<RougeMainTower>();
@@ -337,12 +353,14 @@ public partial class RougeGameManager
     {
         _towerDefenseSpawners.Clear();
         Scene activeScene = gameObject.scene.IsValid() ? gameObject.scene : SceneManager.GetActiveScene();
+        bool useRuntimeMap = UnityEngine.Object.FindFirstObjectByType<RougeTowerDefenseMapLoader>() != null;
         RougeEnemySpawnPoint[] found = UnityEngine.Object.FindObjectsByType<RougeEnemySpawnPoint>(
             FindObjectsInactive.Include, FindObjectsSortMode.None);
         for (int i = 0; i < found.Length; i++)
         {
             RougeEnemySpawnPoint point = found[i];
             if (point == null || point.gameObject.scene != activeScene) continue;
+            if (useRuntimeMap && point.GetComponentInParent<RougeRuntimeMapObject>() == null) continue;
             _towerDefenseSpawners.Add(point);
         }
 
@@ -539,6 +557,7 @@ public partial class RougeGameManager
     {
         _towerPlacementMode = enabled;
         TowerDefenseBuildModeActive = enabled;
+        SetTowerPlaceVisualsVisible(enabled);
         Time.timeScale = enabled ? 0.5f : 1f;
 
         if (enabled)
@@ -576,12 +595,20 @@ public partial class RougeGameManager
         {
             _towerPreview = null;
             _towerBuildSelectionActive = false;
+            SetTowerPlaceVisualsVisible(true);
             RefreshTowerDefenseUi();
             return;
         }
+        // Prefabs are instantiated at the world origin. Keep the preview hidden until
+        // UpdateTowerPreview has a valid mouse hit, otherwise the tower and its range
+        // rings are visible at (0, 0, 0) for one frame.
+        go.SetActive(false);
         go.name = "Tower Preview - " + TowerDefenseVisuals.GetTowerName(type);
         _towerPreview = go.GetComponent<RougeDefenseTower>();
         _towerPreview.Configure(type, true);
+        // Clear the previous tower's grid footprint until this preview receives
+        // its first valid pointer position in UpdateTowerPreview.
+        SetTowerPlaceVisualsVisible(true);
         SelectPlacedTower(null);
         RefreshTowerDefenseUi();
     }
@@ -638,6 +665,7 @@ public partial class RougeGameManager
         _previewValid = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
         _towerPreview = null;
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
         SelectPlacedTower(null);
         RefreshTowerDefenseUi();
     }
@@ -645,61 +673,93 @@ public partial class RougeGameManager
     private void UpdateTowerPreview()
     {
         if (_towerPreview == null) return;
-        if (!TryRaycastTowerPlace(out RaycastHit hit))
+        if (!TryGetTowerPlacementFromPointer(out Vector2Int anchor, out Vector3 position))
         {
             _towerPreview.gameObject.SetActive(false);
             _previewValid = false;
+            SetTowerPlaceVisualsVisible(true);
             return;
         }
 
         _towerPreview.gameObject.SetActive(true);
-        Vector3 position = hit.point;
-        position.y += 0.05f;
+        _previewTowerAnchor = anchor;
         _towerPreview.transform.position = position;
+        _previewCellValidity = GetTowerFootprintCellValidity(anchor, _towerPreview.FootprintCells, _towerPreview);
         _previewValid = CanPlacePreviewTower();
-        _towerPreview.SetPreviewState(_previewValid);
+        _towerPreview.SetPreviewState(_previewValid, _previewCellValidity);
+        SetTowerPlaceVisualsVisible(true);
     }
 
     private bool CanPlacePreviewTower()
     {
         return _towerPreview != null && _towerPreview.gameObject.activeInHierarchy &&
             _towerDefenseGold >= _towerPreview.PurchaseCost &&
-            IsTowerPositionClear(_towerPreview.transform.position, _towerPreview.PlacementRadius);
+            AreAllFootprintCellsValid(_previewCellValidity);
     }
 
-    private bool TryRaycastTowerPlace(out RaycastHit hit)
+    private bool TryGetPointerGroundPosition(out Vector3 worldPosition)
     {
-        hit = default;
-        int layer = LayerMask.NameToLayer("TowerPlace");
+        worldPosition = default;
         Camera camera = RougeCameraFollow.ResolveCamera();
-        if (layer < 0 || camera == null || Mouse.current == null) return false;
+        if (camera == null || Mouse.current == null) return false;
         Vector2 pointer = Mouse.current.position.ReadValue();
         Ray ray = camera.ScreenPointToRay(pointer);
-        return Physics.Raycast(ray, out hit, 3000f, 1 << layer, QueryTriggerInteraction.Collide);
+        Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
+        if (!groundPlane.Raycast(ray, out float distance) || distance < 0f) return false;
+        worldPosition = ray.GetPoint(distance);
+        return true;
+    }
+
+    private bool TryGetTowerPlacementFromPointer(out Vector2Int anchor, out Vector3 snappedPosition)
+    {
+        anchor = default;
+        snappedPosition = default;
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (map == null || _towerPreview == null || !TryGetPointerGroundPosition(out Vector3 worldPosition)) return false;
+        Vector2Int footprintSize = _towerPreview.FootprintCells;
+        anchor = map.WorldToMicroFootprintAnchor(worldPosition, footprintSize);
+        snappedPosition = map.MicroFootprintCenter(anchor, footprintSize, 0.05f);
+        return true;
+    }
+
+    private static bool AreAllFootprintCellsValid(bool[] validity)
+    {
+        if (validity == null || validity.Length == 0) return false;
+        for (int i = 0; i < validity.Length; i++) if (!validity[i]) return false;
+        return true;
     }
 
     private RougeDefenseTower RaycastDefenseTower()
     {
-        Camera camera = RougeCameraFollow.ResolveCamera();
-        if (camera == null || Mouse.current == null) return null;
-        Vector2 pointer = Mouse.current.position.ReadValue();
-        Ray ray = camera.ScreenPointToRay(pointer);
-        RaycastHit[] hits = Physics.RaycastAll(ray, 3000f, ~0, QueryTriggerInteraction.Collide);
-        float nearest = float.MaxValue;
-        RougeDefenseTower result = null;
-        for (int i = 0; i < hits.Length; i++)
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (map == null || !TryGetPointerGroundPosition(out Vector3 worldPosition) ||
+            !map.WorldToMicroCell(worldPosition, out Vector2Int pointerCell)) return null;
+        for (int i = _defenseTowers.Count - 1; i >= 0; i--)
         {
-            RougeDefenseTower tower = hits[i].collider.GetComponentInParent<RougeDefenseTower>();
-            if (tower == null || tower == _towerPreview || hits[i].distance >= nearest) continue;
-            nearest = hits[i].distance;
-            result = tower;
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null || tower == _towerPreview) continue;
+            Vector2Int footprintSize = tower.FootprintCells;
+            Vector2Int anchor = map.WorldToMicroFootprintAnchor(tower.transform.position, footprintSize);
+            if (pointerCell.x >= anchor.x && pointerCell.x < anchor.x + footprintSize.x &&
+                pointerCell.y >= anchor.y && pointerCell.y < anchor.y + footprintSize.y)
+                return tower;
         }
-        return result;
+        return null;
     }
 
-    private bool IsTowerPositionClear(Vector3 position, float radius)
+    private bool[] GetTowerFootprintCellValidity(Vector2Int candidateAnchor, Vector2Int candidateSize,
+        RougeDefenseTower ignoredTower)
     {
-        Vector2 candidate = new Vector2(position.x, position.z);
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        bool[] validity = new bool[candidateSize.x * candidateSize.y];
+        if (map == null) return validity;
+        for (int y = 0; y < candidateSize.y; y++)
+        {
+            for (int x = 0; x < candidateSize.x; x++)
+                validity[y * candidateSize.x + x] = map.IsTowerPlaceMicroCell(
+                    candidateAnchor + new Vector2Int(x, y));
+        }
+
         for (int i = _defenseTowers.Count - 1; i >= 0; i--)
         {
             RougeDefenseTower tower = _defenseTowers[i];
@@ -708,18 +768,35 @@ public partial class RougeGameManager
                 _defenseTowers.RemoveAt(i);
                 continue;
             }
-            Vector3 p = tower.transform.position;
-            float minDistance = radius + tower.PlacementRadius;
-            if ((candidate - new Vector2(p.x, p.z)).sqrMagnitude < minDistance * minDistance) return false;
+            if (tower == ignoredTower) continue;
+            Vector2Int towerSize = tower.FootprintCells;
+            Vector2Int towerAnchor = map.WorldToMicroFootprintAnchor(tower.transform.position, towerSize);
+            MarkOverlappingCellsInvalid(validity, candidateAnchor, candidateSize, towerAnchor, towerSize);
         }
 
         if (mainTower != null)
         {
-            Vector3 p = mainTower.transform.position;
-            float minDistance = radius + mainTower.contactRadius;
-            if ((candidate - new Vector2(p.x, p.z)).sqrMagnitude < minDistance * minDistance) return false;
+            Vector2Int mainAnchor = map.WorldToMicroFootprintAnchor(mainTower.transform.position,
+                DefaultTowerFootprintSize);
+            MarkOverlappingCellsInvalid(validity, candidateAnchor, candidateSize, mainAnchor,
+                DefaultTowerFootprintSize);
         }
-        return true;
+        return validity;
+    }
+
+    private static void MarkOverlappingCellsInvalid(bool[] validity, Vector2Int candidateAnchor,
+        Vector2Int candidateSize, Vector2Int occupiedAnchor, Vector2Int occupiedSize)
+    {
+        for (int y = 0; y < candidateSize.y; y++)
+        {
+            for (int x = 0; x < candidateSize.x; x++)
+            {
+                Vector2Int cell = candidateAnchor + new Vector2Int(x, y);
+                if (cell.x >= occupiedAnchor.x && cell.x < occupiedAnchor.x + occupiedSize.x &&
+                    cell.y >= occupiedAnchor.y && cell.y < occupiedAnchor.y + occupiedSize.y)
+                    validity[y * candidateSize.x + x] = false;
+            }
+        }
     }
 
     private void PlacePreviewTower()
@@ -727,7 +804,7 @@ public partial class RougeGameManager
         if (!CanPlacePreviewTower())
         {
             _previewValid = false;
-            if (_towerPreview != null) _towerPreview.SetPreviewState(false);
+            if (_towerPreview != null) _towerPreview.SetPreviewState(false, _previewCellValidity);
             return;
         }
         int cost = _towerPreview.PurchaseCost;
@@ -735,6 +812,7 @@ public partial class RougeGameManager
         _towerPreview.name = _towerPreview.DisplayName + " Lv.1";
         _towerPreview.FinalizePlacement();
         _defenseTowers.Add(_towerPreview);
+        SetTowerPlaceVisualsVisible(true);
         RougeDefenseTower placed = _towerPreview;
         _towerPreview = null;
         _towerTargetScheduledCount = 0;
@@ -757,6 +835,7 @@ public partial class RougeGameManager
         int refund = Mathf.FloorToInt(tower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier));
         _towerDefenseGold += refund;
         _defenseTowers.Remove(tower);
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
         _towerTargetScheduledCount = 0;
         if (_selectedTower == tower) _selectedTower = null;
         Destroy(tower.gameObject);
@@ -959,6 +1038,7 @@ public partial class RougeGameManager
         _bossDefeated = true;
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
+        SetTowerPlaceVisualsVisible(false);
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
         if (_bossSpriteAnimator != null) _bossSpriteAnimator.BeginDeath();
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
@@ -1156,8 +1236,9 @@ public partial class RougeGameManager
             if (!point.isActiveAndEnabled) continue;
             point.timer -= dt;
             if (point.timer > 0f) continue;
-            SpawnEnemyBatch(point, point.GetCurrentWaveEnemyCount(_survivalTime));
-            point.CompleteWave(_survivalTime);
+            int enemyLevel = GetTowerDefenseEnemyLevel();
+            SpawnEnemyBatch(point, Mathf.Clamp(point.spawnCount, 1, 64));
+            point.CompleteWave(enemyBalance.EvaluateSpawnSpeedMultiplier(enemyLevel));
         }
     }
 
@@ -1167,6 +1248,7 @@ public partial class RougeGameManager
         int remainingCapacity = GetTowerDefenseAliveEnemyCap() - _towerDefenseAliveEstimate;
         if (remainingCapacity <= 0) return;
         count = Mathf.Min(count, remainingCapacity);
+        int waveEnemyTypeIndex = RollTowerDefenseWaveEnemyTypeIndex(point);
         int spawned = 0;
 
         // Only scan old slots when the alive estimate says reusable holes may exist.
@@ -1181,14 +1263,14 @@ public partial class RougeGameManager
                 int index = (_towerDefenseSpawnSearchCursor + checkedSlots) % existingCount;
                 checkedSlots++;
                 if (_stateA[index].x > 0f || _positionsA[index].y > -100f) continue;
-                if (ActivateEnemySlot(index, point)) spawned++;
+                if (ActivateEnemySlot(index, point, waveEnemyTypeIndex, spawned, count)) spawned++;
             }
             _towerDefenseSpawnSearchCursor = (_towerDefenseSpawnSearchCursor + checkedSlots) % existingCount;
         }
 
         while (spawned < count && _currentMaxEnemies < enemyCount)
         {
-            if (!ActivateEnemySlot(_currentMaxEnemies, point)) break;
+            if (!ActivateEnemySlot(_currentMaxEnemies, point, waveEnemyTypeIndex, spawned, count)) break;
             _currentMaxEnemies++;
             spawned++;
         }
@@ -1205,21 +1287,33 @@ public partial class RougeGameManager
             Mathf.Clamp(timeBasedCap, InitialTowerDefenseEnemyCap, MaximumTowerDefenseEnemyCap));
     }
 
-    private bool ActivateEnemySlot(int index, RougeEnemySpawnPoint point)
+    private bool ActivateEnemySlot(int index, RougeEnemySpawnPoint point, int waveEnemyTypeIndex,
+        int spawnOrdinal, int formationCount)
     {
-        byte kind = RollTowerDefenseEnemyKind(point);
+        byte kind = RollTowerDefenseEnemyKind(waveEnemyTypeIndex);
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         bool elite = (kind & EliteEnemyFlag) != 0;
         float health = GetTowerDefenseEnemyHealth(kind);
-        float baseRadius = Mathf.Min(enemyRadius * 2f, enemyRadius * (0.8f + currentLevel * 0.0001f));
+        float microCellSize = RougeTowerDefenseMapLoader.ActiveMap != null
+            ? RougeTowerDefenseMapLoader.ActiveMap.MicroCellSize : 1f;
+        // A standard enemy occupies roughly a 2x2 micro-cell footprint.
+        float baseRadius = microCellSize * 0.95f;
         float radiusValue = baseRadius * Mathf.Max(0.1f, archetype.size) *
             (elite ? Mathf.Max(1f, enemyBalance.eliteSizeMultiplier) : 1f);
-        if (!TryGetReachableEnemySpawnPosition(point, radiusValue, out float2 spawnPosition)) return false;
+        if (!TryGetReachableEnemySpawnPosition(point, radiusValue, spawnOrdinal, formationCount,
+                out float2 spawnPosition)) return false;
         float speed = GetTowerDefenseEnemySpeed(kind);
         _positionsA[index] = new float4(spawnPosition.x, renderHeight, spawnPosition.y, radiusValue);
         _velocitiesA[index] = float4.zero;
         _stateA[index] = new float4(health, radiusValue, speed, 0f);
         _effectStateA[index] = default;
+        // A reused slot may still contain an old airborne/death effect in the back buffer.
+        // Initialise both sides while the previous job is complete so the next swap can
+        // never expose that stale state as a one-frame white flash.
+        _positionsB[index] = _positionsA[index];
+        _velocitiesB[index] = float4.zero;
+        _stateB[index] = _stateA[index];
+        _effectStateB[index] = default;
         _towerDefenseEnemyKinds[index] = kind;
         if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = kind & EnemyArchetypeMask;
         return true;
@@ -1250,27 +1344,28 @@ public partial class RougeGameManager
     }
 
     private bool TryGetReachableEnemySpawnPosition(RougeEnemySpawnPoint point, float enemyNavigationRadius,
-        out float2 spawnPosition)
+        int spawnOrdinal, int formationCount, out float2 spawnPosition)
     {
         Vector3 worldCenter = point.transform.position;
         float2 center = new float2(worldCenter.x, worldCenter.z);
-        float minimumRadiusSq = point.minimumRadius * point.minimumRadius;
-        float maximumRadiusSq = point.spawnRadius * point.spawnRadius;
-        float arenaLimit = Mathf.Max(1f, arenaHalfExtent - 2f);
-
-        // Spawn volumes overlap walls in several parts of this map. Sampling only
-        // reachable cells prevents enemies from being born inside a sealed pocket and
-        // then pushing forever against its nearest corner.
-        const int randomAttempts = 32;
-        for (int attempt = 0; attempt < randomAttempts; attempt++)
+        float2 arenaLimits = _usesMapArenaBounds
+            ? math.max(new float2(1f), _mapArenaHalfExtents - 2f)
+            : new float2(Mathf.Max(1f, arenaHalfExtent - 2f));
+        float spawnCellSize = Mathf.Max(0.1f, point.spawnCellSize);
+        float subCellSize = spawnCellSize / RougeTowerDefenseMap.MicroCellsPerTile;
+        int safeCount = Mathf.Clamp(formationCount, 1, 64);
+        int columns = Mathf.CeilToInt(Mathf.Sqrt(safeCount));
+        int rows = Mathf.CeilToInt(safeCount / (float)columns);
+        int row = spawnOrdinal / columns;
+        int column = spawnOrdinal % columns;
+        int itemsInRow = Mathf.Min(columns, safeCount - row * columns);
+        float offsetX = (column - (itemsInRow - 1) * 0.5f) * subCellSize;
+        float offsetY = ((rows - 1) * 0.5f - row) * subCellSize;
+        float2 formationCandidate = center + new float2(offsetX, offsetY);
+        formationCandidate = math.clamp(formationCandidate, -arenaLimits, arenaLimits);
+        if (IsReachableEnemySpawnPosition(formationCandidate, enemyNavigationRadius))
         {
-            float angle = UnityEngine.Random.value * Mathf.PI * 2f;
-            float radius = Mathf.Sqrt(Mathf.Lerp(minimumRadiusSq, maximumRadiusSq,
-                UnityEngine.Random.value));
-            float2 candidate = center + new float2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
-            candidate = math.clamp(candidate, new float2(-arenaLimit), new float2(arenaLimit));
-            if (!IsReachableEnemySpawnPosition(candidate, enemyNavigationRadius)) continue;
-            spawnPosition = candidate;
+            spawnPosition = formationCandidate;
             return true;
         }
 
@@ -1283,7 +1378,7 @@ public partial class RougeGameManager
             int2 origin = RougeMortonGridUtility.WorldToGrid(center, _flowGridOrigin,
                 invCellSize, _flowGridDim);
             int maxRing = math.min(_flowGridDim - 1,
-                math.max(8, Mathf.CeilToInt(point.spawnRadius * invCellSize) + 8));
+                math.max(8, Mathf.CeilToInt(spawnCellSize * 0.5f * invCellSize) + 8));
             for (int ring = 0; ring <= maxRing; ring++)
             {
                 int minX = math.max(0, origin.x - ring);
@@ -1338,35 +1433,13 @@ public partial class RougeGameManager
 
     private int GetTowerDefenseEnemyLevel()
     {
-        return GetTowerDefenseEnemyPowerStep() + 1;
-    }
-
-    private static float GetTowerDefenseEnemyLevelMultiplier(float growthMultiplier, int level)
-    {
-        return Mathf.Pow(Mathf.Max(1f, growthMultiplier), Mathf.Max(0, level - 1));
+        return Mathf.Clamp(GetTowerDefenseEnemyPowerStep() + 1, 1,
+            RougeEnemyBalanceConfig.MaximumEnemyLevel);
     }
 
     private float GetTowerDefenseEnemyHealthMultiplier()
     {
-        int step = GetTowerDefenseEnemyPowerStep();
-
-        // Designer milestones at one power step per 15 seconds:
-        // 0m x1, 3m x8, 6m x24, 9m x48, 12m x72,
-        // 15m x144 and 20m x288. Log interpolation keeps the percentage
-        // increase constant inside each segment instead of creating HP jumps.
-        if (step <= 12)
-            return Mathf.Pow(8f, step / 12f);
-        if (step <= 24)
-            return 8f * Mathf.Pow(3f, (step - 12) / 12f);
-        if (step <= 36)
-            return 24f * Mathf.Pow(2f, (step - 24) / 12f);
-        if (step <= 48)
-            return 48f * Mathf.Pow(1.5f, (step - 36) / 12f);
-        if (step <= 60)
-            return 72f * Mathf.Pow(2f, (step - 48) / 12f);
-        if (step <= 80)
-            return 144f * Mathf.Pow(2f, (step - 60) / 20f);
-        return 288f;
+        return enemyBalance.EvaluateHealthMultiplier(GetTowerDefenseEnemyLevel());
     }
 
     private float GetTowerDefenseEnemyHealth()
@@ -1378,7 +1451,7 @@ public partial class RougeGameManager
     private float GetTowerDefenseEnemySpeed()
     {
         return Mathf.Max(0.1f, enemyBalance.enemyTypes[0].baseSpeed) *
-            GetTowerDefenseEnemyLevelMultiplier(enemyBalance.speedGrowthMultiplier, GetTowerDefenseEnemyLevel());
+            enemyBalance.EvaluateSpeedMultiplier(GetTowerDefenseEnemyLevel());
     }
 
     private float GetTowerDefenseEnemyHealth(byte kind)
@@ -1399,8 +1472,7 @@ public partial class RougeGameManager
         }
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(0.1f, enemyBalance.eliteSpeedMultiplier) : 1f;
-        float levelMultiplier = GetTowerDefenseEnemyLevelMultiplier(
-            enemyBalance.speedGrowthMultiplier, GetTowerDefenseEnemyLevel());
+        float levelMultiplier = enemyBalance.EvaluateSpeedMultiplier(GetTowerDefenseEnemyLevel());
         return Mathf.Max(0.01f, archetype.baseSpeed) * levelMultiplier * eliteMultiplier;
     }
 
@@ -1411,13 +1483,18 @@ public partial class RougeGameManager
         return enemyBalance.enemyTypes[index];
     }
 
-    private byte RollTowerDefenseEnemyKind(RougeEnemySpawnPoint point)
+    private int RollTowerDefenseWaveEnemyTypeIndex(RougeEnemySpawnPoint point)
     {
         enemyBalance.EnsureDefaults();
         int availableTypeCount = Mathf.Min(enemyBalance.enemyTypes.Count, EnemyArchetypeMask + 1);
-        int selected = point != null ? point.RollEnemyTypeIndex(availableTypeCount) : 0;
-        byte kind = (byte)Mathf.Clamp(selected, 0, EnemyArchetypeMask);
-        float eliteChance = point != null ? point.GetCurrentEliteChance01(_survivalTime) : 0f;
+        int selected = point != null ? point.GetEnemyTypeIndex() : 0;
+        return Mathf.Clamp(selected, 0, Mathf.Max(0, availableTypeCount - 1));
+    }
+
+    private byte RollTowerDefenseEnemyKind(int waveEnemyTypeIndex)
+    {
+        byte kind = (byte)Mathf.Clamp(waveEnemyTypeIndex, 0, EnemyArchetypeMask);
+        float eliteChance = enemyBalance.EvaluateEliteChance01(GetTowerDefenseEnemyLevel());
         if (UnityEngine.Random.value < eliteChance) kind |= EliteEnemyFlag;
         return kind;
     }
@@ -1698,7 +1775,8 @@ public partial class RougeGameManager
         float4 p = _positionsA[index];
         float dx = p.x - origin.x;
         float dz = p.z - origin.z;
-        if (dx * dx + dz * dz > rangeSq) return false;
+        float squareRange = math.sqrt(math.max(0f, rangeSq));
+        if (math.max(math.abs(dx), math.abs(dz)) > squareRange) return false;
         position = new Vector3(p.x, Mathf.Max(renderHeight + 0.8f, p.y + 0.8f), p.z);
         return true;
     }
@@ -2221,6 +2299,7 @@ public partial class RougeGameManager
         _towerDefenseGameOverReason = reason;
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
+        SetTowerPlaceVisualsVisible(false);
         Time.timeScale = 0f;
         if (player != null) player.SuppressMovement = true;
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
@@ -2439,8 +2518,7 @@ public partial class RougeGameManager
             string bossTime = _bossSpawned ? "BOSS ACTIVE" : _bossDefeated ? "BOSS DEFEATED" : $"BOSS IN {FormatGameTime(bossCountdown)}";
             int enemyLevel = GetTowerDefenseEnemyLevel();
             float enemyHealthBonus = (GetTowerDefenseEnemyHealthMultiplier() - 1f) * 100f;
-            float enemySpeedBonus = (GetTowerDefenseEnemyLevelMultiplier(
-                enemyBalance.speedGrowthMultiplier, enemyLevel) - 1f) * 100f;
+            float enemySpeedBonus = (enemyBalance.EvaluateSpeedMultiplier(enemyLevel) - 1f) * 100f;
             _towerDefenseStatusText.text =
                 $"MAIN TOWER  {hp:0} / {maxHp:0}\n" +
                 $"GOLD {_towerDefenseGold}   NORMAL +{enemyBalance.normalKillGold}   ELITE +{enemyBalance.eliteKillGold}\n" +

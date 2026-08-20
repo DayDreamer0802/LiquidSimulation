@@ -1,6 +1,7 @@
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using System.Text;
 
 public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 {
@@ -9,6 +10,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
     private Vector2 _scroll;
     private string _status;
     private bool _hasUnsavedChanges;
+    private int _enemyPreviewLevel = 1;
 
     [MenuItem("Tools/Rouge/Tower Defense Balance")]
     internal static void Open()
@@ -137,6 +139,10 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             {
                 using (new EditorGUI.DisabledScope(true)) EditorGUILayout.PropertyField(typeProperty);
                 EditorGUILayout.PropertyField(tower.FindPropertyRelative("placementRadius"));
+                EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintWidth"),
+                    new GUIContent("Footprint Width (Micro Cells)"));
+                EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
+                    new GUIContent("Footprint Height (Micro Cells)"));
                 EditorGUILayout.PropertyField(tower.FindPropertyRelative("purchaseCost"));
                 SerializedProperty levels = tower.FindPropertyRelative("levels");
                 for (int levelIndex = 0; levelIndex < levels.arraySize; levelIndex++)
@@ -194,7 +200,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         if (property != null) EditorGUILayout.PropertyField(property, new GUIContent(label));
     }
 
-    private static void DrawEnemyBalance(SerializedProperty balance)
+    private void DrawEnemyBalance(SerializedProperty balance)
     {
         string[] commonFields =
         {
@@ -205,17 +211,25 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("growthInterval"),
             new GUIContent("Enemy Level Interval (seconds)"));
-        EditorGUILayout.HelpBox(
-            "Enemy HP milestones: 3m x8, 6m x24, 9m x48, 12m x72, 15m x144, 20m x288.",
-            MessageType.Info);
-        DrawGrowthPercentField(balance.FindPropertyRelative("speedGrowthMultiplier"), "Speed / Level (%)");
+        SerializedProperty healthCurve = balance.FindPropertyRelative("healthMultiplierByLevel");
+        SerializedProperty speedCurve = balance.FindPropertyRelative("speedMultiplierByLevel");
+        SerializedProperty spawnSpeedCurve = balance.FindPropertyRelative("spawnSpeedMultiplierByLevel");
+        SerializedProperty elitePermilleCurve = balance.FindPropertyRelative("eliteChancePermilleByLevel");
+        DrawEnemyMultiplierCurve(healthCurve, "HP Multiplier by Level",
+            288f);
+        DrawEnemyMultiplierCurve(speedCurve, "Speed Multiplier by Level",
+            2f);
+        DrawEnemyMultiplierCurve(spawnSpeedCurve, "Spawn Speed Multiplier by Level", 3f);
+        DrawEnemyMultiplierCurve(elitePermilleCurve, "Elite Chance Permille by Level", 5f);
+        DrawEnemyLevelPreview(balance.FindPropertyRelative("growthInterval"), healthCurve, speedCurve,
+            spawnSpeedCurve, elitePermilleCurve);
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("eliteHealthMultiplier"));
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("eliteSpeedMultiplier"));
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("eliteSizeMultiplier"));
 
         SerializedProperty types = balance.FindPropertyRelative("enemyTypes");
         EditorGUILayout.Space(4f);
-        EditorGUILayout.LabelField("Enemy Types (available to weighted spawn mixes)", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Enemy Types (available to spawn sequences)", EditorStyles.boldLabel);
         for (int i = 0; i < types.arraySize; i++)
         {
             SerializedProperty enemy = types.GetArrayElementAtIndex(i);
@@ -239,11 +253,92 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         }
     }
 
-    private static void DrawGrowthPercentField(SerializedProperty multiplierProperty, string label)
+    private static void DrawEnemyMultiplierCurve(SerializedProperty curveProperty, string label,
+        float fallbackMaximum)
     {
-        float percent = (Mathf.Max(1f, multiplierProperty.floatValue) - 1f) * 100f;
-        percent = Mathf.Max(0f, EditorGUILayout.FloatField(label, percent));
-        multiplierProperty.floatValue = 1f + percent * 0.01f;
+        if (curveProperty == null) return;
+        AnimationCurve curve = curveProperty.animationCurveValue;
+        if (curve == null || curve.length == 0)
+            curve = AnimationCurve.Linear(1f, 1f, RougeEnemyBalanceConfig.MaximumEnemyLevel, fallbackMaximum);
+
+        EditorGUILayout.Space(3f);
+        float level100Value = Mathf.Max(0.01f,
+            EditorGUILayout.FloatField(label + " - Level 100", curve.Evaluate(
+                RougeEnemyBalanceConfig.MaximumEnemyLevel)));
+        if (!Mathf.Approximately(level100Value,
+                curve.Evaluate(RougeEnemyBalanceConfig.MaximumEnemyLevel)))
+        {
+            curve = SetCurveKeyValue(curve, RougeEnemyBalanceConfig.MaximumEnemyLevel, level100Value);
+            curveProperty.animationCurveValue = curve;
+        }
+        EditorGUI.BeginChangeCheck();
+        AnimationCurve edited = EditorGUILayout.CurveField(new GUIContent(label), curve,
+            GUILayout.Height(72f));
+        if (EditorGUI.EndChangeCheck()) curveProperty.animationCurveValue = edited;
+    }
+
+    private static AnimationCurve SetCurveKeyValue(AnimationCurve curve, float level, float value)
+    {
+        Keyframe[] keys = curve.keys;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if (Mathf.Abs(keys[i].time - level) > 0.001f) continue;
+            Keyframe key = keys[i];
+            key.value = value;
+            curve.MoveKey(i, key);
+            return curve;
+        }
+        curve.AddKey(new Keyframe(level, value));
+        return curve;
+    }
+
+    private void DrawEnemyLevelPreview(SerializedProperty intervalProperty,
+        SerializedProperty healthCurveProperty, SerializedProperty speedCurveProperty,
+        SerializedProperty spawnSpeedCurveProperty, SerializedProperty elitePermilleCurveProperty)
+    {
+        if (intervalProperty == null || healthCurveProperty == null || speedCurveProperty == null ||
+            spawnSpeedCurveProperty == null || elitePermilleCurveProperty == null) return;
+        _enemyPreviewLevel = EditorGUILayout.IntSlider("Preview Enemy Level", _enemyPreviewLevel, 1,
+            RougeEnemyBalanceConfig.MaximumEnemyLevel);
+        float reachedSeconds = (_enemyPreviewLevel - 1) * Mathf.Max(1f, intervalProperty.floatValue);
+        float healthMultiplier = Mathf.Max(0.01f,
+            healthCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
+        float speedMultiplier = Mathf.Max(0.01f,
+            speedCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
+        float spawnSpeedMultiplier = Mathf.Max(0.01f,
+            spawnSpeedCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
+        float elitePermille = Mathf.Max(0f,
+            elitePermilleCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
+        EditorGUILayout.HelpBox(
+            $"Level {_enemyPreviewLevel}  |  reached at {FormatEnemyLevelTime(reachedSeconds)}  |  " +
+            $"HP x{healthMultiplier:0.##}  |  Move x{speedMultiplier:0.###}  |  " +
+            $"Spawn x{spawnSpeedMultiplier:0.###}  |  Elite {elitePermille:0.###}‰", MessageType.Info);
+
+        StringBuilder preview = new StringBuilder(512);
+        for (int level = 1; level <= RougeEnemyBalanceConfig.MaximumEnemyLevel; level += level == 1 ? 9 : 10)
+        {
+            if (preview.Length > 0) preview.AppendLine();
+            float hp = Mathf.Max(0.01f, healthCurveProperty.animationCurveValue.Evaluate(level));
+            float speed = Mathf.Max(0.01f, speedCurveProperty.animationCurveValue.Evaluate(level));
+            float spawnSpeed = Mathf.Max(0.01f,
+                spawnSpeedCurveProperty.animationCurveValue.Evaluate(level));
+            float eliteAtLevel = Mathf.Max(0f,
+                elitePermilleCurveProperty.animationCurveValue.Evaluate(level));
+            float levelSeconds = (level - 1) * Mathf.Max(1f, intervalProperty.floatValue);
+            preview.Append($"Lv {level,3}    {FormatEnemyLevelTime(levelSeconds),16}    " +
+                $"HP x{hp,7:0.##}    Move x{speed,6:0.###}    " +
+                $"Spawn x{spawnSpeed,6:0.###}    Elite {eliteAtLevel,6:0.###}‰");
+        }
+        EditorGUILayout.LabelField("Level multiplier preview", EditorStyles.miniBoldLabel);
+        EditorGUILayout.HelpBox(preview.ToString(), MessageType.None);
+    }
+
+    private static string FormatEnemyLevelTime(float seconds)
+    {
+        int totalSeconds = Mathf.Max(0, Mathf.RoundToInt(seconds));
+        int minutes = totalSeconds / 60;
+        int secondPart = totalSeconds % 60;
+        return $"{totalSeconds}s / {minutes:00}:{secondPart:00}";
     }
 
     private static void DrawResourceTextureField(SerializedProperty pathProperty, string label)

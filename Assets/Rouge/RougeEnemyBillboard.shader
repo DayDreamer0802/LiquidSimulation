@@ -10,7 +10,7 @@ Shader "Rouge/EnemyBillboard"
         [HideInInspector] _EnemySheetAnimation1("Enemy Sheet Animation 1", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation2("Enemy Sheet Animation 2", Vector) = (3,2,9,0)
         _BaseColor("Tint", Color) = (1,1,1,1)
-        _ScaleMultiplier("Scale", Float) = 1
+        _ScaleMultiplier("Sprite Width / Height", Vector) = (1,1,0,0)
     }
 
     SubShader
@@ -49,7 +49,7 @@ Shader "Rouge/EnemyBillboard"
                 float4 _EnemySheetAnimation1;
                 float4 _EnemySheetAnimation2;
                 float4 _BaseColor;
-                float _ScaleMultiplier;
+                float4 _ScaleMultiplier;
             CBUFFER_END
 
             struct Attributes
@@ -76,13 +76,13 @@ Shader "Rouge/EnemyBillboard"
                 float4 positionScale = _PositionScaleBuffer[input.instanceID];
                 float4 state = _StateBuffer[input.instanceID];
                 float4 velocity = _VelocityBuffer[input.instanceID];
-                float scale = max(state.y * _ScaleMultiplier * 2.15, 0.001);
+                float2 spriteScale = max(state.y * _ScaleMultiplier.xy * 2.15, 0.001);
                 float3 cameraRight = normalize(UNITY_MATRIX_I_V[0].xyz);
                 float3 cameraUp = normalize(UNITY_MATRIX_I_V[1].xyz);
-                float3 center = positionScale.xyz + float3(0, scale * 0.72, 0);
+                float3 center = positionScale.xyz + float3(0, spriteScale.y * 0.72, 0);
                 float3 positionWS = center
-                    + cameraRight * (input.positionOS.x * scale * 2.0)
-                    + cameraUp * (input.positionOS.y * scale * 2.0);
+                    + cameraRight * (input.positionOS.x * spriteScale.x * 2.0)
+                    + cameraUp * (input.positionOS.y * spriteScale.y * 2.0);
 
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 output.positionHCS = TransformWorldToHClip(positionWS);

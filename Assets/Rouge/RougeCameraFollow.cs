@@ -26,13 +26,15 @@ public class RougeCameraFollow : MonoBehaviour
     private Camera _camera;
     private Transform _originalTarget;
     private bool _towerDefensePanEnabled;
+    private bool _movementClampEnabled = true;
     private float _lastPanZoomScale = 1f;
     private Vector2 _lastPointerPosition;
-    private bool _dragging;
+    private int _panDragButton;
     private bool _cinematicFocusActive;
     private Vector3 _cinematicFocusPoint;
     private float _cinematicShakeIntensity;
     private bool _debugFreeViewActive;
+    private bool _debugLookActive;
     private float _debugFreeYaw;
     private float _debugFreePitch;
     private Vector3 _debugRestorePosition;
@@ -42,12 +44,19 @@ public class RougeCameraFollow : MonoBehaviour
     private float _debugRestoreNearClip;
     private CursorLockMode _debugRestoreCursorLock;
     private bool _debugRestoreCursorVisible;
+    private float _minimumZoomScale = 0.5f;
+    private float _maximumZoomScale = 5f;
 
     public static void SetRuntimeEffects(float heightOffset, float fovOffset, float zoomScale = 1f)
     {
         s_runtimeHeightOffset = heightOffset;
         s_runtimeFovOffset = fovOffset;
-        s_runtimeZoomScale = Mathf.Max(0.01f, zoomScale);
+        RougeCameraFollow follow = s_primaryCamera != null
+            ? s_primaryCamera.GetComponent<RougeCameraFollow>()
+            : FindFirstObjectByType<RougeCameraFollow>();
+        s_runtimeZoomScale = follow != null
+            ? follow.ClampZoomScale(zoomScale)
+            : Mathf.Max(0.01f, zoomScale);
     }
 
     public static Camera ResolveCamera()
@@ -111,7 +120,7 @@ public class RougeCameraFollow : MonoBehaviour
         {
             ApplyPanZoom();
             UpdateMousePan();
-            ClampToMovementBounds();
+            if (_movementClampEnabled) ClampToMovementBounds();
         }
         else if (target != null)
         {
@@ -142,17 +151,62 @@ public class RougeCameraFollow : MonoBehaviour
         camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFov, 14f * Time.deltaTime);
     }
 
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (hasFocus) return;
+        _panDragButton = 0;
+        if (_debugLookActive) SetDebugLookActive(false);
+    }
+
     public void SetTowerDefensePan(bool enabled)
     {
         if (_originalTarget == null && target != null) _originalTarget = target;
         _towerDefensePanEnabled = enabled;
         target = enabled ? null : _originalTarget;
-        _dragging = false;
         _lastPanZoomScale = s_runtimeZoomScale;
         if (enabled && movementBounds == null)
         {
             movementBounds = FindFirstObjectByType<RougeCameraBounds>();
         }
+    }
+
+    public void SetMovementBounds(RougeCameraBounds bounds)
+    {
+        movementBounds = bounds;
+        if (_towerDefensePanEnabled && _movementClampEnabled) ClampToMovementBounds();
+    }
+
+    public void SetMovementClampEnabled(bool enabled)
+    {
+        _movementClampEnabled = enabled;
+        if (enabled && _towerDefensePanEnabled) ClampToMovementBounds();
+    }
+
+    public float ClampZoomScale(float value)
+    {
+        return Mathf.Clamp(value, _minimumZoomScale, _maximumZoomScale);
+    }
+
+    public void SetZoomLimits(float minimum, float maximum)
+    {
+        _minimumZoomScale = Mathf.Max(0.01f, minimum);
+        _maximumZoomScale = Mathf.Max(_minimumZoomScale, maximum);
+        s_runtimeZoomScale = ClampZoomScale(s_runtimeZoomScale);
+    }
+
+    public void FocusGroundPointImmediately(Vector3 worldPoint)
+    {
+        Camera camera = _camera != null ? _camera : GetComponent<Camera>();
+        if (camera == null) return;
+
+        Plane ground = new Plane(Vector3.up, worldPoint);
+        Ray centerRay = camera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        if (!ground.Raycast(centerRay, out float distance)) return;
+
+        Vector3 currentCenter = centerRay.GetPoint(distance);
+        Vector3 delta = worldPoint - currentCenter;
+        delta.y = 0f;
+        transform.position += delta;
     }
 
     public void BeginDebugFreeView()
@@ -176,14 +230,14 @@ public class RougeCameraFollow : MonoBehaviour
         _debugFreeYaw = euler.y;
         _debugFreePitch = NormalizeSignedAngle(euler.x);
         _debugFreeViewActive = true;
-        _dragging = false;
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        _panDragButton = 0;
+        _debugLookActive = false;
     }
 
     public void EndDebugFreeView()
     {
         if (!_debugFreeViewActive) return;
+        if (_debugLookActive) SetDebugLookActive(false);
         _debugFreeViewActive = false;
         transform.SetPositionAndRotation(_debugRestorePosition, _debugRestoreRotation);
         Camera camera = _camera != null ? _camera : GetComponent<Camera>();
@@ -200,7 +254,9 @@ public class RougeCameraFollow : MonoBehaviour
     private void UpdateDebugFreeView()
     {
         Mouse mouse = Mouse.current;
-        if (mouse != null)
+        bool wantsLook = mouse != null && mouse.rightButton.isPressed;
+        if (wantsLook != _debugLookActive) SetDebugLookActive(wantsLook);
+        if (_debugLookActive && mouse != null)
         {
             Vector2 look = mouse.delta.ReadValue() * debugFreeLookSensitivity;
             _debugFreeYaw += look.x;
@@ -224,6 +280,13 @@ public class RougeCameraFollow : MonoBehaviour
         transform.position += movement * speed * Time.unscaledDeltaTime;
     }
 
+    private void SetDebugLookActive(bool active)
+    {
+        _debugLookActive = active;
+        Cursor.lockState = active ? CursorLockMode.Locked : _debugRestoreCursorLock;
+        Cursor.visible = active ? false : _debugRestoreCursorVisible;
+    }
+
     private static float NormalizeSignedAngle(float angle)
     {
         return angle > 180f ? angle - 360f : angle;
@@ -233,7 +296,7 @@ public class RougeCameraFollow : MonoBehaviour
     {
         _cinematicFocusActive = true;
         _cinematicFocusPoint = worldPoint;
-        _dragging = false;
+        _panDragButton = 0;
     }
 
     public void SetCinematicShake(float intensity)
@@ -268,19 +331,28 @@ public class RougeCameraFollow : MonoBehaviour
     private void UpdateMousePan()
     {
         Mouse mouse = Mouse.current;
-        if (mouse == null) return;
-        bool buildMode = RougeGameManager.TowerDefenseBuildModeActive;
-        bool dragHeld = mouse.middleButton.isPressed || (!buildMode && mouse.leftButton.isPressed);
-        Vector2 pointer = mouse.position.ReadValue();
-        if (!dragHeld)
+        if (mouse == null)
         {
-            _dragging = false;
+            _panDragButton = 0;
             return;
         }
-        if (!_dragging)
+        bool buildMode = RougeGameManager.TowerDefenseBuildModeActive;
+        Vector2 pointer = mouse.position.ReadValue();
+        if (_panDragButton == 0)
         {
-            _dragging = true;
+            if (mouse.middleButton.wasPressedThisFrame) _panDragButton = 1;
+            else if (!buildMode && mouse.leftButton.wasPressedThisFrame) _panDragButton = 2;
+            else return;
             _lastPointerPosition = pointer;
+            return;
+        }
+
+        bool dragHeld = _panDragButton == 1
+            ? mouse.middleButton.isPressed
+            : !buildMode && mouse.leftButton.isPressed;
+        if (!dragHeld)
+        {
+            _panDragButton = 0;
             return;
         }
 
@@ -300,7 +372,7 @@ public class RougeCameraFollow : MonoBehaviour
 
     private void ApplyPanZoom()
     {
-        float nextScale = Mathf.Max(0.01f, s_runtimeZoomScale);
+        float nextScale = ClampZoomScale(s_runtimeZoomScale);
         if (Mathf.Abs(nextScale - _lastPanZoomScale) <= 0.0001f) return;
         float ratio = nextScale / Mathf.Max(0.01f, _lastPanZoomScale);
         _lastPanZoomScale = nextScale;
@@ -308,7 +380,7 @@ public class RougeCameraFollow : MonoBehaviour
         if (camera == null) return;
         if (camera.orthographic)
         {
-            camera.orthographicSize = Mathf.Clamp(camera.orthographicSize * ratio, 2f, 300f);
+            camera.orthographicSize = Mathf.Max(0.01f, camera.orthographicSize * ratio);
             return;
         }
 
@@ -355,13 +427,15 @@ public class RougeCameraFollow : MonoBehaviour
         }
 
         Camera camera = _camera != null ? _camera : GetComponent<Camera>();
-        if (camera != null && TryGetGroundFootprint(camera, groundPlaneY, out Vector2 footprintMin, out Vector2 footprintMax))
+        if (camera != null && TryGetViewportGroundCenter(camera, groundPlaneY, out Vector3 groundCenter))
         {
-            // The rectangle describes the visible playable area, not the camera transform's
-            // travel range. Insets are recomputed from the four viewport corners every frame,
-            // so zoom and aspect-ratio changes cannot expose space outside the rectangle.
-            position.x = ClampCameraAxis(position.x, minX, maxX, footprintMin.x, footprintMax.x);
-            position.z = ClampCameraAxis(position.z, minZ, maxZ, footprintMin.y, footprintMax.y);
+            // The authored rectangle is the travel range of the point shown at the
+            // screen center. A tilted perspective camera's transform is offset from
+            // this point, so clamping the transform itself makes opposite edges uneven.
+            float clampedX = Mathf.Clamp(groundCenter.x, minX, maxX);
+            float clampedZ = Mathf.Clamp(groundCenter.z, minZ, maxZ);
+            position.x += clampedX - groundCenter.x;
+            position.z += clampedZ - groundCenter.z;
         }
         else
         {
@@ -371,42 +445,36 @@ public class RougeCameraFollow : MonoBehaviour
         transform.position = position;
     }
 
-    private bool TryGetGroundFootprint(Camera camera, float groundPlaneY, out Vector2 minimumOffset, out Vector2 maximumOffset)
+    private static bool TryGetViewportGroundCenter(Camera camera, float groundPlaneY,
+        out Vector3 groundCenter)
     {
-        minimumOffset = new Vector2(float.PositiveInfinity, float.PositiveInfinity);
-        maximumOffset = new Vector2(float.NegativeInfinity, float.NegativeInfinity);
-        Plane plane = new Plane(Vector3.up, new Vector3(0f, groundPlaneY, 0f));
-        Vector3 cameraPosition = transform.position;
-        for (int corner = 0; corner < 4; corner++)
+        Plane ground = new Plane(Vector3.up, new Vector3(0f, groundPlaneY, 0f));
+        Ray centerRay = camera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        if (ground.Raycast(centerRay, out float distance) && distance >= 0f)
         {
-            float viewportX = (corner & 1) == 0 ? 0f : 1f;
-            float viewportY = (corner & 2) == 0 ? 0f : 1f;
-            Ray ray = camera.ViewportPointToRay(new Vector3(viewportX, viewportY, 0f));
-            if (!plane.Raycast(ray, out float distance) || distance <= 0f) return false;
-            Vector3 hit = ray.GetPoint(distance);
-            Vector2 offset = new Vector2(hit.x - cameraPosition.x, hit.z - cameraPosition.z);
-            minimumOffset = Vector2.Min(minimumOffset, offset);
-            maximumOffset = Vector2.Max(maximumOffset, offset);
+            groundCenter = centerRay.GetPoint(distance);
+            return true;
         }
-        return true;
+        groundCenter = default;
+        return false;
     }
 
-    private static float ClampCameraAxis(float value, float boundsMin, float boundsMax,
-        float footprintMinOffset, float footprintMaxOffset)
+    private void OnValidate()
     {
-        float allowedMin = boundsMin - footprintMinOffset;
-        float allowedMax = boundsMax - footprintMaxOffset;
-        if (allowedMin <= allowedMax) return Mathf.Clamp(value, allowedMin, allowedMax);
-
-        // At very distant zoom levels the view can be wider than the configured rectangle.
-        // Centre it instead of letting the clamp oscillate between inverted limits.
-        float boundsCenter = (boundsMin + boundsMax) * 0.5f;
-        float footprintCenterOffset = (footprintMinOffset + footprintMaxOffset) * 0.5f;
-        return boundsCenter - footprintCenterOffset;
+        fallbackBoundsSize.x = Mathf.Max(1f, fallbackBoundsSize.x);
+        fallbackBoundsSize.y = Mathf.Max(1f, fallbackBoundsSize.y);
     }
 
     private void OnDrawGizmosSelected()
     {
+        Camera camera = GetComponent<Camera>();
+        float groundY = movementBounds != null ? movementBounds.WorldBounds.center.y : 0f;
+        if (camera != null && TryGetViewportGroundCenter(camera, groundY, out Vector3 groundCenter))
+        {
+            Gizmos.color = new Color(1f, 0.82f, 0.12f, 0.95f);
+            Gizmos.DrawLine(transform.position, groundCenter);
+            Gizmos.DrawWireSphere(groundCenter, 0.8f);
+        }
         if (movementBounds != null) return;
         Gizmos.color = new Color(0.1f, 0.85f, 1f, 0.8f);
         Gizmos.DrawWireCube(new Vector3(fallbackBoundsCenter.x, transform.position.y, fallbackBoundsCenter.y),

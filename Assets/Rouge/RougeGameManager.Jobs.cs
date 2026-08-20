@@ -255,6 +255,7 @@ public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
     public int CurrentMaxEnemies;
     public int BossEnemyIndex;
     public float RenderHeight;
+    public float2 ArenaHalfExtents;
     public int MaxCandidates;
     public int MaxNeighbors;
     public float Stiffness;
@@ -397,11 +398,18 @@ public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
                 if (opposing < 0f) correction -= motionDirection * opposing;
             }
 
-            float2 projected = sourcePosition.xz + correction;
+            float2 arenaLimit = math.max(float2.zero,
+                ArenaHalfExtents - math.max(sourcePosition.w * radiusScale, 0.05f));
+            float2 projected = math.clamp(sourcePosition.xz + correction,
+                -arenaLimit, arenaLimit);
             if (IsBlocked(projected, blockedPtr))
             {
-                float2 xOnly = sourcePosition.xz + new float2(correction.x, 0f);
-                float2 yOnly = sourcePosition.xz + new float2(0f, correction.y);
+                float2 xOnly = math.clamp(
+                    sourcePosition.xz + new float2(correction.x, 0f),
+                    -arenaLimit, arenaLimit);
+                float2 yOnly = math.clamp(
+                    sourcePosition.xz + new float2(0f, correction.y),
+                    -arenaLimit, arenaLimit);
                 projected = !IsBlocked(xOnly, blockedPtr) ? xOnly :
                     !IsBlocked(yOnly, blockedPtr) ? yOnly : sourcePosition.xz;
             }
@@ -1515,7 +1523,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public float EnemyMaxHealth;
     public float EnemyRadius;
     public float EnemyMaxSpeed;
-    public float ArenaHalfExtent;
+    public float2 ArenaHalfExtents;
     public float SpawnRadiusMin;
     public float SpawnRadiusMax;
     public float DespawnDistanceSq;
@@ -1804,13 +1812,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 densityPressure *= math.lerp(1f, 0.15f, snapWeight);
                 if (!isBoss && densityPressure > 0f)
                 {
+                    float2 densityAvoidance = float2.zero;
                     float2 densityGradient = SampleDensityGradient(pos.xz, densityPtr);
                     float gradientLengthSq = math.lengthsq(densityGradient);
                     if (gradientLengthSq > 0.000001f)
                     {
                         float gradientLength = math.sqrt(gradientLengthSq);
                         float2 gradientDir = densityGradient / gradientLength;
-                        acceleration.xz += -gradientDir * (math.min(gradientLength, DensityGradientClamp) * DensityRepulsionStrength * densityPressure * densityResponseScale);
+                        densityAvoidance += -gradientDir * (math.min(gradientLength, DensityGradientClamp) *
+                            DensityRepulsionStrength * densityPressure * densityResponseScale);
                     }
 
                     // A density-only gradient is nearly zero inside a uniformly packed plateau,
@@ -1825,9 +1835,22 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                         float microAngle = Hash01(((uint)sourceIndex + 1u) * 747796405u + 2891336453u) *
                             (math.PI * 2f);
                         float2 microDirection = new float2(math.cos(microAngle), math.sin(microAngle));
-                        acceleration.xz += microDirection * (DensityRepulsionStrength *
+                        densityAvoidance += microDirection * (DensityRepulsionStrength *
                             DensityResponseJitter * densityPressure * plateauWeight);
                     }
+
+                    // Crowd relief may fan units around the route, but it must not overpower
+                    // the route itself and create a second stream along the arena boundary.
+                    float maxDensityAcceleration = math.max(0f,
+                        ChaseAcceleration * CrowdReliefMaxDensityPressure);
+                    float densityAvoidanceLengthSq = math.lengthsq(densityAvoidance);
+                    if (densityAvoidanceLengthSq > maxDensityAcceleration * maxDensityAcceleration &&
+                        densityAvoidanceLengthSq > 0.000001f)
+                    {
+                        densityAvoidance *= maxDensityAcceleration *
+                            math.rsqrt(densityAvoidanceLengthSq);
+                    }
+                    acceleration.xz += densityAvoidance;
                 }
             }
 
@@ -2150,7 +2173,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     effects.LaunchLandingDamage = 0f;
                     effects.LaunchLandingRadius = 0f;
                 }
-                else if (isAirborne && vel.y < -1f)
+                else if (!ExternalSpawning && isAirborne && vel.y < -1f)
                 {
                     health -= math.abs(vel.y) * 15f;
                     flashTimer = 1f;
@@ -2224,8 +2247,13 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects = default;
             }
 
-            pos.x = math.clamp(pos.x, -ArenaHalfExtent, ArenaHalfExtent);
-            pos.z = math.clamp(pos.z, -ArenaHalfExtent, ArenaHalfExtent);
+            float2 arenaLimit = math.max(float2.zero, ArenaHalfExtents - math.max(radius, 0.05f));
+            if (pos.x <= -arenaLimit.x && vel.x < 0f) vel.x = 0f;
+            else if (pos.x >= arenaLimit.x && vel.x > 0f) vel.x = 0f;
+            if (pos.z <= -arenaLimit.y && vel.z < 0f) vel.z = 0f;
+            else if (pos.z >= arenaLimit.y && vel.z > 0f) vel.z = 0f;
+            pos.x = math.clamp(pos.x, -arenaLimit.x, arenaLimit.x);
+            pos.z = math.clamp(pos.z, -arenaLimit.y, arenaLimit.y);
 
             flashTimer = math.max(0f, flashTimer - DeltaTime * 5f);
             posOutPtr[sourceIndex] = new float4(pos, radius);
@@ -2861,13 +2889,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     {
         uint hash = math.hash(new uint2((uint)index + FrameSeed, FrameSeed ^ 0xA511E9B3u));
         float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
-        float safeSpawnRadius = math.max(SpawnRadiusMin, math.min(SpawnRadiusMax, math.max(8f, math.min(ArenaHalfExtent - math.abs(SpawnCenter.x) - 2f, ArenaHalfExtent - math.abs(SpawnCenter.y) - 2f))));
+        float safeSpawnRadius = math.max(SpawnRadiusMin, math.min(SpawnRadiusMax, math.max(8f,
+            math.min(ArenaHalfExtents.x - math.abs(SpawnCenter.x) - 2f,
+                ArenaHalfExtents.y - math.abs(SpawnCenter.y) - 2f))));
         float safeSpawnRadiusMin = math.min(SpawnRadiusMin, safeSpawnRadius * 0.78f);
         float distance = math.lerp(safeSpawnRadiusMin, safeSpawnRadius, ((hash >> 16) & 0xFFFFu) / 65535f);
         float speedScale = math.lerp(0.9f, 1.15f, ((hash >> 8) & 0xFFu) / 255f);
         float2 spawn = SpawnCenter + new float2(math.cos(angle), math.sin(angle)) * distance;
-        spawn.x = math.clamp(spawn.x, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
-        spawn.y = math.clamp(spawn.y, -ArenaHalfExtent + 2f, ArenaHalfExtent - 2f);
+        spawn = math.clamp(spawn, -ArenaHalfExtents + 2f, ArenaHalfExtents - 2f);
         pos4 = new float4(spawn.x, RenderHeight, spawn.y, EnemyRadius);
         vel4 = float4.zero;
         state4 = new float4(EnemyMaxHealth, EnemyRadius, EnemyMaxSpeed * speedScale, 0f);

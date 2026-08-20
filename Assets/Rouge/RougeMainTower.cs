@@ -46,8 +46,9 @@ public sealed class RougeMainTower : MonoBehaviour
         if (!Application.isPlaying) currentHealth = maxHealth;
     }
 
-    private void OnDrawGizmos()
+    private void OnDrawGizmosSelected()
     {
+        if (Application.isPlaying) return;
         Gizmos.color = new Color(0.12f, 0.72f, 1f, 0.28f);
         Gizmos.DrawCube(transform.position + Vector3.up * 5f, new Vector3(5f, 10f, 5f));
         Gizmos.color = new Color(0.15f, 0.85f, 1f, 0.9f);

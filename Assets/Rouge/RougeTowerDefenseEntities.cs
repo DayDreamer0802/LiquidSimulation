@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // Keep the first four values stable so already-serialized towers retain their type.
@@ -116,6 +117,15 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.PiercingLaser: radius = 2.8f; cost = 1000; break;
             default: radius = 2.5f; cost = 900; break;
         }
+    }
+
+    public static Vector2Int GetFootprintSize(RougeTowerType type)
+    {
+        RougeTowerTypeConfig configured = s_runtimeBalance?.Find(type);
+        return configured != null
+            ? new Vector2Int(Mathf.Clamp(configured.footprintWidth, 1, 16),
+                Mathf.Clamp(configured.footprintHeight, 1, 16))
+            : new Vector2Int(4, 4);
     }
 
     public static RougeTowerStats GetStats(RougeTowerType type, int requestedLevel)
@@ -292,6 +302,70 @@ internal static class TowerDefenseVisuals
             float angle = i / (float)(line.positionCount - 1) * Mathf.PI * 2f;
             line.SetPosition(i, center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
         }
+    }
+
+    public static void UpdateGridSquare(LineRenderer line, Vector3 center, float cellSize,
+        int halfCellCount, Color color, bool visible)
+    {
+        if (line == null) return;
+        line.enabled = visible;
+        if (!visible) return;
+        line.loop = false;
+        line.startColor = color;
+        line.endColor = color;
+        cellSize = Mathf.Max(0.1f, cellSize);
+        halfCellCount = Mathf.Max(1, halfCellCount);
+        int cellsAcross = halfCellCount * 2;
+        float halfExtent = halfCellCount * cellSize;
+        center.y += 0.15f;
+        var points = new List<Vector3>((cellsAcross + 1) * 4 + 4);
+
+        for (int x = 0; x <= cellsAcross; x++)
+        {
+            float px = center.x - halfExtent + x * cellSize;
+            float z0 = (x & 1) == 0 ? center.z - halfExtent : center.z + halfExtent;
+            float z1 = (x & 1) == 0 ? center.z + halfExtent : center.z - halfExtent;
+            points.Add(new Vector3(px, center.y, z0));
+            points.Add(new Vector3(px, center.y, z1));
+        }
+
+        bool verticalEndedAtTop = (cellsAcross & 1) == 0;
+        for (int row = 0; row <= cellsAcross; row++)
+        {
+            int yIndex = verticalEndedAtTop ? cellsAcross - row : row;
+            float pz = center.z - halfExtent + yIndex * cellSize;
+            bool rightToLeft = (row & 1) == 0;
+            float x0 = rightToLeft ? center.x + halfExtent : center.x - halfExtent;
+            float x1 = rightToLeft ? center.x - halfExtent : center.x + halfExtent;
+            points.Add(new Vector3(x0, center.y, pz));
+            points.Add(new Vector3(x1, center.y, pz));
+        }
+        line.positionCount = points.Count;
+        line.SetPositions(points.ToArray());
+    }
+
+    public static void UpdateCellOutline(LineRenderer line, Vector3 center, float cellSize,
+        Color color, bool visible)
+    {
+        UpdateSquareOutline(line, center, Mathf.Max(0.05f, cellSize) * 0.5f, color, visible);
+    }
+
+    public static void UpdateSquareOutline(LineRenderer line, Vector3 center, float halfExtent,
+        Color color, bool visible)
+    {
+        if (line == null) return;
+        line.enabled = visible;
+        if (!visible) return;
+        line.loop = true;
+        line.startColor = color;
+        line.endColor = color;
+        center.y += 0.16f;
+        halfExtent = Mathf.Max(0.05f, halfExtent);
+        line.positionCount = 4;
+        line.SetPosition(0, center + new Vector3(-halfExtent, 0f, -halfExtent));
+        line.SetPosition(1, center + new Vector3(-halfExtent, 0f, halfExtent));
+        line.SetPosition(2, center + new Vector3(halfExtent, 0f, halfExtent));
+        line.SetPosition(3, center + new Vector3(halfExtent, 0f, -halfExtent));
     }
 
     public static void SetRenderersTransparent(GameObject root, bool transparent, Color tint)

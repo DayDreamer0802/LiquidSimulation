@@ -35,6 +35,11 @@ public sealed class RougeTowerTypeConfig
 {
     public RougeTowerType towerType;
     [Min(0.1f)] public float placementRadius = 2f;
+    [HideInInspector] public int footprintSize = 4;
+    [Range(1, 16), Tooltip("Tower footprint width in map micro cells.")]
+    public int footprintWidth;
+    [Range(1, 16), Tooltip("Tower footprint height in map micro cells.")]
+    public int footprintHeight;
     [Min(0)] public int purchaseCost = 400;
     public List<RougeTowerLevelConfig> levels = new List<RougeTowerLevelConfig>();
 }
@@ -55,6 +60,9 @@ public sealed class RougeTowerBalanceConfig
                 config = CreateDefault(type);
                 towers.Add(config);
             }
+            int legacySize = Mathf.Clamp(config.footprintSize <= 0 ? 4 : config.footprintSize, 1, 16);
+            config.footprintWidth = Mathf.Clamp(config.footprintWidth <= 0 ? legacySize : config.footprintWidth, 1, 16);
+            config.footprintHeight = Mathf.Clamp(config.footprintHeight <= 0 ? legacySize : config.footprintHeight, 1, 16);
             while (config.levels.Count < TowerDefenseVisuals.MaxTowerLevel)
             {
                 config.levels.Add(CreateDefaultLevel(type, config.levels.Count));
@@ -148,11 +156,21 @@ public sealed class RougeEnemyArchetypeConfig
 [Serializable]
 public sealed class RougeEnemyBalanceConfig
 {
+    public const int MaximumEnemyLevel = 100;
+
     [Min(0)] public int normalKillGold = 1;
     [Min(0)] public int eliteKillGold = 20;
     [Min(1f)] public float growthInterval = 15f;
     [HideInInspector] public float healthGrowthMultiplier = 1.10f; // Legacy scene data; HP now follows milestones.
-    [Min(1f)] public float speedGrowthMultiplier = 1.007f;
+    [Tooltip("Enemy health multiplier by level. X is enemy level (1-100); Y is the multiplier.")]
+    public AnimationCurve healthMultiplierByLevel = CreateDefaultHealthMultiplierCurve();
+    [HideInInspector] public float speedGrowthMultiplier = 1.007f; // Legacy JSON data; speed now follows its level curve.
+    [Tooltip("Enemy speed multiplier by level. X is enemy level (1-100); Y is the multiplier.")]
+    public AnimationCurve speedMultiplierByLevel = CreateDefaultSpeedMultiplierCurve();
+    [Tooltip("Spawn frequency multiplier by level. X is enemy level (1-100); Y divides each spawner's base interval.")]
+    public AnimationCurve spawnSpeedMultiplierByLevel = CreateDefaultSpawnSpeedMultiplierCurve();
+    [Tooltip("Elite spawn chance per thousand by level. X is enemy level (1-100); Y is permille (‰).")]
+    public AnimationCurve eliteChancePermilleByLevel = CreateDefaultEliteChancePermilleCurve();
     [Min(1f)] public float eliteHealthMultiplier = 20f;
     [Min(0.1f)] public float eliteSpeedMultiplier = 1.25f;
     [Min(1f)] public float eliteSizeMultiplier = 2f;
@@ -160,6 +178,22 @@ public sealed class RougeEnemyBalanceConfig
 
     public void EnsureDefaults()
     {
+        if (healthMultiplierByLevel == null || healthMultiplierByLevel.length == 0)
+            healthMultiplierByLevel = CreateDefaultHealthMultiplierCurve();
+        if (speedMultiplierByLevel == null || speedMultiplierByLevel.length == 0)
+            speedMultiplierByLevel = CreateDefaultSpeedMultiplierCurve();
+        if (spawnSpeedMultiplierByLevel == null || spawnSpeedMultiplierByLevel.length == 0)
+            spawnSpeedMultiplierByLevel = CreateDefaultSpawnSpeedMultiplierCurve();
+        if (eliteChancePermilleByLevel == null || eliteChancePermilleByLevel.length == 0)
+            eliteChancePermilleByLevel = CreateDefaultEliteChancePermilleCurve();
+        healthMultiplierByLevel.preWrapMode = WrapMode.ClampForever;
+        healthMultiplierByLevel.postWrapMode = WrapMode.ClampForever;
+        speedMultiplierByLevel.preWrapMode = WrapMode.ClampForever;
+        speedMultiplierByLevel.postWrapMode = WrapMode.ClampForever;
+        spawnSpeedMultiplierByLevel.preWrapMode = WrapMode.ClampForever;
+        spawnSpeedMultiplierByLevel.postWrapMode = WrapMode.ClampForever;
+        eliteChancePermilleByLevel.preWrapMode = WrapMode.ClampForever;
+        eliteChancePermilleByLevel.postWrapMode = WrapMode.ClampForever;
         if (enemyTypes == null) enemyTypes = new List<RougeEnemyArchetypeConfig>();
         if (enemyTypes.Count == 0)
         {
@@ -178,6 +212,118 @@ public sealed class RougeEnemyBalanceConfig
             enemyTypes[i] ??= new RougeEnemyArchetypeConfig();
             enemyTypes[i].EnsureDefaults();
         }
+    }
+
+    public float EvaluateHealthMultiplier(int enemyLevel)
+    {
+        if (healthMultiplierByLevel == null || healthMultiplierByLevel.length == 0)
+            healthMultiplierByLevel = CreateDefaultHealthMultiplierCurve();
+        return Mathf.Max(0.01f, healthMultiplierByLevel.Evaluate(
+            Mathf.Clamp(enemyLevel, 1, MaximumEnemyLevel)));
+    }
+
+    public float EvaluateSpeedMultiplier(int enemyLevel)
+    {
+        if (speedMultiplierByLevel == null || speedMultiplierByLevel.length == 0)
+            speedMultiplierByLevel = CreateDefaultSpeedMultiplierCurve();
+        return Mathf.Max(0.01f, speedMultiplierByLevel.Evaluate(
+            Mathf.Clamp(enemyLevel, 1, MaximumEnemyLevel)));
+    }
+
+    public float EvaluateSpawnSpeedMultiplier(int enemyLevel)
+    {
+        if (spawnSpeedMultiplierByLevel == null || spawnSpeedMultiplierByLevel.length == 0)
+            spawnSpeedMultiplierByLevel = CreateDefaultSpawnSpeedMultiplierCurve();
+        return Mathf.Max(0.01f, spawnSpeedMultiplierByLevel.Evaluate(
+            Mathf.Clamp(enemyLevel, 1, MaximumEnemyLevel)));
+    }
+
+    public float EvaluateEliteChance01(int enemyLevel)
+    {
+        if (eliteChancePermilleByLevel == null || eliteChancePermilleByLevel.length == 0)
+            eliteChancePermilleByLevel = CreateDefaultEliteChancePermilleCurve();
+        float permille = Mathf.Max(0f, eliteChancePermilleByLevel.Evaluate(
+            Mathf.Clamp(enemyLevel, 1, MaximumEnemyLevel)));
+        return Mathf.Clamp01(permille * 0.001f);
+    }
+
+    private static AnimationCurve CreateDefaultHealthMultiplierCurve()
+    {
+        Keyframe[] keys =
+        {
+            new Keyframe(1f, 1f),
+            new Keyframe(13f, 8f),
+            new Keyframe(25f, 24f),
+            new Keyframe(37f, 48f),
+            new Keyframe(49f, 72f),
+            new Keyframe(61f, 144f),
+            new Keyframe(81f, 288f),
+            new Keyframe(100f, 288f)
+        };
+
+        // Linear defaults make the level preview predictable. Designers can edit
+        // individual tangents in the curve window when a smoother ramp is desired.
+        SetLinearTangents(keys);
+        return CreateClampedCurve(keys);
+    }
+
+    private static AnimationCurve CreateDefaultSpeedMultiplierCurve()
+    {
+        int[] levels = { 1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 };
+        Keyframe[] keys = new Keyframe[levels.Length];
+        for (int i = 0; i < levels.Length; i++)
+        {
+            int level = levels[i];
+            keys[i] = new Keyframe(level, Mathf.Pow(1.007f, level - 1));
+        }
+        SetLinearTangents(keys);
+        return CreateClampedCurve(keys);
+    }
+
+    private static AnimationCurve CreateDefaultSpawnSpeedMultiplierCurve()
+    {
+        Keyframe[] keys =
+        {
+            new Keyframe(1f, 1f),
+            new Keyframe(41f, 2f),
+            new Keyframe(81f, 3f),
+            new Keyframe(MaximumEnemyLevel, 3f)
+        };
+        SetLinearTangents(keys);
+        return CreateClampedCurve(keys);
+    }
+
+    private static AnimationCurve CreateDefaultEliteChancePermilleCurve()
+    {
+        Keyframe[] keys =
+        {
+            new Keyframe(1f, 1f),
+            new Keyframe(MaximumEnemyLevel, 5f)
+        };
+        SetLinearTangents(keys);
+        return CreateClampedCurve(keys);
+    }
+
+    private static void SetLinearTangents(Keyframe[] keys)
+    {
+        for (int i = 0; i < keys.Length; i++)
+        {
+            keys[i].inTangent = i > 0
+                ? (keys[i].value - keys[i - 1].value) / (keys[i].time - keys[i - 1].time)
+                : 0f;
+            keys[i].outTangent = i + 1 < keys.Length
+                ? (keys[i + 1].value - keys[i].value) / (keys[i + 1].time - keys[i].time)
+                : 0f;
+        }
+    }
+
+    private static AnimationCurve CreateClampedCurve(Keyframe[] keys)
+    {
+        return new AnimationCurve(keys)
+        {
+            preWrapMode = WrapMode.ClampForever,
+            postWrapMode = WrapMode.ClampForever
+        };
     }
 }
 

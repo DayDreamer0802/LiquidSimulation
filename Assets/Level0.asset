@@ -1,0 +1,240 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e2cba7e5af7b5bd4daf1336949c1664e, type: 3}
+  m_Name: Level0
+  m_EditorClassIdentifier: 
+  width: 17
+  height: 17
+  cellSize: 8
+  origin: {x: -68, y: -68}
+  tileDefinitions:
+  - name: Empty
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0, g: 0, b: 0, a: 0}
+    blocksNavigation: 0
+    towerPlace: 0
+    fallbackHeight: 0.2
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Ground
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.2, g: 0.3, b: 0.38, a: 0.85}
+    blocksNavigation: 0
+    towerPlace: 0
+    fallbackHeight: 0.08
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Wall
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.85, g: 0.22, b: 0.16, a: 0.9}
+    blocksNavigation: 1
+    towerPlace: 0
+    fallbackHeight: 3
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Tower Place
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.60691816, g: 0.86992145, b: 1, a: 0.58431375}
+    blocksNavigation: 0
+    towerPlace: 1
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  tiles: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000003000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000010000000100000001000000010000000300000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000300000001000000010000000100000001000000030000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000030000000100000001000000010000000100000003000000010000000100000003000000030000000100000001000000010000000300000003000000010000000100000003000000010000000100000001000000010000000300000001000000010000000300000001000000010000000100000001000000010000000300000001000000010000000300000001000000010000000100000001000000010000000100000001000000030000000100000001000000010000000100000001000000030000000100000001000000010000000100000001000000010000000100000001000000010000000100000003000000010000000100000001000000010000000100000003000000010000000100000001000000010000000100000001000000010000000100000001000000010000000300000001000000010000000100000001000000010000000300000001000000010000000100000001000000010000000100000001000000030000000100000001000000030000000100000001000000010000000100000001000000030000000100000001000000030000000100000001000000010000000100000003000000010000000100000003000000030000000100000001000000010000000300000003000000010000000100000003000000010000000100000001000000010000000300000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000300000001000000010000000100000001000000030000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000030000000100000001000000010000000100000003000000030000000300000003000000030000000300000003000000030000000300000003000000030000000300000003000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
+  enemySpawns:
+  - cell: {x: 8, y: 15}
+    spawnCount: 32
+    spawnInterval: 3
+    startDelay: 0
+    enemyType: 0
+  - cell: {x: 6, y: 15}
+    spawnCount: 16
+    spawnInterval: 4
+    startDelay: 12
+    enemyType: 0
+  - cell: {x: 10, y: 15}
+    spawnCount: 16
+    spawnInterval: 4
+    startDelay: 24
+    enemyType: 0
+  - cell: {x: 4, y: 15}
+    spawnCount: 16
+    spawnInterval: 3
+    startDelay: 36
+    enemyType: 0
+  - cell: {x: 12, y: 15}
+    spawnCount: 16
+    spawnInterval: 3
+    startDelay: 48
+    enemyType: 0
+  - cell: {x: 8, y: 1}
+    spawnCount: 32
+    spawnInterval: 3
+    startDelay: 60
+    enemyType: 0
+  - cell: {x: 6, y: 1}
+    spawnCount: 16
+    spawnInterval: 4
+    startDelay: 72
+    enemyType: 0
+  - cell: {x: 10, y: 1}
+    spawnCount: 16
+    spawnInterval: 4
+    startDelay: 84
+    enemyType: 0
+  - cell: {x: 4, y: 1}
+    spawnCount: 16
+    spawnInterval: 3
+    startDelay: 96
+    enemyType: 0
+  - cell: {x: 12, y: 1}
+    spawnCount: 16
+    spawnInterval: 3
+    startDelay: 108
+    enemyType: 0
+  - cell: {x: 0, y: 16}
+    spawnCount: 25
+    spawnInterval: 5
+    startDelay: 120
+    enemyType: 1
+  - cell: {x: 16, y: 0}
+    spawnCount: 25
+    spawnInterval: 5
+    startDelay: 135
+    enemyType: 1
+  - cell: {x: 16, y: 16}
+    spawnCount: 25
+    spawnInterval: 5
+    startDelay: 150
+    enemyType: 1
+  - cell: {x: 0, y: 0}
+    spawnCount: 25
+    spawnInterval: 5
+    startDelay: 165
+    enemyType: 1
+  - cell: {x: 0, y: 10}
+    spawnCount: 32
+    spawnInterval: 6
+    startDelay: 180
+    enemyType: 2
+  - cell: {x: 16, y: 6}
+    spawnCount: 32
+    spawnInterval: 6
+    startDelay: 180
+    enemyType: 2
+  - cell: {x: 16, y: 10}
+    spawnCount: 32
+    spawnInterval: 5
+    startDelay: 240
+    enemyType: 2
+  - cell: {x: 0, y: 6}
+    spawnCount: 32
+    spawnInterval: 5
+    startDelay: 240
+    enemyType: 2
+  - cell: {x: 1, y: 8}
+    spawnCount: 64
+    spawnInterval: 4
+    startDelay: 300
+    enemyType: 0
+  - cell: {x: 15, y: 8}
+    spawnCount: 64
+    spawnInterval: 4
+    startDelay: 300
+    enemyType: 0
+  hasMainTower: 1
+  mainTowerCell: {x: 8, y: 8}
+  mainTowerPrefab: {fileID: 919132149155446097, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
+  hasBossSpawn: 1
+  bossSpawnCell: {x: 8, y: 16}
+  bossPrefab: {fileID: 0}
+  configureCameraBounds: 1
+  cameraBoundsCenter: {x: 0, y: 0}
+  cameraBoundsSize: {x: 152, y: 152}
+  minimumCameraZoom: 0.5
+  maximumCameraZoom: 1.5

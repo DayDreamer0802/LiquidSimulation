@@ -1,11 +1,14 @@
 {
     "version": 1,
     "towerBalance": {
-        "sellRefundMultiplier": 0.25,
+        "sellRefundMultiplier": 0.33000001311302187,
         "towers": [
             {
                 "towerType": 0,
                 "placementRadius": 2.200000047683716,
+                "footprintSize": 6,
+                "footprintWidth": 6,
+                "footprintHeight": 6,
                 "purchaseCost": 625,
                 "levels": [
                     {
@@ -88,6 +91,9 @@
             {
                 "towerType": 1,
                 "placementRadius": 2.0,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
                 "purchaseCost": 400,
                 "levels": [
                     {
@@ -170,6 +176,9 @@
             {
                 "towerType": 2,
                 "placementRadius": 2.700000047683716,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
                 "purchaseCost": 750,
                 "levels": [
                     {
@@ -252,6 +261,9 @@
             {
                 "towerType": 3,
                 "placementRadius": 2.4000000953674318,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
                 "purchaseCost": 625,
                 "levels": [
                     {
@@ -334,6 +346,9 @@
             {
                 "towerType": 4,
                 "placementRadius": 2.299999952316284,
+                "footprintSize": 5,
+                "footprintWidth": 5,
+                "footprintHeight": 5,
                 "purchaseCost": 750,
                 "levels": [
                     {
@@ -416,6 +431,9 @@
             {
                 "towerType": 5,
                 "placementRadius": 2.799999952316284,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
                 "purchaseCost": 1000,
                 "levels": [
                     {
@@ -498,6 +516,9 @@
             {
                 "towerType": 6,
                 "placementRadius": 2.5,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
                 "purchaseCost": 900,
                 "levels": [
                     {
@@ -581,18 +602,160 @@
     },
     "enemyBalance": {
         "normalKillGold": 1,
-        "eliteKillGold": 20,
-        "growthInterval": 15.0,
+        "eliteKillGold": 50,
+        "growthInterval": 12.0,
         "healthGrowthMultiplier": 1.100000023841858,
-        "speedGrowthMultiplier": 1.0069999694824219,
-        "eliteHealthMultiplier": 20.0,
-        "eliteSpeedMultiplier": 1.25,
+        "healthMultiplierByLevel": {
+            "serializedVersion": "2",
+            "m_Curve": [
+                {
+                    "serializedVersion": "3",
+                    "time": 1.0,
+                    "value": 0.9999316930770874,
+                    "inSlope": 0.0,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 100.0,
+                    "value": 500.0,
+                    "inSlope": 0.0,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                }
+            ],
+            "m_PreInfinity": 2,
+            "m_PostInfinity": 2,
+            "m_RotationOrder": 4
+        },
+        "speedGrowthMultiplier": 1.0099999904632569,
+        "speedMultiplierByLevel": {
+            "serializedVersion": "2",
+            "m_Curve": [
+                {
+                    "serializedVersion": "3",
+                    "time": 1.0,
+                    "value": 0.9999542236328125,
+                    "inSlope": 0.0,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 100.0,
+                    "value": 3.0,
+                    "inSlope": 0.0,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                }
+            ],
+            "m_PreInfinity": 2,
+            "m_PostInfinity": 2,
+            "m_RotationOrder": 4
+        },
+        "spawnSpeedMultiplierByLevel": {
+            "serializedVersion": "2",
+            "m_Curve": [
+                {
+                    "serializedVersion": "3",
+                    "time": 1.0,
+                    "value": 1.0,
+                    "inSlope": 0.0,
+                    "outSlope": 0.02500000037252903,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 41.0,
+                    "value": 2.0,
+                    "inSlope": 0.02500000037252903,
+                    "outSlope": 0.02500000037252903,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 81.0,
+                    "value": 3.0,
+                    "inSlope": 0.02500000037252903,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 100.0,
+                    "value": 3.0,
+                    "inSlope": 0.0,
+                    "outSlope": 0.0,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                }
+            ],
+            "m_PreInfinity": 2,
+            "m_PostInfinity": 2,
+            "m_RotationOrder": 4
+        },
+        "eliteChancePermilleByLevel": {
+            "serializedVersion": "2",
+            "m_Curve": [
+                {
+                    "serializedVersion": "3",
+                    "time": 1.0,
+                    "value": 1.0,
+                    "inSlope": 0.04040404036641121,
+                    "outSlope": 0.04040404036641121,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                },
+                {
+                    "serializedVersion": "3",
+                    "time": 100.0,
+                    "value": 10.0,
+                    "inSlope": 0.04040404036641121,
+                    "outSlope": 0.04040404036641121,
+                    "tangentMode": 0,
+                    "weightedMode": 0,
+                    "inWeight": 0.0,
+                    "outWeight": 0.0
+                }
+            ],
+            "m_PreInfinity": 2,
+            "m_PostInfinity": 2,
+            "m_RotationOrder": 4
+        },
+        "eliteHealthMultiplier": 30.0,
+        "eliteSpeedMultiplier": 1.3300000429153443,
         "eliteSizeMultiplier": 2.0,
         "enemyTypes": [
             {
                 "displayName": "Standard",
-                "baseHealth": 10.0,
-                "baseSpeed": 7.5,
+                "baseHealth": 20.0,
+                "baseSpeed": 12.0,
                 "size": 1.0,
                 "spriteResourcePath": "Sprites/enemy_standard_sheet",
                 "spriteSheetColumns": 8,
@@ -602,8 +765,8 @@
             },
             {
                 "displayName": "Swift",
-                "baseHealth": 7.5,
-                "baseSpeed": 9.0,
+                "baseHealth": 15.0,
+                "baseSpeed": 16.0,
                 "size": 0.8999999761581421,
                 "spriteResourcePath": "Sprites/enemy_swift_sheet",
                 "spriteSheetColumns": 3,
@@ -613,8 +776,8 @@
             },
             {
                 "displayName": "Heavy",
-                "baseHealth": 15.0,
-                "baseSpeed": 5.0,
+                "baseHealth": 30.0,
+                "baseSpeed": 8.0,
                 "size": 1.1799999475479127,
                 "spriteResourcePath": "Sprites/enemy_heavy_sheet",
                 "spriteSheetColumns": 3,
