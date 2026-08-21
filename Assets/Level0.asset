@@ -180,7 +180,7 @@ MonoBehaviour:
   - cell: {x: 0, y: 16}
     spawnCount: 25
     spawnInterval: 5
-    startDelay: 120
+    startDelay: 0
     enemyType: 1
   - cell: {x: 16, y: 0}
     spawnCount: 25
@@ -200,7 +200,7 @@ MonoBehaviour:
   - cell: {x: 0, y: 10}
     spawnCount: 32
     spawnInterval: 6
-    startDelay: 180
+    startDelay: 0
     enemyType: 2
   - cell: {x: 16, y: 6}
     spawnCount: 32

@@ -289,14 +289,15 @@ internal static class TowerDefenseVisuals
         return s_crystalLaserMaterial;
     }
 
-    public static void UpdateCircle(LineRenderer line, Vector3 center, float radius, Color color, bool visible)
+    public static void UpdateCircle(LineRenderer line, Vector3 center, float radius, Color color, bool visible,
+        float heightOffset = 0.15f)
     {
         if (line == null) return;
         line.enabled = visible;
         if (!visible) return;
         line.startColor = color;
         line.endColor = color;
-        center.y += 0.15f;
+        center.y += heightOffset;
         for (int i = 0; i < line.positionCount; i++)
         {
             float angle = i / (float)(line.positionCount - 1) * Mathf.PI * 2f;

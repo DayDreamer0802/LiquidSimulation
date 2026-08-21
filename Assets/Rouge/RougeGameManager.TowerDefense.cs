@@ -1385,7 +1385,7 @@ public partial class RougeGameManager
         _stateB[index] = _stateA[index];
         _effectStateB[index] = default;
         _towerDefenseEnemyKinds[index] = kind;
-        if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = kind & EnemyArchetypeMask;
+        if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = kind;
         return true;
     }
 
@@ -1410,6 +1410,11 @@ public partial class RougeGameManager
                 Mathf.Clamp(type.spriteDeathFrameCount, 0,
                     Mathf.Max(0, type.spriteSheetColumns * type.spriteSheetRows - 1))));
         }
+        enemyMaterial.SetVector("_EnemyTypeSizes", new Vector4(
+            Mathf.Max(0.1f, enemyBalance.enemyTypes[0].size),
+            Mathf.Max(0.1f, enemyBalance.enemyTypes[Mathf.Min(1, enemyBalance.enemyTypes.Count - 1)].size),
+            Mathf.Max(0.1f, enemyBalance.enemyTypes[Mathf.Min(2, enemyBalance.enemyTypes.Count - 1)].size),
+            Mathf.Max(1f, enemyBalance.eliteSizeMultiplier)));
         enemyMaterial.SetTexture("_MainTex", fallback);
     }
 

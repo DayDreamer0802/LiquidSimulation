@@ -9,6 +9,7 @@ Shader "Rouge/EnemyBillboard"
         [HideInInspector] _EnemySheetAnimation0("Enemy Sheet Animation 0", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation1("Enemy Sheet Animation 1", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation2("Enemy Sheet Animation 2", Vector) = (3,2,9,0)
+        [HideInInspector] _EnemyTypeSizes("Enemy Type Sizes / Elite Multiplier", Vector) = (1,1,1,1)
         _BaseColor("Tint", Color) = (1,1,1,1)
         _ScaleMultiplier("Sprite Width / Height", Vector) = (1,1,0,0)
     }
@@ -48,6 +49,7 @@ Shader "Rouge/EnemyBillboard"
                 float4 _EnemySheetAnimation0;
                 float4 _EnemySheetAnimation1;
                 float4 _EnemySheetAnimation2;
+                float4 _EnemyTypeSizes;
                 float4 _BaseColor;
                 float4 _ScaleMultiplier;
             CBUFFER_END
@@ -76,7 +78,15 @@ Shader "Rouge/EnemyBillboard"
                 float4 positionScale = _PositionScaleBuffer[input.instanceID];
                 float4 state = _StateBuffer[input.instanceID];
                 float4 velocity = _VelocityBuffer[input.instanceID];
-                float2 spriteScale = max(state.y * _ScaleMultiplier.xy * 2.15, 0.001);
+                // Visual size is configured per archetype in tower_defense_balance.json.
+                // state.y remains the gameplay/navigation radius and must not replace it.
+                int rawEnemyKind = _EnemyKindBuffer[input.instanceID];
+                int enemyKind = rawEnemyKind & 0x3F;
+                float enemyTypeSize = _EnemyTypeSizes.x;
+                if (enemyKind == 1) enemyTypeSize = _EnemyTypeSizes.y;
+                else if (enemyKind == 2) enemyTypeSize = _EnemyTypeSizes.z;
+                if ((rawEnemyKind & 0x40) != 0) enemyTypeSize *= _EnemyTypeSizes.w;
+                float2 spriteScale = max(enemyTypeSize * _ScaleMultiplier.xy, 0.001);
                 float3 cameraRight = normalize(UNITY_MATRIX_I_V[0].xyz);
                 float3 cameraUp = normalize(UNITY_MATRIX_I_V[1].xyz);
                 float3 center = positionScale.xyz + float3(0, spriteScale.y * 0.72, 0);
@@ -87,7 +97,6 @@ Shader "Rouge/EnemyBillboard"
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 output.positionHCS = TransformWorldToHClip(positionWS);
                 float dead = step(0.5, fmod(floor(visualFlags * 0.5), 2.0));
-                int enemyKind = _EnemyKindBuffer[input.instanceID];
                 float4 animation = _EnemySheetAnimation0;
                 if (enemyKind == 1) animation = _EnemySheetAnimation1;
                 else if (enemyKind == 2) animation = _EnemySheetAnimation2;
