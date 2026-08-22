@@ -24,7 +24,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 20.0,
@@ -39,7 +42,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 40.0,
@@ -54,7 +60,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 80.0,
@@ -69,7 +78,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 160.0,
@@ -84,7 +96,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -109,7 +124,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 15.0,
@@ -124,7 +142,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 23.0,
@@ -139,7 +160,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 35.0,
@@ -154,7 +178,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 50.0,
@@ -169,7 +196,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -194,7 +224,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 100.0,
@@ -209,7 +242,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 150.0,
@@ -224,7 +260,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 300.0,
@@ -239,7 +278,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 500.0,
@@ -254,7 +296,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -279,7 +324,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 30.0,
@@ -294,7 +342,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 35.0,
@@ -309,7 +360,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 40.0,
@@ -324,7 +378,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 50.0,
@@ -339,7 +396,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -352,7 +412,7 @@
                 "purchaseCost": 800,
                 "levels": [
                     {
-                        "damage": 5.0,
+                        "damage": 8.0,
                         "attackInterval": 0.10000000149011612,
                         "attackRange": 20.0,
                         "targetCount": 4,
@@ -364,10 +424,13 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
-                        "damage": 7.0,
+                        "damage": 10.0,
                         "attackInterval": 0.10000000149011612,
                         "attackRange": 25.0,
                         "targetCount": 6,
@@ -379,10 +442,13 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
-                        "damage": 9.0,
+                        "damage": 12.0,
                         "attackInterval": 0.09000000357627869,
                         "attackRange": 30.0,
                         "targetCount": 8,
@@ -394,10 +460,13 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
-                        "damage": 12.0,
+                        "damage": 14.0,
                         "attackInterval": 0.07999999821186066,
                         "attackRange": 35.0,
                         "targetCount": 10,
@@ -409,10 +478,13 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
-                        "damage": 15.0,
+                        "damage": 18.0,
                         "attackInterval": 0.07000000029802323,
                         "attackRange": 40.0,
                         "targetCount": 12,
@@ -424,7 +496,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -437,7 +512,7 @@
                 "purchaseCost": 2000,
                 "levels": [
                     {
-                        "damage": 40.0,
+                        "damage": 200.0,
                         "attackInterval": 6.0,
                         "attackRange": 25.0,
                         "targetCount": 1,
@@ -449,7 +524,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 400.0,
@@ -464,7 +542,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 800.0,
@@ -479,7 +560,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 1600.0,
@@ -494,7 +578,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 3200.0,
@@ -509,7 +596,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 8.0,
                         "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     }
                 ]
             },
@@ -534,7 +624,10 @@
                         "orbitSphereRadius": 1.2000000476837159,
                         "orbitRadialSpeed": 20.0,
                         "orbitAngularSpeed": 360.0,
-                        "orbitOuterHoldDuration": 2.0
+                        "orbitOuterHoldDuration": 2.0,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 20.0,
@@ -549,7 +642,10 @@
                         "orbitSphereRadius": 1.2999999523162842,
                         "orbitRadialSpeed": 20.0,
                         "orbitAngularSpeed": 360.0,
-                        "orbitOuterHoldDuration": 2.5
+                        "orbitOuterHoldDuration": 2.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 25.0,
@@ -564,7 +660,10 @@
                         "orbitSphereRadius": 1.399999976158142,
                         "orbitRadialSpeed": 20.0,
                         "orbitAngularSpeed": 360.0,
-                        "orbitOuterHoldDuration": 3.0
+                        "orbitOuterHoldDuration": 3.0,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 30.0,
@@ -579,7 +678,10 @@
                         "orbitSphereRadius": 1.5,
                         "orbitRadialSpeed": 20.0,
                         "orbitAngularSpeed": 360.0,
-                        "orbitOuterHoldDuration": 3.5
+                        "orbitOuterHoldDuration": 3.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
                     },
                     {
                         "damage": 40.0,
@@ -594,7 +696,110 @@
                         "orbitSphereRadius": 1.7000000476837159,
                         "orbitRadialSpeed": 20.0,
                         "orbitAngularSpeed": 360.0,
-                        "orbitOuterHoldDuration": 5.0
+                        "orbitOuterHoldDuration": 5.0,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
+                    }
+                ]
+            },
+            {
+                "towerType": 7,
+                "placementRadius": 2.799999952316284,
+                "footprintSize": 8,
+                "footprintWidth": 8,
+                "footprintHeight": 8,
+                "purchaseCost": 1200,
+                "levels": [
+                    {
+                        "damage": 50.0,
+                        "attackInterval": 3.200000047683716,
+                        "attackRange": 14.0,
+                        "targetCount": 1,
+                        "projectileCount": 6,
+                        "aoeRadius": 3.0,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
+                    },
+                    {
+                        "damage": 75.0,
+                        "attackInterval": 3.0,
+                        "attackRange": 16.0,
+                        "targetCount": 1,
+                        "projectileCount": 8,
+                        "aoeRadius": 3.200000047683716,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.07999999821186066,
+                        "projectileFlightDuration": 1.0,
+                        "brownianStrength": 3.200000047683716
+                    },
+                    {
+                        "damage": 100.0,
+                        "attackInterval": 2.799999952316284,
+                        "attackRange": 18.0,
+                        "targetCount": 1,
+                        "projectileCount": 10,
+                        "aoeRadius": 3.4000000953674318,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.07500000298023224,
+                        "projectileFlightDuration": 0.949999988079071,
+                        "brownianStrength": 3.4000000953674318
+                    },
+                    {
+                        "damage": 125.0,
+                        "attackInterval": 2.5999999046325685,
+                        "attackRange": 20.0,
+                        "targetCount": 1,
+                        "projectileCount": 12,
+                        "aoeRadius": 3.5999999046325685,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.07000000029802323,
+                        "projectileFlightDuration": 0.8999999761581421,
+                        "brownianStrength": 3.5999999046325685
+                    },
+                    {
+                        "damage": 160.0,
+                        "attackInterval": 2.4000000953674318,
+                        "attackRange": 24.0,
+                        "targetCount": 1,
+                        "projectileCount": 16,
+                        "aoeRadius": 4.0,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.05999999865889549,
+                        "projectileFlightDuration": 0.8500000238418579,
+                        "brownianStrength": 3.799999952316284
                     }
                 ]
             }

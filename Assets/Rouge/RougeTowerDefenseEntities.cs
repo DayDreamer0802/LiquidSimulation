@@ -10,7 +10,8 @@ public enum RougeTowerType
     [InspectorName("火焰塔")] Flame,
     [InspectorName("激光塔")] Laser,
     [InspectorName("穿透激光塔")] PiercingLaser,
-    [InspectorName("水晶塔")] OrbitSphere
+    [InspectorName("水晶塔")] OrbitSphere,
+    [InspectorName("火箭齐射塔")] RocketBarrage
 }
 
 public enum RougeTowerTargetPriority
@@ -38,12 +39,16 @@ public readonly struct RougeTowerStats
     public readonly float OrbitRadialSpeed;
     public readonly float OrbitAngularSpeed;
     public readonly float OrbitOuterHoldDuration;
+    public readonly float ProjectileInterval;
+    public readonly float ProjectileFlightDuration;
+    public readonly float BrownianStrength;
 
     public RougeTowerStats(float damage, float attackInterval, float attackRadius,
         int targetCount = 1, int projectileCount = 1, float aoeRadius = 0f,
         float effectPercent = 0f, float effectDuration = 0f, float tickInterval = 0f,
         float orbitSphereRadius = 0f, float orbitRadialSpeed = 0f, float orbitAngularSpeed = 0f,
-        float orbitOuterHoldDuration = 0f)
+        float orbitOuterHoldDuration = 0f, float projectileInterval = 0f,
+        float projectileFlightDuration = 0f, float brownianStrength = 0f)
     {
         Damage = damage;
         AttackInterval = attackInterval;
@@ -58,16 +63,21 @@ public readonly struct RougeTowerStats
         OrbitRadialSpeed = orbitRadialSpeed;
         OrbitAngularSpeed = orbitAngularSpeed;
         OrbitOuterHoldDuration = orbitOuterHoldDuration;
+        ProjectileInterval = projectileInterval;
+        ProjectileFlightDuration = projectileFlightDuration;
+        BrownianStrength = brownianStrength;
     }
 }
 
 internal static class TowerDefenseVisuals
 {
     public const int MaxTowerLevel = 5;
-    public const int TowerTypeCount = 7;
+    public const int TowerTypeCount = 8;
     private static Material s_lineMaterial;
     private static Material s_laserConnectionMaterial;
     private static Material s_crystalLaserMaterial;
+    private static Material s_towerSelectedIndicatorMaterial;
+    private static Material s_towerUpgradeIndicatorMaterial;
     private static RougeTowerBalanceConfig s_runtimeBalance;
     private static float s_runtimeGoldCostMultiplier = 1f;
     private static float s_runtimeDamageMultiplier = 1f;
@@ -97,7 +107,8 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Flame: return "FLAME TOWER";
             case RougeTowerType.Laser: return "LASER TOWER";
             case RougeTowerType.PiercingLaser: return "PIERCING LASER";
-            default: return "CRYSTAL TOWER";
+            case RougeTowerType.OrbitSphere: return "CRYSTAL TOWER";
+            default: return "ROCKET BARRAGE";
         }
     }
 
@@ -111,7 +122,8 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Flame: return new Color(1f, 0.12f, 0.08f);
             case RougeTowerType.Laser: return new Color(0.15f, 1f, 0.58f);
             case RougeTowerType.PiercingLaser: return new Color(0.95f, 0.12f, 1f);
-            default: return new Color(0.35f, 0.62f, 1f);
+            case RougeTowerType.OrbitSphere: return new Color(0.35f, 0.62f, 1f);
+            default: return new Color(0.42f, 0.5f, 0.16f);
         }
     }
 
@@ -137,7 +149,8 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Flame: radius = 2.4f; cost = 625; break;
             case RougeTowerType.Laser: radius = 2.3f; cost = 750; break;
             case RougeTowerType.PiercingLaser: radius = 2.8f; cost = 1000; break;
-            default: radius = 2.5f; cost = 900; break;
+            case RougeTowerType.OrbitSphere: radius = 2.5f; cost = 900; break;
+            default: radius = 2.8f; cost = 1400; break;
         }
         cost = ScaleGoldCost(cost);
     }
@@ -184,7 +197,10 @@ internal static class TowerDefenseVisuals
             stats.OrbitSphereRadius,
             stats.OrbitRadialSpeed * attackSpeed,
             stats.OrbitAngularSpeed * attackSpeed,
-            stats.OrbitOuterHoldDuration / attackSpeed);
+            stats.OrbitOuterHoldDuration / attackSpeed,
+            stats.ProjectileInterval / attackSpeed,
+            stats.ProjectileFlightDuration,
+            stats.BrownianStrength);
     }
 
     public static RougeTowerStats GetFallbackStats(RougeTowerType type, int requestedLevel)
@@ -217,7 +233,7 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.PiercingLaser:
                 return new RougeTowerStats(Pick(i, 200f, 300f, 400f, 500f, 1000f),
                     Pick(i, 5f, 4.75f, 4.5f, 4.25f, 4f), Pick(i, 20f, 22f, 24f, 26f, 30f));
-            default:
+            case RougeTowerType.OrbitSphere:
                 return new RougeTowerStats(Pick(i, 30f, 45f, 65f, 90f, 125f),
                     Pick(i, 3f, 2.8f, 2.6f, 2.4f, 2.2f), Pick(i, 12f, 15f, 18f, 21f, 25f),
                     projectileCount: Pick(i, 1, 2, 2, 3, 4),
@@ -226,6 +242,14 @@ internal static class TowerDefenseVisuals
                     orbitRadialSpeed: Pick(i, 8f, 9f, 10f, 11f, 12f),
                     orbitAngularSpeed: Pick(i, 180f, 210f, 240f, 270f, 320f),
                     orbitOuterHoldDuration: Pick(i, 1.5f, 2f, 2.5f, 3f, 4f));
+            default:
+                return new RougeTowerStats(Pick(i, 18f, 28f, 42f, 62f, 90f),
+                    Pick(i, 3.2f, 3f, 2.8f, 2.6f, 2.4f), Pick(i, 18f, 21f, 24f, 27f, 30f),
+                    projectileCount: Pick(i, 6, 8, 10, 12, 16),
+                    aoeRadius: Pick(i, 2.25f, 2.45f, 2.65f, 2.85f, 3.1f),
+                    projectileInterval: Pick(i, 0.09f, 0.08f, 0.075f, 0.07f, 0.06f),
+                    projectileFlightDuration: Pick(i, 1.05f, 1f, 0.95f, 0.9f, 0.85f),
+                    brownianStrength: Pick(i, 3f, 3.2f, 3.4f, 3.6f, 3.8f));
         }
     }
 
@@ -276,6 +300,61 @@ internal static class TowerDefenseVisuals
         line.loop = true;
         line.positionCount = 65;
         return line;
+    }
+
+    public static GameObject CreateTowerEditIndicator(string name, Transform parent, bool selected)
+    {
+        GameObject indicator = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        indicator.name = name;
+        indicator.transform.SetParent(parent, false);
+        indicator.transform.localPosition = new Vector3(0f, 0.24f, 0f);
+        indicator.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        Collider collider = indicator.GetComponent<Collider>();
+        if (collider != null)
+        {
+            if (Application.isPlaying) UnityEngine.Object.Destroy(collider);
+            else UnityEngine.Object.DestroyImmediate(collider);
+        }
+        MeshRenderer renderer = indicator.GetComponent<MeshRenderer>();
+        renderer.sharedMaterial = GetTowerEditIndicatorMaterial(selected);
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+        renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        indicator.SetActive(false);
+        return indicator;
+    }
+
+    private static Material GetTowerEditIndicatorMaterial(bool selected)
+    {
+        // Each mode gets one shared material; animation and shape remain fully shader-driven.
+        Material cached = selected
+            ? s_towerSelectedIndicatorMaterial
+            : s_towerUpgradeIndicatorMaterial;
+        if (cached != null) return cached;
+
+        Shader shader = Shader.Find("Rouge/Tower Edit Indicator") ??
+                        Shader.Find("Universal Render Pipeline/Unlit") ??
+                        Shader.Find("Sprites/Default");
+        Material material = new Material(shader)
+        {
+            name = selected ? "Tower Selected Shader Material" : "Tower Upgrade Ready Shader Material",
+            renderQueue = 3020,
+            enableInstancing = true
+        };
+        Color tint = selected
+            ? new Color(1f, 0.38f, 0.035f, 1f)
+            : new Color(0.2f, 1f, 0.46f, 1f);
+        if (material.HasProperty("_TintColor")) material.SetColor("_TintColor", tint);
+        else if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", tint);
+        else material.color = tint;
+        if (material.HasProperty("_Mode")) material.SetFloat("_Mode", selected ? 0f : 1f);
+        if (material.HasProperty("_PulseSpeed")) material.SetFloat("_PulseSpeed", selected ? 1.42f : 1.05f);
+        if (material.HasProperty("_RotationSpeed")) material.SetFloat("_RotationSpeed", selected ? 1.5f : 0.9f);
+
+        if (selected) s_towerSelectedIndicatorMaterial = material;
+        else s_towerUpgradeIndicatorMaterial = material;
+        return material;
     }
 
     public static LineRenderer CreateBeamRenderer(string name, Transform parent, float width)
@@ -424,14 +503,27 @@ internal static class TowerDefenseVisuals
             if (renderers[i] is LineRenderer) continue;
             if (renderers[i] is SpriteRenderer spriteRenderer)
             {
-                spriteRenderer.color = transparent ? tint : Color.white;
+                // Keep the authored sci-fi artwork readable during placement. The grid
+                // and energy rings carry most of the valid/invalid state instead of
+                // turning the whole tower into a flat green or red silhouette.
+                spriteRenderer.color = transparent
+                    ? new Color(
+                        Mathf.Lerp(1f, tint.r, 0.24f),
+                        Mathf.Lerp(1f, tint.g, 0.24f),
+                        Mathf.Lerp(1f, tint.b, 0.24f),
+                        Mathf.Lerp(0.72f, tint.a, 0.3f))
+                    : Color.white;
                 continue;
             }
 
             Material material = renderers[i].material;
             Color baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : material.color;
             Color output = transparent
-                ? new Color(baseColor.r * tint.r, baseColor.g * tint.g, baseColor.b * tint.b, tint.a)
+                ? new Color(
+                    baseColor.r * Mathf.Lerp(1f, tint.r, 0.3f),
+                    baseColor.g * Mathf.Lerp(1f, tint.g, 0.3f),
+                    baseColor.b * Mathf.Lerp(1f, tint.b, 0.3f),
+                    Mathf.Lerp(0.72f, tint.a, 0.3f))
                 : new Color(baseColor.r, baseColor.g, baseColor.b, 1f);
             material.color = output;
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", output);

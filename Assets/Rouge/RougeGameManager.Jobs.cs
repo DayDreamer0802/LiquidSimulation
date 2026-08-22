@@ -1745,10 +1745,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             }
 
             float healthBeforeShieldedDamage = health;
-            float* towerDamageByType = stackalloc float[7];
-            for (int towerType = 0; towerType < 7; towerType++)
+            float* towerDamageByType = stackalloc float[TowerDefenseVisuals.TowerTypeCount];
+            for (int towerType = 0; towerType < TowerDefenseVisuals.TowerTypeCount; towerType++)
             {
-                int damageEntry = sourceIndex * 7 + towerType;
+                int damageEntry = sourceIndex * TowerDefenseVisuals.TowerTypeCount + towerType;
                 towerDamageByType[towerType] = TowerDamageByTypeFrames[damageEntry] == TowerLaserDamageFrame
                     ? TowerDamageByType[damageEntry]
                     : 0f;
@@ -1941,7 +1941,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             break;
                     }
                     int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
-                    if ((uint)sourceTowerType < 7u && health < healthBeforeTowerSkill)
+                    if ((uint)sourceTowerType < (uint)TowerDefenseVisuals.TowerTypeCount &&
+                        health < healthBeforeTowerSkill)
                     {
                         towerDamageByType[sourceTowerType] += healthBeforeTowerSkill - health;
                     }
@@ -2112,7 +2113,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     math.max(healthBeforeShieldedDamage - health, 0f));
                 float attributionScale = appliedDamage / incomingDamage;
                 long* totalDamagePtr = (long*)TowerDamageTotalsFixed.GetUnsafePtr();
-                for (int towerType = 0; towerType < 7; towerType++)
+                for (int towerType = 0; towerType < TowerDefenseVisuals.TowerTypeCount; towerType++)
                 {
                     long fixedDamage = (long)math.round(math.max(0f, towerDamageByType[towerType]) *
                         attributionScale * 1000f);
@@ -2825,6 +2826,13 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (math.abs(pos.y - RenderHeight) > 5f) return;
         float2 diff = pos.xz - skill.Position;
         if (math.lengthsq(diff) > skill.Radius * skill.Radius) return;
+
+        if (skill.PullForce > 0f)
+        {
+            float2 outward = math.normalizesafe(diff, new float2(0f, 1f));
+            float inwardSpeed = math.max(0f, -math.dot(vel.xz, outward));
+            vel.xz += outward * (skill.PullForce + inwardSpeed);
+        }
 
         if (skill.Damage > 0f)
         {

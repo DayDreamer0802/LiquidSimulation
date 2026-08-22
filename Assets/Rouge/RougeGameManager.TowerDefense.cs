@@ -28,7 +28,8 @@ public partial class RougeGameManager
         "Prefab/tower/Flame",
         "Prefab/tower/Laser",
         "Prefab/tower/PiercingLaser",
-        "Prefab/tower/OrbitSphere"
+        "Prefab/tower/OrbitSphere",
+        "Prefab/tower/RocketBarrage"
     };
     public static bool TowerDefenseBuildModeActive { get; private set; }
 
@@ -55,6 +56,7 @@ public partial class RougeGameManager
     private readonly Vector3[] _towerTargetPositions = new Vector3[FindTowerTargetsJob.MaxTargetsPerTower];
     private bool _towerDefenseInitialized;
     private bool _towerPlacementMode;
+    private bool _showAllTowerAttackRanges;
     private bool _towerDefenseDoubleSpeed;
     private bool _towerBuildSelectionActive = true;
     private bool _towerDefenseGameOver;
@@ -83,6 +85,8 @@ public partial class RougeGameManager
     private Text _towerDefenseModeText;
     private Text _towerDefenseGameOverText;
     private Image _mainTowerHealthFill;
+    private Button _towerCancelBuildButton;
+    private Text _towerCancelBuildButtonText;
     private Button _towerUpgradeButton;
     private Text _towerUpgradeButtonText;
     private Button _towerSellButton;
@@ -94,7 +98,7 @@ public partial class RougeGameManager
     private Text _towerPlaceEffectText;
     private readonly Button[] _towerBuildButtons = new Button[TowerDefenseVisuals.TowerTypeCount];
     private readonly Text[] _towerBuildButtonTexts = new Text[TowerDefenseVisuals.TowerTypeCount];
-    private readonly int[] _towerDamageRankOrder = { 0, 1, 2, 3, 4, 5, 6 };
+    private readonly int[] _towerDamageRankOrder = new int[TowerDefenseVisuals.TowerTypeCount];
     private float _nextTowerDefenseUiRefreshTime;
     private Image _bossHealthFill;
     private Text _bossStatusText;
@@ -316,6 +320,7 @@ public partial class RougeGameManager
             if (_towerProjectiles[i].Visual != null) Destroy(_towerProjectiles[i].Visual);
         }
         _towerProjectiles.Clear();
+        DisposeRocketBarrageSystem();
         while (_towerProjectileVisualPool.Count > 0)
         {
             GameObject pooled = _towerProjectileVisualPool.Pop();
@@ -668,6 +673,13 @@ public partial class RougeGameManager
             return;
         }
 
+        if (keyboard != null && keyboard.f2Key.wasPressedThisFrame)
+        {
+            _showAllTowerAttackRanges = !_showAllTowerAttackRanges;
+            RefreshTowerEditHints();
+            RefreshTowerDefenseUi(true);
+        }
+
         if (!_debugUnitViewMode && mouse != null && mouse.rightButton.wasPressedThisFrame)
         {
             SetTowerPlacementMode(false);
@@ -685,6 +697,7 @@ public partial class RougeGameManager
             if (keyboard.digit5Key.wasPressedThisFrame || keyboard.numpad5Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.Laser);
             if (keyboard.digit6Key.wasPressedThisFrame || keyboard.numpad6Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.PiercingLaser);
             if (keyboard.digit7Key.wasPressedThisFrame || keyboard.numpad7Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.OrbitSphere);
+            if (keyboard.digit8Key.wasPressedThisFrame || keyboard.numpad8Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.RocketBarrage);
             if (keyboard.uKey.wasPressedThisFrame) TryUpgradeSelectedTower();
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
@@ -1128,7 +1141,8 @@ public partial class RougeGameManager
             RougeDefenseTower tower = _defenseTowers[i];
             if (tower == null) continue;
             bool upgradeAvailable = tower.CanUpgrade && _towerDefenseGold >= tower.UpgradeCost;
-            tower.SetEditHintState(_towerPlacementMode, tower == _selectedTower, upgradeAvailable);
+            tower.SetEditHintState(_towerPlacementMode, tower == _selectedTower,
+                upgradeAvailable, _showAllTowerAttackRanges);
         }
     }
 
@@ -1159,6 +1173,7 @@ public partial class RougeGameManager
         ApplyPendingMainTowerAoe();
         UpdateTowerFireZones(dt);
         UpdateTowerProjectiles(dt);
+        UpdateRocketBarrageSystem(dt);
         UpdateTowerBeamVisuals(dt);
         UpdateOrbitSphereAttacks(dt);
         UpdateDefenseTowers(dt);
@@ -1936,8 +1951,10 @@ public partial class RougeGameManager
             Position = new float2(p.x, p.z),
             Radius = mainTower.hitAoeRadius,
             Damage = mainTower.hitAoeDamage,
-            EffectFlags = (int)SkillHitEffectTag.Knockback,
-            EffectKnockbackForce = mainTower.hitAoeKnockback
+            // Main-tower contact uses an explicit radial repulse in ProcessTowerArea.
+            // Keeping it separate from configurable skill knockback prevents the goal/
+            // caster centre rules from ever reversing the impulse toward the tower.
+            PullForce = Mathf.Max(0f, mainTower.hitAoeKnockback)
         });
         SpawnAOERing(new Vector3(p.x, renderHeight + 0.08f, p.z), mainTower.hitAoeRadius, 0.32f,
             new Color(0.2f, 0.85f, 1f, 1f));
@@ -2370,6 +2387,9 @@ public partial class RougeGameManager
             case RougeTowerType.OrbitSphere:
                 tower.PlayAttackAnimation(() => { StartOrbitSphereAttack(tower); });
                 break;
+            case RougeTowerType.RocketBarrage:
+                StartRocketBarrage(tower);
+                break;
         }
     }
 
@@ -2502,6 +2522,7 @@ public partial class RougeGameManager
     private void RenderOrbitSphereVisuals()
     {
         // OrbitSphere attacks are now rendered as thin crystal lasers by the tower itself.
+        RenderRocketBarrageMissiles();
     }
 
     private static Vector3 GetTowerMuzzlePosition(RougeDefenseTower tower)
@@ -2907,14 +2928,17 @@ public partial class RougeGameManager
         CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -630f, 18f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
         CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -420f, 18f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
         CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -210f, 18f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), 0f, 18f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
 
-        Button cancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "X\nCANCEL", new Color(0.55f, 0.08f, 0.1f, 1f));
-        RectTransform cancelRect = cancelBuildButton.GetComponent<RectTransform>();
+        _towerCancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "X\nCANCEL",
+            new Color(0.55f, 0.08f, 0.1f, 1f));
+        _towerCancelBuildButtonText = _towerCancelBuildButton.GetComponentInChildren<Text>();
+        RectTransform cancelRect = _towerCancelBuildButton.GetComponent<RectTransform>();
         cancelRect.anchorMin = new Vector2(0.5f, 0f);
         cancelRect.anchorMax = new Vector2(0.5f, 0f);
         cancelRect.anchoredPosition = new Vector2(500f, 18f);
         cancelRect.sizeDelta = new Vector2(200f, 68f);
-        cancelBuildButton.onClick.AddListener(() => SetTowerPlacementMode(false));
+        _towerCancelBuildButton.onClick.AddListener(CancelTowerBuildSelection);
 
         _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] UPGRADE", new Color(0.15f, 0.58f, 0.28f, 1f));
         RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
@@ -3079,6 +3103,12 @@ public partial class RougeGameManager
         RefreshTowerDamageRanking();
         RefreshTowerPlaceEffectHud();
         if (CommanderSkillsEnabled) RefreshTacticalSkillUi();
+        if (_towerCancelBuildButton != null)
+        {
+            bool canCancel = _towerPlacementMode &&
+                (HasTacticalSkillSelection || _towerBuildSelectionActive || _selectedTower != null);
+            SetPurchaseButtonAvailability(_towerCancelBuildButton, _towerCancelBuildButtonText, canCancel);
+        }
         if (_towerSellButton != null)
         {
             bool showSell = _towerPlacementMode && _selectedTower != null;
@@ -3149,6 +3179,7 @@ public partial class RougeGameManager
             else if (_towerPlacementMode)
             {
                 string tactical = GetTacticalSkillModeText();
+                string rangeMode = _showAllTowerAttackRanges ? "全部" : "仅选中";
                 string selected = !string.IsNullOrEmpty(tactical)
                     ? tactical
                     : _selectedTower != null
@@ -3163,7 +3194,9 @@ public partial class RougeGameManager
                     : _towerBuildSelectionActive
                         ? $"BUILD: {TowerDefenseVisuals.GetTowerName(_selectedBuildType)}  |  LEFT CLICK PLACE/SELECT"
                         : "BUILD CANCELLED  |  SELECT A TOWER BUTTON TO BUILD";
-                _towerDefenseModeText.text = "EDIT MODE ×0.5  |  RMB EXIT/CANCEL  |  MIDDLE-DRAG  |  WHEEL ZOOM\n" + selected;
+                _towerDefenseModeText.text =
+                    $"EDIT MODE ×0.5  |  F2 攻击范围：{rangeMode}  |  RMB EXIT/CANCEL  |  MIDDLE-DRAG  |  WHEEL ZOOM\n" +
+                    selected;
             }
             else
             {
@@ -3293,8 +3326,10 @@ public partial class RougeGameManager
                 return $"DMG {tower.Damage / 60f:0.#}/FRAME  RADIUS {tower.AttackRange:0.#}  TARGETS {tower.TargetCount}";
             case RougeTowerType.PiercingLaser:
                 return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  BEAM LEN {tower.AttackRange * 2f:0.#}";
-            default:
+            case RougeTowerType.OrbitSphere:
                 return $"CRYSTAL LASER DMG {tower.Damage:0.#}/{tower.TickInterval:0.##}s  COUNT {tower.ProjectileCount}  RADIUS {tower.OrbitSphereRadius:0.#}  MAX R {tower.AttackRange:0.#}  HOLD {tower.OrbitOuterHoldDuration:0.##}s  RADIAL {tower.OrbitRadialSpeed:0.#}  ROT {tower.OrbitAngularSpeed:0.#}°/s";
+            default:
+                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RANGE {tower.AttackRange:0.#}  MISSILES {tower.ProjectileCount} @ {tower.ProjectileInterval:0.##}s  AOE {tower.AoeRadius:0.#}  FLIGHT {tower.ProjectileFlightDuration:0.##}s  BROWNIAN {tower.BrownianStrength:0.#}";
         }
     }
 
@@ -3429,5 +3464,292 @@ public partial class RougeGameManager
         rect.offsetMin = new Vector2(3f, 3f);
         rect.offsetMax = new Vector2(-3f, -3f);
         image.enabled = value > 0.0001f;
+    }
+
+    // Rocket-barrage missiles are data only. No per-missile GameObject, Transform,
+    // MonoBehaviour, Instantiate, or Destroy work is performed by this system.
+    private const int MaxActiveRocketBarrageMissiles = 8192;
+    private const int MaxRocketBarrageShotsPerSalvo = 512;
+    private const int MaxRocketBarrageCatchUpShots = 8;
+
+    private struct ActiveRocketBarrageSalvo
+    {
+        public RougeDefenseTower Tower;
+        public int ShotsRemaining;
+        public float ShotTimer;
+        public uint RandomState;
+    }
+
+    private struct ActiveRocketBarrageMissile
+    {
+        public Vector3 Start;
+        public Vector3 End;
+        public Vector3 Position;
+        public Vector3 PreviousPosition;
+        public float2 BrownianOffset;
+        public float2 BrownianVelocity;
+        public float Elapsed;
+        public float Duration;
+        public float ArcHeight;
+        public float Damage;
+        public float Radius;
+        public float BrownianStrength;
+        public int KillGoldBonus;
+        public uint RandomState;
+    }
+
+    private readonly List<ActiveRocketBarrageSalvo> _activeRocketBarrageSalvos =
+        new List<ActiveRocketBarrageSalvo>(128);
+    private readonly List<ActiveRocketBarrageMissile> _activeRocketBarrageMissiles =
+        new List<ActiveRocketBarrageMissile>(MaxActiveRocketBarrageMissiles);
+    private readonly Matrix4x4[] _rocketBarrageRenderMatrices = new Matrix4x4[1023];
+    private Mesh _rocketBarrageMissileMesh;
+    private Material _rocketBarrageMissileMaterial;
+
+    private void StartRocketBarrage(RougeDefenseTower tower)
+    {
+        if (tower == null) return;
+        for (int i = 0; i < _activeRocketBarrageSalvos.Count; i++)
+        {
+            if (_activeRocketBarrageSalvos[i].Tower == tower) return;
+        }
+
+        uint seed = (uint)tower.GetInstanceID() * 747796405u +
+                    (uint)Mathf.Max(1, _towerLaserDamageFrame) * 2891336453u;
+        if (seed == 0u) seed = 0x9E3779B9u;
+        _activeRocketBarrageSalvos.Add(new ActiveRocketBarrageSalvo
+        {
+            Tower = tower,
+            ShotsRemaining = Mathf.Clamp(tower.ProjectileCount, 1, MaxRocketBarrageShotsPerSalvo),
+            ShotTimer = 0f,
+            RandomState = seed
+        });
+    }
+
+    private void UpdateRocketBarrageSystem(float dt)
+    {
+        UpdateRocketBarrageSalvos(dt);
+        UpdateRocketBarrageMissiles(dt);
+    }
+
+    private void UpdateRocketBarrageSalvos(float dt)
+    {
+        for (int i = _activeRocketBarrageSalvos.Count - 1; i >= 0; i--)
+        {
+            ActiveRocketBarrageSalvo salvo = _activeRocketBarrageSalvos[i];
+            RougeDefenseTower tower = salvo.Tower;
+            if (tower == null)
+            {
+                RemoveRocketBarrageSalvoAtSwapBack(i);
+                continue;
+            }
+
+            salvo.ShotTimer -= dt * tower.AttackSpeedMultiplier;
+            int catchUpShots = 0;
+            while (salvo.ShotTimer <= 0f && salvo.ShotsRemaining > 0 &&
+                   catchUpShots < MaxRocketBarrageCatchUpShots)
+            {
+                tower.PlayAttackAnimation(null);
+                SpawnRocketBarrageMissile(tower, ref salvo.RandomState);
+                salvo.ShotsRemaining--;
+                salvo.ShotTimer += Mathf.Max(0.01f, tower.ProjectileInterval);
+                catchUpShots++;
+            }
+
+            if (salvo.ShotsRemaining <= 0)
+            {
+                RemoveRocketBarrageSalvoAtSwapBack(i);
+                continue;
+            }
+            _activeRocketBarrageSalvos[i] = salvo;
+        }
+    }
+
+    private void SpawnRocketBarrageMissile(RougeDefenseTower tower, ref uint randomState)
+    {
+        if (_activeRocketBarrageMissiles.Count >= MaxActiveRocketBarrageMissiles) return;
+
+        Vector3 towerPosition = tower.transform.position;
+        float2 landingOffset = NextPointInsideUnitCircle(ref randomState) * tower.AttackRange;
+        Vector3 end = new Vector3(
+            Mathf.Clamp(towerPosition.x + landingOffset.x, -arenaHalfExtent, arenaHalfExtent),
+            renderHeight + 0.2f,
+            Mathf.Clamp(towerPosition.z + landingOffset.y, -arenaHalfExtent, arenaHalfExtent));
+        Vector3 start = GetTowerMuzzlePosition(tower);
+        float distance = Vector2.Distance(new Vector2(start.x, start.z), new Vector2(end.x, end.z));
+        Vector3 firstDirection = end - start;
+        if (firstDirection.sqrMagnitude < 0.001f) firstDirection = Vector3.up;
+        Vector3 initialPosition = start + firstDirection.normalized * 0.05f;
+
+        _activeRocketBarrageMissiles.Add(new ActiveRocketBarrageMissile
+        {
+            Start = start,
+            End = end,
+            Position = initialPosition,
+            PreviousPosition = start,
+            BrownianOffset = float2.zero,
+            BrownianVelocity = float2.zero,
+            Elapsed = 0f,
+            Duration = Mathf.Max(0.05f, tower.ProjectileFlightDuration),
+            ArcHeight = Mathf.Max(8f, distance * 0.55f),
+            Damage = tower.Damage,
+            Radius = Mathf.Max(0.1f, tower.AoeRadius),
+            BrownianStrength = Mathf.Max(0f, tower.BrownianStrength),
+            KillGoldBonus = tower.KillGoldBonus,
+            RandomState = NextRocketRandom(ref randomState)
+        });
+    }
+
+    private void UpdateRocketBarrageMissiles(float dt)
+    {
+        float safeDt = Mathf.Max(0f, dt);
+        float sqrtDt = Mathf.Sqrt(safeDt);
+        float velocityDamping = Mathf.Exp(-3.25f * safeDt);
+        for (int i = _activeRocketBarrageMissiles.Count - 1; i >= 0; i--)
+        {
+            ActiveRocketBarrageMissile missile = _activeRocketBarrageMissiles[i];
+            missile.Elapsed += safeDt;
+            float progress = Mathf.Clamp01(missile.Elapsed / missile.Duration);
+            missile.PreviousPosition = missile.Position;
+
+            // Damped, velocity-integrated Brownian forcing avoids harsh teleporting while
+            // retaining a random walk. The envelope preserves both trajectory endpoints.
+            float2 randomDirection = NextUnitDirection(ref missile.RandomState);
+            missile.BrownianVelocity = missile.BrownianVelocity * velocityDamping +
+                randomDirection * (missile.BrownianStrength * sqrtDt);
+            missile.BrownianOffset += missile.BrownianVelocity * safeDt;
+            float driftEnvelope = Mathf.Sin(progress * Mathf.PI);
+
+            Vector3 position = Vector3.LerpUnclamped(missile.Start, missile.End, progress);
+            position.y += Mathf.Sin(progress * Mathf.PI) * missile.ArcHeight;
+            position.x += missile.BrownianOffset.x * driftEnvelope;
+            position.z += missile.BrownianOffset.y * driftEnvelope;
+            missile.Position = position;
+
+            if (progress < 1f)
+            {
+                _activeRocketBarrageMissiles[i] = missile;
+                continue;
+            }
+
+            ResolveRocketBarrageImpact(missile);
+            RemoveRocketBarrageMissileAtSwapBack(i);
+        }
+    }
+
+    private void ResolveRocketBarrageImpact(ActiveRocketBarrageMissile missile)
+    {
+        float2 impact = new float2(missile.End.x, missile.End.z);
+        TryAddSkillArea(new RougeSkillArea
+        {
+            Type = 13,
+            Position = impact,
+            Radius = missile.Radius,
+            Damage = missile.Damage,
+            SourceTowerTypePlusOne = (int)RougeTowerType.RocketBarrage + 1,
+            SourceTowerKillGoldBonus = missile.KillGoldBonus
+        });
+        SpawnExplosionVFX(missile.End + Vector3.up * 0.35f,
+            Mathf.Max(1.25f, missile.Radius * 0.72f));
+        SpawnAOERing(missile.End, missile.Radius, 0.26f,
+            new Color(1f, 0.3f, 0.035f, 1f));
+    }
+
+    private void RenderRocketBarrageMissiles()
+    {
+        int count = _activeRocketBarrageMissiles.Count;
+        if (count <= 0 || !EnsureRocketBarrageRenderResources()) return;
+
+        Camera camera = RougeCameraFollow.ResolveCamera();
+        Quaternion facing = camera != null
+            ? Quaternion.LookRotation(-camera.transform.forward, camera.transform.up)
+            : Quaternion.Euler(90f, 0f, 0f);
+        Quaternion inverseFacing = Quaternion.Inverse(facing);
+
+        for (int startIndex = 0; startIndex < count; startIndex += _rocketBarrageRenderMatrices.Length)
+        {
+            int batchCount = Mathf.Min(_rocketBarrageRenderMatrices.Length, count - startIndex);
+            for (int i = 0; i < batchCount; i++)
+            {
+                ActiveRocketBarrageMissile missile = _activeRocketBarrageMissiles[startIndex + i];
+                Vector3 worldDirection = missile.Position - missile.PreviousPosition;
+                if (worldDirection.sqrMagnitude < 0.000001f) worldDirection = missile.End - missile.Start;
+                Vector3 localDirection = inverseFacing * worldDirection;
+                float angle = Mathf.Atan2(-localDirection.x, localDirection.y) * Mathf.Rad2Deg;
+                Quaternion rotation = facing * Quaternion.Euler(0f, 0f, angle);
+                _rocketBarrageRenderMatrices[i] = Matrix4x4.TRS(
+                    missile.Position, rotation, new Vector3(0.58f, 1.35f, 1f));
+            }
+            Graphics.DrawMeshInstanced(_rocketBarrageMissileMesh, 0,
+                _rocketBarrageMissileMaterial, _rocketBarrageRenderMatrices, batchCount);
+        }
+    }
+
+    private bool EnsureRocketBarrageRenderResources()
+    {
+        _rocketBarrageMissileMesh ??= _bulletMesh != null ? _bulletMesh : enemyMesh;
+        if (_rocketBarrageMissileMesh == null) return false;
+        if (_rocketBarrageMissileMaterial != null) return true;
+
+        _rocketBarrageMissileMaterial = _bulletMaterial != null
+            ? new Material(_bulletMaterial)
+            : CreateRuntimeMaterial("Rouge/SpriteInstanced", "Rocket Barrage Missile", true);
+        _rocketBarrageMissileMaterial.name = "Rocket Barrage Missile (Instanced)";
+        _rocketBarrageMissileMaterial.hideFlags = HideFlags.DontSave;
+        _rocketBarrageMissileMaterial.enableInstancing = true;
+        Texture2D projectileTexture = Resources.Load<Texture2D>("Sprites/projectile_energy");
+        if (projectileTexture != null) _rocketBarrageMissileMaterial.SetTexture("_MainTex", projectileTexture);
+        ApplyBaseColor(_rocketBarrageMissileMaterial, new Color(1f, 0.32f, 0.045f, 1f));
+        return true;
+    }
+
+    private void DisposeRocketBarrageSystem()
+    {
+        _activeRocketBarrageSalvos.Clear();
+        _activeRocketBarrageMissiles.Clear();
+        if (_rocketBarrageMissileMaterial != null) Destroy(_rocketBarrageMissileMaterial);
+        _rocketBarrageMissileMaterial = null;
+        _rocketBarrageMissileMesh = null;
+    }
+
+    private void RemoveRocketBarrageSalvoAtSwapBack(int index)
+    {
+        int last = _activeRocketBarrageSalvos.Count - 1;
+        _activeRocketBarrageSalvos[index] = _activeRocketBarrageSalvos[last];
+        _activeRocketBarrageSalvos.RemoveAt(last);
+    }
+
+    private void RemoveRocketBarrageMissileAtSwapBack(int index)
+    {
+        int last = _activeRocketBarrageMissiles.Count - 1;
+        _activeRocketBarrageMissiles[index] = _activeRocketBarrageMissiles[last];
+        _activeRocketBarrageMissiles.RemoveAt(last);
+    }
+
+    private static float2 NextPointInsideUnitCircle(ref uint state)
+    {
+        float angle = NextRocket01(ref state) * Mathf.PI * 2f;
+        float radius = Mathf.Sqrt(NextRocket01(ref state));
+        return new float2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+    }
+
+    private static float2 NextUnitDirection(ref uint state)
+    {
+        float angle = NextRocket01(ref state) * Mathf.PI * 2f;
+        return new float2(Mathf.Cos(angle), Mathf.Sin(angle));
+    }
+
+    private static float NextRocket01(ref uint state)
+    {
+        return (NextRocketRandom(ref state) & 0x00FFFFFFu) * (1f / 16777216f);
+    }
+
+    private static uint NextRocketRandom(ref uint state)
+    {
+        if (state == 0u) state = 0x9E3779B9u;
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return state;
     }
 }

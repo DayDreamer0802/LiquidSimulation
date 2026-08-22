@@ -392,6 +392,13 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 DrawLevelRow(levels, "orbitOuterHoldDuration", "Outer Hold Duration (seconds)");
                 DrawLevelRow(levels, "tickInterval", "Damage Interval");
                 break;
+            case RougeTowerType.RocketBarrage:
+                DrawLevelRow(levels, "projectileCount", "Missiles / Salvo");
+                DrawLevelRow(levels, "aoeRadius", "Impact AOE Radius");
+                DrawLevelRow(levels, "projectileInterval", "Salvo Shot Interval");
+                DrawLevelRow(levels, "projectileFlightDuration", "Missile Flight Duration");
+                DrawLevelRow(levels, "brownianStrength", "Brownian Drift Strength");
+                break;
         }
     }
 

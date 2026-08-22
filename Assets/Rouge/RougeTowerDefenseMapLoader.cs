@@ -127,9 +127,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                     instance.transform.localScale = new Vector3(map.CellSize, visualHeight, map.CellSize);
                     if (!fallbackMaterials.TryGetValue(tileIndex, out Material material))
                     {
-                        Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-                        material = new Material(shader) { name = $"Runtime {definition.name}" };
-                        material.color = definition.editorColor;
+                        material = CreateFallbackTileMaterial(definition);
                         fallbackMaterials.Add(tileIndex, material);
                         _runtimeMaterials.Add(material);
                     }
@@ -140,6 +138,79 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 for (int i = 0; i < visualColliders.Length; i++) visualColliders[i].enabled = false;
             }
         }
+    }
+
+    private Material CreateFallbackTileMaterial(RougeTowerDefenseMap.TileDefinition definition)
+    {
+        if (definition.towerPlace)
+        {
+            Shader padShader = Shader.Find("Rouge/Tower Placement Pad");
+            if (padShader != null)
+            {
+                Material padMaterial = new Material(padShader)
+                {
+                    name = $"Runtime Sci-Fi Placement Pad - {definition.name}"
+                };
+                Color.RGBToHSV(definition.editorColor, out float hue, out float saturation,
+                    out float value);
+                Color accent = Color.HSVToRGB(hue, Mathf.Max(0.62f, saturation),
+                    Mathf.Max(0.78f, value));
+                accent.a = 1f;
+                padMaterial.SetColor("_AccentColor", accent);
+                padMaterial.SetColor("_BaseColor", new Color(0.07f, 0.135f, 0.19f, 1f));
+                padMaterial.SetFloat("_CellSize", map.CellSize);
+                padMaterial.SetVector("_GridOrigin",
+                    new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
+                padMaterial.SetFloat("_FrameWidth", 0.028f);
+                padMaterial.SetFloat("_GlowStrength", 1.05f);
+                padMaterial.SetFloat("_PulseSpeed", 0.7f);
+                padMaterial.enableInstancing = true;
+                return padMaterial;
+            }
+        }
+
+        if (!definition.blocksNavigation && !definition.towerPlace)
+        {
+            Shader groundShader = Shader.Find("Rouge/Sci-Fi Ground Tile");
+            if (groundShader != null)
+            {
+                Material groundMaterial = new Material(groundShader)
+                {
+                    name = $"Runtime Sci-Fi Ground - {definition.name}"
+                };
+                Color source = definition.editorColor;
+                source.a = 1f;
+                Color baseColor = Color.Lerp(new Color(0.13f, 0.21f, 0.27f, 1f), source, 0.58f);
+                Color panelColor = Color.Lerp(baseColor * 0.72f,
+                    new Color(0.08f, 0.15f, 0.21f, 1f), 0.42f);
+                panelColor.a = 1f;
+                Color accentColor = Color.Lerp(baseColor,
+                    new Color(0.05f, 0.62f, 0.72f, 1f), 0.36f);
+                accentColor.a = 1f;
+                groundMaterial.SetColor("_BaseColor", baseColor);
+                groundMaterial.SetColor("_PanelColor", panelColor);
+                groundMaterial.SetColor("_AccentColor", accentColor);
+                groundMaterial.SetFloat("_CellSize", map.CellSize);
+                groundMaterial.SetVector("_GridOrigin",
+                    new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
+                groundMaterial.SetFloat("_SeamWidth", 0.018f);
+                groundMaterial.SetFloat("_DetailStrength", 0.42f);
+                groundMaterial.enableInstancing = true;
+                return groundMaterial;
+            }
+        }
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        Material material = new Material(shader) { name = $"Runtime {definition.name}" };
+        Color fallbackColor = definition.towerPlace
+            ? Color.Lerp(new Color(0.07f, 0.135f, 0.19f, 1f), definition.editorColor, 0.28f)
+            : definition.editorColor;
+        material.color = fallbackColor;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", fallbackColor);
+        if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", definition.towerPlace ? 0.72f : 0f);
+        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", definition.towerPlace ? 0.68f : 0.2f);
+        material.enableInstancing = true;
+        return material;
     }
 
     private void BuildMergedSurfaces(bool towerPlace)
@@ -235,8 +306,18 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         Shader shader = Shader.Find("Rouge/Tower Place Grid");
         if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
         _towerPlaceGridMaterial = new Material(shader) { name = "Runtime Tower Place Grid" };
+        if (_towerPlaceGridMaterial.HasProperty("_BaseColor"))
+            _towerPlaceGridMaterial.SetColor("_BaseColor", new Color(0.008f, 0.07f, 0.11f, 0.035f));
+        if (_towerPlaceGridMaterial.HasProperty("_LineColor"))
+            _towerPlaceGridMaterial.SetColor("_LineColor", new Color(0.32f, 0.84f, 0.92f, 0.82f));
         if (_towerPlaceGridMaterial.HasProperty("_CellSize"))
             _towerPlaceGridMaterial.SetFloat("_CellSize", map.MicroCellSize);
+        if (_towerPlaceGridMaterial.HasProperty("_LineWidth"))
+            _towerPlaceGridMaterial.SetFloat("_LineWidth", 0.03f);
+        if (_towerPlaceGridMaterial.HasProperty("_InnerRailDistance"))
+            _towerPlaceGridMaterial.SetFloat("_InnerRailDistance", 0.085f);
+        if (_towerPlaceGridMaterial.HasProperty("_FlowSpeed"))
+            _towerPlaceGridMaterial.SetFloat("_FlowSpeed", 0.85f);
         if (_towerPlaceGridMaterial.HasProperty("_GridOrigin"))
             _towerPlaceGridMaterial.SetVector("_GridOrigin", new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
         _runtimeMaterials.Add(_towerPlaceGridMaterial);
@@ -381,8 +462,18 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         _towerFootprintGridMaterial = new Material(shader) { name = "Runtime Tower Footprint Grid" };
         if (_towerFootprintGridMaterial.HasProperty("_UseVertexColor"))
             _towerFootprintGridMaterial.SetFloat("_UseVertexColor", 1f);
+        if (_towerFootprintGridMaterial.HasProperty("_BaseColor"))
+            _towerFootprintGridMaterial.SetColor("_BaseColor", new Color(0f, 0f, 0f, 0f));
+        if (_towerFootprintGridMaterial.HasProperty("_LineColor"))
+            _towerFootprintGridMaterial.SetColor("_LineColor", new Color(0.55f, 0.96f, 1f, 1f));
         if (_towerFootprintGridMaterial.HasProperty("_CellSize"))
             _towerFootprintGridMaterial.SetFloat("_CellSize", map.MicroCellSize);
+        if (_towerFootprintGridMaterial.HasProperty("_LineWidth"))
+            _towerFootprintGridMaterial.SetFloat("_LineWidth", 0.022f);
+        if (_towerFootprintGridMaterial.HasProperty("_InnerRailDistance"))
+            _towerFootprintGridMaterial.SetFloat("_InnerRailDistance", 0.085f);
+        if (_towerFootprintGridMaterial.HasProperty("_FlowSpeed"))
+            _towerFootprintGridMaterial.SetFloat("_FlowSpeed", 0.9f);
         if (_towerFootprintGridMaterial.HasProperty("_GridOrigin"))
             _towerFootprintGridMaterial.SetVector("_GridOrigin",
                 new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
@@ -443,11 +534,11 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         float originZ = boundsSize.y * cellSize * -0.5f;
 
         int cellIndex = 0;
-        AppendTowerCellSet(_bluePlacedTowerGridCells, new Color32(35, 125, 255, 165), anchor,
+        AppendTowerCellSet(_bluePlacedTowerGridCells, new Color32(38, 150, 255, 220), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_greenValidTowerGridCells, new Color32(24, 255, 62, 145), anchor,
+        AppendTowerCellSet(_greenValidTowerGridCells, new Color32(30, 255, 76, 210), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_redInvalidTowerGridCells, new Color32(255, 28, 18, 205), anchor,
+        AppendTowerCellSet(_redInvalidTowerGridCells, new Color32(255, 46, 30, 238), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
 
         mesh.Clear();
@@ -467,10 +558,11 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             int y = cell.y - anchor.y;
             int vertex = cellIndex * 4;
             int triangle = cellIndex * 6;
-            float x0 = originX + x * cellSize;
-            float x1 = x0 + cellSize;
-            float z0 = originZ + y * cellSize;
-            float z1 = z0 + cellSize;
+            float inset = cellSize * 0.11f;
+            float x0 = originX + x * cellSize + inset;
+            float x1 = originX + (x + 1) * cellSize - inset;
+            float z0 = originZ + y * cellSize + inset;
+            float z1 = originZ + (y + 1) * cellSize - inset;
             vertices[vertex] = new Vector3(x0, 0f, z0);
             vertices[vertex + 1] = new Vector3(x0, 0f, z1);
             vertices[vertex + 2] = new Vector3(x1, 0f, z1);

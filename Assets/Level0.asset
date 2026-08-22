@@ -66,7 +66,7 @@ MonoBehaviour:
     - {fileID: 0}
     - {fileID: 0}
     - {fileID: 0}
-    editorColor: {r: 0.2, g: 0.3, b: 0.38, a: 0.85}
+    editorColor: {r: 0.2336537, g: 0.33226278, b: 0.41509432, a: 0.85}
     blocksNavigation: 0
     towerPlace: 0
     towerPlaceEffect: 0
@@ -206,7 +206,7 @@ MonoBehaviour:
     - {fileID: 0}
     - {fileID: 0}
     - {fileID: 0}
-    editorColor: {r: 0.95325744, g: 1, b: 0.82075465, a: 0.7921569}
+    editorColor: {r: 0.75157225, g: 1, b: 0.96219695, a: 0.7921569}
     blocksNavigation: 0
     towerPlace: 1
     towerPlaceEffect: 3
@@ -357,7 +357,7 @@ MonoBehaviour:
     maximumWaves: 100
   hasMainTower: 1
   mainTowerCell: {x: 8, y: 8}
-  mainTowerPrefab: {fileID: 919132149155446097, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
+  mainTowerPrefab: {fileID: 3411607186943565110, guid: 3d3c7fc986940d949bcf3a40435bcc7c, type: 3}
   hasBossSpawn: 1
   bossSpawnCell: {x: 8, y: 16}
   bossPrefab: {fileID: 0}

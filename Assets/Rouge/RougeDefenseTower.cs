@@ -136,8 +136,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
     [System.NonSerialized] internal LineRenderer attackRing;
-    [System.NonSerialized] private LineRenderer selectedHintRing;
-    [System.NonSerialized] private LineRenderer upgradeHintRing;
+    [System.NonSerialized] private GameObject selectedHintEffect;
+    [System.NonSerialized] private GameObject upgradeHintEffect;
     [System.NonSerialized] private float selectedHintRadius;
     [System.NonSerialized] private float upgradeHintRadius;
     private const float SelectedHintRadiusPadding = 0.2f;
@@ -178,6 +178,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float OrbitRadialSpeed => Stats.OrbitRadialSpeed;
     public float OrbitAngularSpeed => Stats.OrbitAngularSpeed;
     public float OrbitOuterHoldDuration => Stats.OrbitOuterHoldDuration;
+    public float ProjectileInterval => Stats.ProjectileInterval;
+    public float ProjectileFlightDuration => Stats.ProjectileFlightDuration;
+    public float BrownianStrength => Stats.BrownianStrength;
     public float PlacementRadius => placementRadius;
     public int PurchaseCost => purchaseCost;
     public int PlacementCost => ScaleGoldCost(purchaseCost);
@@ -280,20 +283,29 @@ public sealed class RougeDefenseTower : MonoBehaviour
             new Color(0.15f, 0.72f, 1f, 0.78f), visible);
     }
 
-    internal void SetEditHintState(bool editMode, bool selected, bool upgradeAvailable)
+    internal void SetEditHintState(bool editMode, bool selected, bool upgradeAvailable,
+        bool showAllAttackRanges)
     {
         bool showSelected = editMode && selected;
-        bool showUpgradeable = editMode && upgradeAvailable;
+        bool showUpgradeable = editMode && upgradeAvailable && !selected;
         if (showSelected || showUpgradeable) EnsureEditHintVisuals();
 
         // Placed tower ranges belong to the active edit selection only. Placement
         // previews are not in _defenseTowers and keep using SetPreviewState instead.
-        SetRangeVisibility(showSelected);
+        SetRangeVisibility(editMode && (showSelected || showAllAttackRanges));
 
-        TowerDefenseVisuals.UpdateCircle(selectedHintRing, transform.position, selectedHintRadius,
-            new Color(1f, 0.46f, 0.05f, 1f), showSelected, 0.5f);
-        TowerDefenseVisuals.UpdateCircle(upgradeHintRing, transform.position, upgradeHintRadius,
-            new Color(0.18f, 1f, 0.38f, 1f), showUpgradeable, 0.5f);
+        if (selectedHintEffect != null)
+        {
+            selectedHintEffect.SetActive(showSelected);
+            selectedHintEffect.transform.localScale = new Vector3(
+                selectedHintRadius * 2.35f, selectedHintRadius * 2.35f, 1f);
+        }
+        if (upgradeHintEffect != null)
+        {
+            upgradeHintEffect.SetActive(showUpgradeable);
+            upgradeHintEffect.transform.localScale = new Vector3(
+                upgradeHintRadius * 2.05f, upgradeHintRadius * 2.05f, 1f);
+        }
     }
 
     private void CacheEditHintRadii()
@@ -635,10 +647,12 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     private void EnsureEditHintVisuals()
     {
-        if (selectedHintRing == null)
-            selectedHintRing = TowerDefenseVisuals.CreateCircleRenderer("Tower Selected Hint Ring", transform);
-        if (upgradeHintRing == null)
-            upgradeHintRing = TowerDefenseVisuals.CreateCircleRenderer("Tower Upgrade Hint Ring", transform);
+        if (selectedHintEffect == null)
+            selectedHintEffect = TowerDefenseVisuals.CreateTowerEditIndicator(
+                "Tower Selected Shader Effect", transform, true);
+        if (upgradeHintEffect == null)
+            upgradeHintEffect = TowerDefenseVisuals.CreateTowerEditIndicator(
+                "Tower Upgrade Ready Shader Effect", transform, false);
     }
 
     private void EnsureLaserBeamMesh()
@@ -701,6 +715,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     private static bool GetDefaultTargetedDamage(RougeTowerType type)
     {
-        return type != RougeTowerType.Ice && type != RougeTowerType.OrbitSphere;
+        return type != RougeTowerType.Ice && type != RougeTowerType.OrbitSphere &&
+               type != RougeTowerType.RocketBarrage;
     }
 }

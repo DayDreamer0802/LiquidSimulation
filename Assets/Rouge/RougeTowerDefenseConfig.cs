@@ -19,6 +19,12 @@ public sealed class RougeTowerLevelConfig
     [Min(0f)] public float orbitAngularSpeed = 180f;
     [Min(0f), Tooltip("Seconds crystal lasers remain at maximum range before returning.")]
     public float orbitOuterHoldDuration = 1.5f;
+    [Min(0.01f), Tooltip("Seconds between shots inside a rocket-tower salvo.")]
+    public float projectileInterval = 0.09f;
+    [Min(0.05f), Tooltip("Flight time for one rocket-tower missile.")]
+    public float projectileFlightDuration = 1.05f;
+    [Min(0f), Tooltip("Strength of the rocket tower's damped Brownian air drift.")]
+    public float brownianStrength = 3f;
 
     public RougeTowerStats ToStats()
     {
@@ -26,7 +32,8 @@ public sealed class RougeTowerLevelConfig
             Mathf.Max(1, targetCount), Mathf.Max(1, projectileCount), Mathf.Max(0f, aoeRadius),
             Mathf.Clamp(effectPercent, 0f, 100f), Mathf.Max(0f, effectDuration), Mathf.Max(0f, tickInterval),
             Mathf.Max(0.1f, orbitSphereRadius), Mathf.Max(0.1f, orbitRadialSpeed), Mathf.Max(0f, orbitAngularSpeed),
-            Mathf.Max(0f, orbitOuterHoldDuration));
+            Mathf.Max(0f, orbitOuterHoldDuration), Mathf.Max(0.01f, projectileInterval),
+            Mathf.Max(0.05f, projectileFlightDuration), Mathf.Max(0f, brownianStrength));
     }
 }
 
@@ -95,7 +102,8 @@ public sealed class RougeTowerBalanceConfig
             case RougeTowerType.Flame: config.placementRadius = 2.4f; config.purchaseCost = 625; break;
             case RougeTowerType.Laser: config.placementRadius = 2.3f; config.purchaseCost = 750; break;
             case RougeTowerType.PiercingLaser: config.placementRadius = 2.8f; config.purchaseCost = 1000; break;
-            default: config.placementRadius = 2.5f; config.purchaseCost = 900; break;
+            case RougeTowerType.OrbitSphere: config.placementRadius = 2.5f; config.purchaseCost = 900; break;
+            default: config.placementRadius = 2.8f; config.purchaseCost = 1400; break;
         }
         for (int i = 0; i < TowerDefenseVisuals.MaxTowerLevel; i++)
         {
@@ -121,7 +129,10 @@ public sealed class RougeTowerBalanceConfig
             orbitSphereRadius = fallback.OrbitSphereRadius,
             orbitRadialSpeed = fallback.OrbitRadialSpeed,
             orbitAngularSpeed = fallback.OrbitAngularSpeed,
-            orbitOuterHoldDuration = fallback.OrbitOuterHoldDuration
+            orbitOuterHoldDuration = fallback.OrbitOuterHoldDuration,
+            projectileInterval = fallback.ProjectileInterval,
+            projectileFlightDuration = fallback.ProjectileFlightDuration,
+            brownianStrength = fallback.BrownianStrength
         };
     }
 }
