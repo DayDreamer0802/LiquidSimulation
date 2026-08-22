@@ -1,5 +1,5 @@
 {
-    "version": 2,
+    "version": 3,
     "towerBalance": {
         "sellRefundMultiplier": 0.33000001311302187,
         "towers": [
@@ -267,7 +267,7 @@
                 "purchaseCost": 1000,
                 "levels": [
                     {
-                        "damage": 20.0,
+                        "damage": 25.0,
                         "attackInterval": 5.0,
                         "attackRange": 15.0,
                         "targetCount": 1,
@@ -286,7 +286,7 @@
                         "attackInterval": 4.800000190734863,
                         "attackRange": 20.0,
                         "targetCount": 1,
-                        "projectileCount": 1,
+                        "projectileCount": 2,
                         "aoeRadius": 8.0,
                         "effectPercent": 0.0,
                         "effectDuration": 4.0,
@@ -297,11 +297,11 @@
                         "orbitOuterHoldDuration": 1.5
                     },
                     {
-                        "damage": 45.0,
+                        "damage": 35.0,
                         "attackInterval": 4.599999904632568,
                         "attackRange": 25.0,
                         "targetCount": 1,
-                        "projectileCount": 1,
+                        "projectileCount": 3,
                         "aoeRadius": 9.0,
                         "effectPercent": 0.0,
                         "effectDuration": 4.0,
@@ -312,11 +312,11 @@
                         "orbitOuterHoldDuration": 1.5
                     },
                     {
-                        "damage": 60.0,
+                        "damage": 40.0,
                         "attackInterval": 4.300000190734863,
                         "attackRange": 30.0,
                         "targetCount": 1,
-                        "projectileCount": 1,
+                        "projectileCount": 4,
                         "aoeRadius": 10.0,
                         "effectPercent": 0.0,
                         "effectDuration": 4.0,
@@ -327,11 +327,11 @@
                         "orbitOuterHoldDuration": 1.5
                     },
                     {
-                        "damage": 80.0,
+                        "damage": 50.0,
                         "attackInterval": 4.0,
                         "attackRange": 35.0,
                         "targetCount": 1,
-                        "projectileCount": 1,
+                        "projectileCount": 5,
                         "aoeRadius": 12.0,
                         "effectPercent": 0.0,
                         "effectDuration": 6.0,
@@ -622,7 +622,7 @@
                 {
                     "serializedVersion": "3",
                     "time": 100.0,
-                    "value": 20.0,
+                    "value": 30.0,
                     "inSlope": 0.0,
                     "outSlope": 0.0,
                     "tangentMode": 0,
@@ -754,8 +754,8 @@
         "enemyTypes": [
             {
                 "displayName": "Standard",
-                "baseHealth": 30.0,
-                "baseSpeed": 24.0,
+                "baseHealth": 40.0,
+                "baseSpeed": 30.0,
                 "size": 1.600000023841858,
                 "spriteResourcePath": "Sprites/enemy_standard_sheet",
                 "spriteSheetColumns": 8,
@@ -765,8 +765,8 @@
             },
             {
                 "displayName": "Swift",
-                "baseHealth": 20.0,
-                "baseSpeed": 36.0,
+                "baseHealth": 25.0,
+                "baseSpeed": 40.0,
                 "size": 1.399999976158142,
                 "spriteResourcePath": "Sprites/enemy_swift_sheet",
                 "spriteSheetColumns": 8,
@@ -776,8 +776,8 @@
             },
             {
                 "displayName": "Heavy",
-                "baseHealth": 50.0,
-                "baseSpeed": 16.0,
+                "baseHealth": 70.0,
+                "baseSpeed": 20.0,
                 "size": 2.0,
                 "spriteResourcePath": "Sprites/enemy_heavy_sheet",
                 "spriteSheetColumns": 8,
@@ -805,7 +805,7 @@
                 "z": 135.0
             },
             "interferenceRadius": 20.0,
-            "interferenceAttackSpeedMultiplier": 0.75,
+            "interferenceAttackSpeedBuffLevel": -2,
             "shieldRadius": 30.0,
             "shieldDamageMultiplier": 0.5,
             "minimumShieldedDamage": 1.0,
@@ -834,7 +834,7 @@
             "z": 135.0
         },
         "interferenceRadius": 20.0,
-        "interferenceAttackSpeedMultiplier": 0.75,
+        "interferenceAttackSpeedBuffLevel": -2,
         "shieldRadius": 30.0,
         "shieldDamageMultiplier": 0.5,
         "minimumShieldedDamage": 1.0,
@@ -881,8 +881,9 @@
             "costMultiplier": 1.5,
             "cooldown": 15.0,
             "duration": 7.0,
-            "attackSpeedMultiplier": 1.2999999523162842,
-            "damageMultiplier": 1.2999999523162842
+            "damageBuffLevel": 2,
+            "rangeBuffLevel": 0,
+            "attackSpeedBuffLevel": 2
         },
         "missileBarrage": {
             "cooldown": 25.0,

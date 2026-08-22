@@ -23,6 +23,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
     [SerializeField] private Vector2 _towerScroll;
     [SerializeField] private Vector2 _enemyScroll;
     [SerializeField] private Vector2 _bossScroll;
+    [SerializeField] private int _selectedTowerIndex;
     private string _status;
     private bool _hasUnsavedChanges;
     private int _enemyPreviewLevel = 1;
@@ -35,7 +36,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
     {
         RougeTowerDefenseBalanceEditor window = GetWindow<RougeTowerDefenseBalanceEditor>();
         window.titleContent = new GUIContent("TD Balance");
-        window.minSize = new Vector2(620f, 520f);
+        window.minSize = new Vector2(900f, 520f);
         window.Show();
     }
 
@@ -108,11 +109,18 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
         _serializedProfile.Update();
         EditorGUI.BeginChangeCheck();
-        Vector2 scroll = GetSelectedScroll();
-        scroll = EditorGUILayout.BeginScrollView(scroll);
-        DrawSelectedTab();
-        EditorGUILayout.EndScrollView();
-        SetSelectedScroll(scroll);
+        if (_selectedTab == BalanceTab.Towers)
+        {
+            DrawSelectedTab();
+        }
+        else
+        {
+            Vector2 scroll = GetSelectedScroll();
+            scroll = EditorGUILayout.BeginScrollView(scroll);
+            DrawSelectedTab();
+            EditorGUILayout.EndScrollView();
+            SetSelectedScroll(scroll);
+        }
         if (EditorGUI.EndChangeCheck())
         {
             _serializedProfile.ApplyModifiedProperties();
@@ -245,83 +253,163 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         }
     }
 
-    private static void DrawTowerBalance(SerializedProperty balance)
+    private void DrawTowerBalance(SerializedProperty balance)
     {
-        EditorGUILayout.PropertyField(balance.FindPropertyRelative("sellRefundMultiplier"),
-            new GUIContent("Sell Refund %"));
         SerializedProperty towers = balance.FindPropertyRelative("towers");
-        for (int i = 0; i < towers.arraySize; i++)
+        if (towers == null || towers.arraySize == 0)
         {
-            SerializedProperty tower = towers.GetArrayElementAtIndex(i);
-            SerializedProperty typeProperty = tower.FindPropertyRelative("towerType");
-            RougeTowerType type = (RougeTowerType)typeProperty.enumValueIndex;
-            tower.isExpanded = EditorGUILayout.Foldout(tower.isExpanded,
-                ObjectNames.NicifyVariableName(type.ToString()), true, EditorStyles.foldoutHeader);
-            if (!tower.isExpanded) continue;
-            using (new EditorGUI.IndentLevelScope())
-            {
-                using (new EditorGUI.DisabledScope(true)) EditorGUILayout.PropertyField(typeProperty);
-                EditorGUILayout.PropertyField(tower.FindPropertyRelative("placementRadius"));
-                EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintWidth"),
-                    new GUIContent("Footprint Width (Micro Cells)"));
-                EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
-                    new GUIContent("Footprint Height (Micro Cells)"));
-                EditorGUILayout.PropertyField(tower.FindPropertyRelative("purchaseCost"));
-                SerializedProperty levels = tower.FindPropertyRelative("levels");
-                for (int levelIndex = 0; levelIndex < levels.arraySize; levelIndex++)
-                {
-                    SerializedProperty level = levels.GetArrayElementAtIndex(levelIndex);
-                    level.isExpanded = EditorGUILayout.Foldout(level.isExpanded,
-                        $"Level {levelIndex + 1}", true);
-                    if (!level.isExpanded) continue;
-                    using (new EditorGUI.IndentLevelScope()) DrawTowerLevel(level, type);
-                }
-            }
-            EditorGUILayout.Space(4f);
+            EditorGUILayout.HelpBox("No tower configurations are available.", MessageType.Warning);
+            return;
+        }
+
+        _selectedTowerIndex = Mathf.Clamp(_selectedTowerIndex, 0, towers.arraySize - 1);
+        using (new EditorGUILayout.HorizontalScope(GUILayout.ExpandHeight(true)))
+        {
+            DrawTowerSelector(towers);
+            _towerScroll = EditorGUILayout.BeginScrollView(_towerScroll, true, true,
+                GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            DrawSelectedTowerConfiguration(balance, towers.GetArrayElementAtIndex(_selectedTowerIndex));
+            EditorGUILayout.EndScrollView();
         }
     }
 
-    private static void DrawTowerLevel(SerializedProperty level, RougeTowerType type)
+    private void DrawTowerSelector(SerializedProperty towers)
     {
-        DrawLevelField(level, "damage", type == RougeTowerType.OrbitSphere ? "Damage / Tick" : "Damage");
-        DrawLevelField(level, "attackInterval", type == RougeTowerType.OrbitSphere
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+            GUILayout.Width(180f), GUILayout.ExpandHeight(true)))
+        {
+            EditorGUILayout.LabelField("Tower", EditorStyles.boldLabel);
+            EditorGUILayout.Space(2f);
+            for (int i = 0; i < towers.arraySize; i++)
+            {
+                SerializedProperty tower = towers.GetArrayElementAtIndex(i);
+                SerializedProperty typeProperty = tower.FindPropertyRelative("towerType");
+                RougeTowerType type = (RougeTowerType)typeProperty.enumValueIndex;
+                bool selected = i == _selectedTowerIndex;
+                Color previousBackground = GUI.backgroundColor;
+                if (selected) GUI.backgroundColor = new Color(0.35f, 0.72f, 1f);
+                if (GUILayout.Button(ObjectNames.NicifyVariableName(type.ToString()),
+                    selected ? EditorStyles.miniButtonMid : EditorStyles.miniButton,
+                    GUILayout.Height(34f)))
+                {
+                    _selectedTowerIndex = i;
+                    _towerScroll = Vector2.zero;
+                    GUI.FocusControl(null);
+                    GUI.changed = false;
+                }
+                GUI.backgroundColor = previousBackground;
+            }
+            GUILayout.FlexibleSpace();
+        }
+    }
+
+    private static void DrawSelectedTowerConfiguration(SerializedProperty balance,
+        SerializedProperty tower)
+    {
+        SerializedProperty typeProperty = tower.FindPropertyRelative("towerType");
+        RougeTowerType type = (RougeTowerType)typeProperty.enumValueIndex;
+        string towerName = ObjectNames.NicifyVariableName(type.ToString());
+
+        EditorGUILayout.LabelField(towerName + " Configuration", EditorStyles.largeLabel);
+        EditorGUILayout.Space(4f);
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(700f)))
+        {
+            EditorGUILayout.LabelField("Global", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(balance.FindPropertyRelative("sellRefundMultiplier"),
+                new GUIContent("Sell Refund %"));
+        }
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(700f)))
+        {
+            EditorGUILayout.LabelField("Tower Settings", EditorStyles.boldLabel);
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.PropertyField(typeProperty, new GUIContent("Tower Type"));
+            EditorGUILayout.PropertyField(tower.FindPropertyRelative("placementRadius"),
+                new GUIContent("Placement Radius"));
+            EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintWidth"),
+                new GUIContent("Footprint Width (Micro Cells)"));
+            EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
+                new GUIContent("Footprint Height (Micro Cells)"));
+            EditorGUILayout.PropertyField(tower.FindPropertyRelative("purchaseCost"),
+                new GUIContent("Purchase Cost"));
+        }
+
+        EditorGUILayout.Space(5f);
+        EditorGUILayout.LabelField("Level Parameters", EditorStyles.boldLabel);
+        SerializedProperty levels = tower.FindPropertyRelative("levels");
+        DrawLevelTableHeader(levels.arraySize);
+        DrawTowerLevelRows(levels, type);
+        EditorGUILayout.Space(10f);
+    }
+
+    private static void DrawLevelTableHeader(int levelCount)
+    {
+        GUIStyle centeredHeader = new GUIStyle(EditorStyles.miniBoldLabel)
+        {
+            alignment = TextAnchor.MiddleCenter
+        };
+        using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar, GUILayout.MinWidth(700f)))
+        {
+            GUILayout.Label("Parameter", EditorStyles.miniBoldLabel, GUILayout.Width(210f));
+            for (int i = 0; i < levelCount; i++)
+                GUILayout.Label($"Lv {i + 1}", centeredHeader, GUILayout.Width(96f));
+        }
+    }
+
+    private static void DrawTowerLevelRows(SerializedProperty levels, RougeTowerType type)
+    {
+        DrawLevelRow(levels, "damage", type == RougeTowerType.OrbitSphere ? "Damage / Tick" : "Damage");
+        DrawLevelRow(levels, "attackInterval", type == RougeTowerType.OrbitSphere
             ? "Cooldown After Return" : "Attack Interval");
-        DrawLevelField(level, "attackRange", type == RougeTowerType.OrbitSphere
+        DrawLevelRow(levels, "attackRange", type == RougeTowerType.OrbitSphere
             ? "Maximum Orbit Distance" : "Attack Range");
         switch (type)
         {
             case RougeTowerType.Ice:
-                DrawLevelField(level, "effectPercent", "Slow %");
-                DrawLevelField(level, "effectDuration", "Slow Duration");
+                DrawLevelRow(levels, "effectPercent", "Slow %");
+                DrawLevelRow(levels, "effectDuration", "Slow Duration");
                 break;
             case RougeTowerType.MachineGun:
+                DrawLevelRow(levels, "targetCount", "Pellet Count");
+                break;
             case RougeTowerType.Laser:
-                DrawLevelField(level, "targetCount", "Target Count");
+                DrawLevelRow(levels, "targetCount", "Target Count");
                 break;
             case RougeTowerType.Cannon:
-                DrawLevelField(level, "projectileCount", "Projectile Count");
-                DrawLevelField(level, "aoeRadius", "Explosion Radius");
+                DrawLevelRow(levels, "projectileCount", "Shell Count");
+                DrawLevelRow(levels, "aoeRadius", "Explosion Radius");
                 break;
             case RougeTowerType.Flame:
-                DrawLevelField(level, "aoeRadius", "Fire Radius");
-                DrawLevelField(level, "effectDuration", "Fire Duration");
-                DrawLevelField(level, "tickInterval", "Damage Interval");
+                DrawLevelRow(levels, "projectileCount", "Fireball Count");
+                DrawLevelRow(levels, "aoeRadius", "Fire Radius");
+                DrawLevelRow(levels, "effectDuration", "Fire Duration");
+                DrawLevelRow(levels, "tickInterval", "Damage Interval");
                 break;
             case RougeTowerType.OrbitSphere:
-                DrawLevelField(level, "projectileCount", "Sphere Count");
-                DrawLevelField(level, "orbitSphereRadius", "Sphere Radius");
-                DrawLevelField(level, "orbitRadialSpeed", "Radial Move Speed");
-                DrawLevelField(level, "orbitAngularSpeed", "Rotation Speed (deg/s)");
-                DrawLevelField(level, "orbitOuterHoldDuration", "Outer Hold Duration (seconds)");
-                DrawLevelField(level, "tickInterval", "Damage Interval");
+                DrawLevelRow(levels, "projectileCount", "Sphere Count");
+                DrawLevelRow(levels, "orbitSphereRadius", "Sphere Radius");
+                DrawLevelRow(levels, "orbitRadialSpeed", "Radial Move Speed");
+                DrawLevelRow(levels, "orbitAngularSpeed", "Rotation Speed (deg/s)");
+                DrawLevelRow(levels, "orbitOuterHoldDuration", "Outer Hold Duration (seconds)");
+                DrawLevelRow(levels, "tickInterval", "Damage Interval");
                 break;
         }
     }
 
-    private static void DrawLevelField(SerializedProperty parent, string name, string label)
+    private static void DrawLevelRow(SerializedProperty levels, string propertyName, string label)
     {
-        SerializedProperty property = parent.FindPropertyRelative(name);
-        if (property != null) EditorGUILayout.PropertyField(property, new GUIContent(label));
+        using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox, GUILayout.MinWidth(700f)))
+        {
+            GUILayout.Label(label, GUILayout.Width(202f));
+            for (int i = 0; i < levels.arraySize; i++)
+            {
+                SerializedProperty property = levels.GetArrayElementAtIndex(i)
+                    .FindPropertyRelative(propertyName);
+                if (property != null)
+                    EditorGUILayout.PropertyField(property, GUIContent.none, GUILayout.Width(96f));
+                else
+                    GUILayout.Space(100f);
+            }
+        }
     }
 
     private void DrawEnemyBalance(SerializedProperty balance)

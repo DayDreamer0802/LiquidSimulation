@@ -2,8 +2,11 @@ using UnityEngine;
 
 public enum RougeEnemyType
 {
+    [InspectorName("普通")]
     Standard = 0,
+    [InspectorName("迅捷")]
     Swift = 1,
+    [InspectorName("重装")]
     Heavy = 2
 }
 

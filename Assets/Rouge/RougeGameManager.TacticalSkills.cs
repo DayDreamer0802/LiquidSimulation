@@ -394,7 +394,8 @@ public partial class RougeGameManager
         {
             RougeDefenseTower tower = _defenseTowers[i];
             if (tower == null) continue;
-            tower.ActivateOverclock(config.duration, config.attackSpeedMultiplier, config.damageMultiplier);
+            tower.ActivateOverclock(config.duration, new RougeTowerBuffLevels(
+                config.damageBuffLevel, config.rangeBuffLevel, config.attackSpeedBuffLevel));
             affected++;
         }
         if (affected == 0) return;

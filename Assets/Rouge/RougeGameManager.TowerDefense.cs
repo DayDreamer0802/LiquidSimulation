@@ -16,6 +16,10 @@ public partial class RougeGameManager
     private const int InitialTowerDefenseEnemyCap = 1000;
     private const int TowerDefenseEnemyCapPerMinute = 5000;
     private const int MaximumTowerDefenseEnemyCap = 100000;
+    private const float MachineGunScatterHalfAngleDegrees = 9f;
+    private const float MachineGunFocusedSpreadMultiplier = 0.5f;
+    private const float TowerProjectileBurstInterval = 0.25f;
+    private const float FlameLandingOffsetRadiusMultiplier = 0.2f;
     private static readonly string[] TowerPrefabResourcePaths =
     {
         "Prefab/tower/Ice",
@@ -86,6 +90,8 @@ public partial class RougeGameManager
     private Button _towerTargetPriorityButton;
     private Text _towerTargetPriorityButtonText;
     private Text _towerDamageRankingText;
+    private GameObject _towerPlaceEffectPanel;
+    private Text _towerPlaceEffectText;
     private readonly Button[] _towerBuildButtons = new Button[TowerDefenseVisuals.TowerTypeCount];
     private readonly Text[] _towerBuildButtonTexts = new Text[TowerDefenseVisuals.TowerTypeCount];
     private readonly int[] _towerDamageRankOrder = { 0, 1, 2, 3, 4, 5, 6 };
@@ -139,6 +145,8 @@ public partial class RougeGameManager
         public float EffectDuration;
         public float TickInterval;
         public int TargetIndex;
+        public Vector2 TargetOffset;
+        public int KillGoldBonus;
     }
 
     private struct TowerFireZone
@@ -149,6 +157,7 @@ public partial class RougeGameManager
         public float DamagePerTick;
         public float TickInterval;
         public float TickTimer;
+        public int KillGoldBonus;
         public GameObject Visual;
     }
 
@@ -423,7 +432,10 @@ public partial class RougeGameManager
     {
         if (IsTowerTypeDisabled(type)) return false;
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        return _towerDefenseGold >= cost;
+        float minimumMultiplier = _towerDefenseLevel != null
+            ? _towerDefenseLevel.GetMinimumTowerGoldCostMultiplier()
+            : 1f;
+        return _towerDefenseGold >= Mathf.Max(0, Mathf.RoundToInt(cost * minimumMultiplier));
     }
 
     private bool CanAffordAnyTowerType()
@@ -517,6 +529,8 @@ public partial class RougeGameManager
         {
             if (towers[i] == null) continue;
             towers[i].Ensure2DVisual();
+            towers[i].ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(towers[i].transform.position), true);
+            towers[i].name = towers[i].DisplayName + " Lv." + towers[i].Level;
             _defenseTowers.Add(towers[i]);
         }
     }
@@ -615,7 +629,7 @@ public partial class RougeGameManager
         Mouse mouse = Mouse.current;
         if (_towerDefenseGameOver)
         {
-            if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+            if (!_towerDefenseVictory && keyboard != null && keyboard.rKey.wasPressedThisFrame)
             {
                 Time.timeScale = 1f;
                 SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
@@ -623,10 +637,14 @@ public partial class RougeGameManager
             return;
         }
 
+        // Tower/build state is authoritative for simulation speed. Keeping this
+        // synchronized also clears a stale 0.5 scale after any exit path.
+        ApplyTowerDefenseTimeScale();
+
         if (keyboard != null && keyboard.f10Key.wasPressedThisFrame && !_towerPlacementMode)
         {
             _towerDefenseDoubleSpeed = !_towerDefenseDoubleSpeed;
-            Time.timeScale = GetTowerDefensePlayTimeScale();
+            ApplyTowerDefenseTimeScale();
             RefreshTowerDefenseUi(true);
         }
 
@@ -638,10 +656,11 @@ public partial class RougeGameManager
         }
 
         bool pointerOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-        if (CommanderSkillsEnabled && UpdateTacticalSkillInput(mouse, pointerOverUi)) return;
+        bool debugCameraLooking = _debugUnitViewMode && mouse != null && mouse.rightButton.isPressed;
+        if (CommanderSkillsEnabled && !debugCameraLooking && UpdateTacticalSkillInput(mouse, pointerOverUi)) return;
         if (!_towerPlacementMode)
         {
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
+            if (!debugCameraLooking && mouse != null && mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
             {
                 RougeDefenseTower hovered = RaycastDefenseTower();
                 if (hovered != null) EnterTowerEditMode(hovered);
@@ -649,7 +668,7 @@ public partial class RougeGameManager
             return;
         }
 
-        if (mouse != null && mouse.rightButton.wasPressedThisFrame)
+        if (!_debugUnitViewMode && mouse != null && mouse.rightButton.wasPressedThisFrame)
         {
             SetTowerPlacementMode(false);
             return;
@@ -667,11 +686,15 @@ public partial class RougeGameManager
             if (keyboard.digit6Key.wasPressedThisFrame || keyboard.numpad6Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.PiercingLaser);
             if (keyboard.digit7Key.wasPressedThisFrame || keyboard.numpad7Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.OrbitSphere);
             if (keyboard.uKey.wasPressedThisFrame) TryUpgradeSelectedTower();
-            if (keyboard.escapeKey.wasPressedThisFrame) CancelTowerBuildSelection();
+            if (keyboard.escapeKey.wasPressedThisFrame)
+            {
+                SetTowerPlacementMode(false);
+                return;
+            }
         }
 
         UpdateTowerPreview();
-        if (mouse == null) return;
+        if (mouse == null || debugCameraLooking) return;
 
         if (mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
         {
@@ -736,7 +759,7 @@ public partial class RougeGameManager
             _towerMiddleClickTarget = null;
         }
         SetTowerPlaceVisualsVisible(enabled);
-        Time.timeScale = enabled ? 0.5f : GetTowerDefensePlayTimeScale();
+        ApplyTowerDefenseTimeScale();
 
         if (enabled)
         {
@@ -756,6 +779,14 @@ public partial class RougeGameManager
     private float GetTowerDefensePlayTimeScale()
     {
         return _towerDefenseDoubleSpeed ? 2f : 1f;
+    }
+
+    private void ApplyTowerDefenseTimeScale()
+    {
+        if (_towerDefenseGameOver) return;
+        Time.timeScale = _towerPlacementMode
+            ? 0.5f
+            : GetTowerDefensePlayTimeScale();
     }
 
     private void EnterTowerEditMode(RougeDefenseTower tower)
@@ -838,8 +869,7 @@ public partial class RougeGameManager
     private void BeginTowerBuild(RougeTowerType type)
     {
         if (IsTowerTypeDisabled(type)) return;
-        TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        if (_towerDefenseGameOver || _towerDefenseGold < cost) return;
+        if (_towerDefenseGameOver || !CanAffordTowerType(type)) return;
         if (!_towerPlacementMode)
         {
             _towerBuildSelectionActive = false;
@@ -878,6 +908,7 @@ public partial class RougeGameManager
         _towerPreview.gameObject.SetActive(true);
         _previewTowerAnchor = anchor;
         _towerPreview.transform.position = position;
+        _towerPreview.ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(position));
         _previewCellValidity = GetTowerFootprintCellValidity(anchor, _towerPreview.FootprintCells, _towerPreview);
         _previewValid = CanPlacePreviewTower();
         _towerPreview.SetPreviewState(_previewValid, _previewCellValidity);
@@ -887,8 +918,16 @@ public partial class RougeGameManager
     private bool CanPlacePreviewTower()
     {
         return _towerPreview != null && _towerPreview.gameObject.activeInHierarchy &&
-            _towerDefenseGold >= _towerPreview.PurchaseCost &&
+            _towerDefenseGold >= _towerPreview.PlacementCost &&
             AreAllFootprintCellsValid(_previewCellValidity);
+    }
+
+    private RougeTowerPlaceEffect GetTowerPlaceEffectAtWorld(Vector3 worldPosition)
+    {
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        return map != null && map.WorldToCell(worldPosition, out Vector2Int centerCell)
+            ? map.GetTowerPlaceEffect(centerCell)
+            : RougeTowerPlaceEffect.None;
     }
 
     private bool TryGetPointerGroundPosition(out Vector3 worldPosition)
@@ -1001,10 +1040,10 @@ public partial class RougeGameManager
             if (_towerPreview != null) _towerPreview.SetPreviewState(false, _previewCellValidity);
             return;
         }
-        int cost = _towerPreview.PurchaseCost;
+        int cost = _towerPreview.PlacementCost;
         _towerDefenseGold -= cost;
-        _towerPreview.name = _towerPreview.DisplayName + " Lv.1";
         _towerPreview.FinalizePlacement();
+        _towerPreview.name = _towerPreview.DisplayName + " Lv." + _towerPreview.Level;
         _defenseTowers.Add(_towerPreview);
         SetTowerPlaceVisualsVisible(true);
         RougeDefenseTower placed = _towerPreview;
@@ -1039,7 +1078,9 @@ public partial class RougeGameManager
     private void DeleteTower(RougeDefenseTower tower)
     {
         if (tower == null) return;
-        int refund = Mathf.FloorToInt(tower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier));
+        int refund = tower.AllowsSellRefund
+            ? Mathf.FloorToInt(tower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier))
+            : 0;
         _towerDefenseGold += refund;
         _defenseTowers.Remove(tower);
         SetTowerPlaceVisualsVisible(_towerPlacementMode);
@@ -1480,7 +1521,7 @@ public partial class RougeGameManager
     {
         for (int i = 0; i < _defenseTowers.Count; i++)
         {
-            if (_defenseTowers[i] != null) _defenseTowers[i].SetBossInterference(false, 1f);
+            if (_defenseTowers[i] != null) _defenseTowers[i].SetBossInterference(false, 0);
         }
     }
 
@@ -1918,13 +1959,15 @@ public partial class RougeGameManager
                     tower.transform.position.z - _bossWorldPosition.z)) <=
                 bossBalance.interferenceRadius * bossBalance.interferenceRadius;
             tower.SetBossInterference(bossDebuffed,
-                bossDebuffed ? Mathf.Clamp(bossBalance.interferenceAttackSpeedMultiplier, 0.05f, 1f) : 1f);
+                bossDebuffed ? bossBalance.interferenceAttackSpeedBuffLevel : 0);
             tower.UpdatePresentation(dt);
 
-            if (tower.TowerType == RougeTowerType.Cannon && tower.cannonBurstShotsRemaining > 0)
+            bool usesProjectileBurst = tower.TowerType == RougeTowerType.Cannon ||
+                tower.TowerType == RougeTowerType.Flame;
+            if (usesProjectileBurst && tower.projectileBurstShotsRemaining > 0)
             {
-                UpdateCannonBurst(tower, dt);
-                if (tower.cannonBurstShotsRemaining > 0) continue;
+                UpdateProjectileBurst(tower, i, dt);
+                if (tower.projectileBurstShotsRemaining > 0) continue;
             }
 
             if (tower.TowerType == RougeTowerType.Laser)
@@ -1942,7 +1985,7 @@ public partial class RougeGameManager
 
             if (!tower.IsTargetedDamage)
             {
-                FireTower(tower, tower.transform.position);
+                FireTower(tower, i, tower.transform.position);
                 tower.attackTimer += tower.AttackInterval;
                 continue;
             }
@@ -1971,7 +2014,7 @@ public partial class RougeGameManager
             }
 
             AimTowerAt(tower, targetPosition);
-            FireTower(tower, targetPosition);
+            FireTower(tower, i, targetPosition);
             tower.attackTimer += tower.AttackInterval;
         }
     }
@@ -1998,13 +2041,18 @@ public partial class RougeGameManager
             bool focusedBossLaser = tower.TowerType == RougeTowerType.Laser &&
                 tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
             bool usesSingleAimDirection = focusedBossLaser || tower.TowerType == RougeTowerType.MachineGun;
+            bool rotatesFlameTargets = tower.TowerType == RougeTowerType.Flame &&
+                tower.TargetPriority != RougeTowerTargetPriority.BossFirst;
+            int requestedTargets = rotatesFlameTargets
+                ? tower.ProjectileCount
+                : tower.TargetCount;
             _towerTargetRequests[i] = new RougeTowerTargetRequest
             {
                 Position = new float2(position.x, position.z),
                 Range = tower.AttackRange,
                 TargetCount = usesSingleAimDirection || !tower.IsTargetedDamage
                     ? 1
-                    : math.clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower),
+                    : math.clamp(requestedTargets, 1, FindTowerTargetsJob.MaxTargetsPerTower),
                 PriorityMode = tower.IsTargetedDamage
                     ? (int)tower.TargetPriority
                     : (int)RougeTowerTargetPriority.NearestToGoal
@@ -2058,7 +2106,10 @@ public partial class RougeGameManager
         float distance = Mathf.Max(0.1f, planar.magnitude);
         float2 baseDirection = new float2(planar.x / distance, planar.y / distance);
         int pelletCount = Mathf.Clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower);
-        const float halfSpreadDegrees = 9f;
+        bool focusedMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+        float halfSpreadDegrees = MachineGunScatterHalfAngleDegrees *
+            (focusedMode ? MachineGunFocusedSpreadMultiplier : 1f);
+        float pelletDamage = tower.Damage;
         const float pelletHitRadius = 1.5f;
         for (int i = 0; i < pelletCount; i++)
         {
@@ -2069,8 +2120,9 @@ public partial class RougeGameManager
             float2 direction = Rotate(baseDirection, spreadRadians);
             Vector3 spreadTarget = new Vector3(start.x + direction.x * distance,
                 renderHeight + 0.12f, start.z + direction.y * distance);
-            SpawnTowerProjectile(RougeTowerType.MachineGun, start, spreadTarget, tower.Damage,
-                pelletHitRadius, Mathf.Max(0.04f, distance / 70f), 0f, -1);
+            SpawnTowerProjectile(RougeTowerType.MachineGun, start, spreadTarget, pelletDamage,
+                pelletHitRadius, Mathf.Max(0.04f, distance / 70f), 0f, -1,
+                killGoldBonus: tower.KillGoldBonus);
         }
         return true;
     }
@@ -2099,7 +2151,7 @@ public partial class RougeGameManager
             int beamCount = Mathf.Clamp(tower.TargetCount, 1, FindTowerTargetsJob.MaxTargetsPerTower);
             tower.ShowFocusedLaserBeams(start, _towerTargetPositions[0], beamCount);
             float perBeamDamage = Mathf.Max(1f, tower.Damage * 0.33f);
-            AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[0],
+            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldBonus, _towerTargetIndices[0],
                 perBeamDamage * beamCount * tickScale * tower.AttackSpeedMultiplier);
             return;
         }
@@ -2107,20 +2159,27 @@ public partial class RougeGameManager
         tower.ShowLaserBeams(start, _towerTargetPositions, count);
         for (int i = 0; i < count; i++)
         {
-            AccumulateTowerTargetDamage(tower.TowerType, _towerTargetIndices[i],
+            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldBonus, _towerTargetIndices[i],
                 tower.Damage * tickScale * tower.AttackSpeedMultiplier);
         }
     }
 
-    private void AccumulateTowerTargetDamage(RougeTowerType towerType, int enemyIndex, float damage)
+    private void AccumulateTowerTargetDamage(RougeTowerType towerType, int killGoldBonus,
+        int enemyIndex, float damage)
     {
         if (damage <= 0f || (uint)enemyIndex >= (uint)_towerLaserDamage.Length) return;
         if (_towerLaserDamageFrames[enemyIndex] != _towerLaserDamageFrame)
         {
             _towerLaserDamageFrames[enemyIndex] = _towerLaserDamageFrame;
             _towerLaserDamage[enemyIndex] = 0f;
+            _towerKillGoldBonus[enemyIndex] = 0;
         }
+        float accumulatedBefore = _towerLaserDamage[enemyIndex];
         _towerLaserDamage[enemyIndex] += damage;
+        float currentHealth = enemyIndex < _stateA.Length ? _stateA[enemyIndex].x : 0f;
+        if (currentHealth > 0f && accumulatedBefore < currentHealth &&
+            _towerLaserDamage[enemyIndex] >= currentHealth)
+            _towerKillGoldBonus[enemyIndex] = Mathf.Max(0, killGoldBonus);
 
         int typeIndex = Mathf.Clamp((int)towerType, 0, TowerDefenseVisuals.TowerTypeCount - 1);
         int entryIndex = enemyIndex * TowerDefenseVisuals.TowerTypeCount + typeIndex;
@@ -2173,38 +2232,86 @@ public partial class RougeGameManager
         tower.AimAt(target);
     }
 
-    private void BeginCannonBurst(RougeDefenseTower tower, Vector3 target)
+    private void BeginProjectileBurst(RougeDefenseTower tower, int towerListIndex,
+        Vector3 initialTarget)
     {
-        tower.cannonBurstTarget = target;
-        tower.cannonBurstShotsRemaining = Mathf.Max(1, tower.ProjectileCount);
-        tower.cannonBurstTimer = 0f;
-        UpdateCannonBurst(tower, 0f);
+        tower.projectileBurstShotsRemaining = Mathf.Max(1, tower.ProjectileCount);
+        tower.projectileBurstShotIndex = 0;
+        tower.projectileBurstTimer = 0f;
+        tower.projectileBurstPrimaryTargetIndex = tower.targetIndex;
+        tower.projectileBurstPrimaryTarget = initialTarget;
+        UpdateProjectileBurst(tower, towerListIndex, 0f);
     }
 
-    private void UpdateCannonBurst(RougeDefenseTower tower, float dt)
+    private void UpdateProjectileBurst(RougeDefenseTower tower, int towerListIndex, float dt)
     {
-        if (tower == null || tower.cannonBurstShotsRemaining <= 0) return;
-        tower.cannonBurstTimer -= dt * tower.AttackSpeedMultiplier;
+        if (tower == null || tower.projectileBurstShotsRemaining <= 0) return;
+        tower.projectileBurstTimer -= dt * tower.AttackSpeedMultiplier;
         int catchUpShots = 0;
-        while (tower.cannonBurstTimer <= 0f && tower.cannonBurstShotsRemaining > 0 && catchUpShots < 3)
+        while (tower.projectileBurstTimer <= 0f &&
+               tower.projectileBurstShotsRemaining > 0 && catchUpShots < 3)
         {
-            Vector3 target = tower.cannonBurstTarget;
+            int targetIndex;
+            Vector3 target;
+            if (tower.TowerType == RougeTowerType.Cannon)
+            {
+                targetIndex = tower.projectileBurstPrimaryTargetIndex;
+                target = tower.projectileBurstPrimaryTarget;
+                float rangeSq = tower.AttackRange * tower.AttackRange;
+                if (IsEnemyTargetValid(targetIndex, tower.transform.position, rangeSq,
+                    out Vector3 currentTarget))
+                {
+                    target = currentTarget;
+                    tower.projectileBurstPrimaryTarget = currentTarget;
+                }
+            }
+            else
+            {
+                bool focusedMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+                int requestedTargets = focusedMode ? 1 : tower.ProjectileCount;
+                int targetCount = CollectTowerTargets(tower, towerListIndex, requestedTargets);
+                if (targetCount <= 0)
+                {
+                    tower.projectileBurstShotsRemaining = 0;
+                    tower.targetIndex = -1;
+                    break;
+                }
+                int targetSlot = focusedMode ? 0 : tower.projectileBurstShotIndex % targetCount;
+                targetIndex = _towerTargetIndices[targetSlot];
+                target = _towerTargetPositions[targetSlot];
+            }
+            tower.targetIndex = targetIndex;
+            AimTowerAt(tower, target);
             tower.PlayAttackAnimation(() =>
             {
                 if (tower == null) return;
                 Vector3 start = GetTowerMuzzlePosition(tower);
-                float distance = Vector2.Distance(new Vector2(start.x, start.z),
-                    new Vector2(target.x, target.z));
-                SpawnTowerProjectile(RougeTowerType.Cannon, start, target, tower.Damage,
-                    tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1);
+                if (tower.TowerType == RougeTowerType.Cannon)
+                {
+                    float distance = Vector2.Distance(new Vector2(start.x, start.z),
+                        new Vector2(target.x, target.z));
+                    SpawnTowerProjectile(RougeTowerType.Cannon, start, target, tower.Damage,
+                        tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1,
+                        killGoldBonus: tower.KillGoldBonus);
+                }
+                else
+                {
+                    Vector2 landingOffset = UnityEngine.Random.insideUnitCircle *
+                        (tower.AoeRadius * FlameLandingOffsetRadiusMultiplier);
+                    SpawnTowerProjectile(RougeTowerType.Flame, start, target, tower.Damage,
+                        tower.AoeRadius, 0.85f, 8f, targetIndex,
+                        tower.EffectDuration, tower.TickInterval,
+                        targetOffset: landingOffset, killGoldBonus: tower.KillGoldBonus);
+                }
             });
-            tower.cannonBurstShotsRemaining--;
-            tower.cannonBurstTimer += 0.12f;
+            tower.projectileBurstShotsRemaining--;
+            tower.projectileBurstShotIndex++;
+            tower.projectileBurstTimer += TowerProjectileBurstInterval;
             catchUpShots++;
         }
     }
 
-    private void FireTower(RougeDefenseTower tower, Vector3 target)
+    private void FireTower(RougeDefenseTower tower, int towerListIndex, Vector3 target)
     {
         switch (tower.TowerType)
         {
@@ -2223,7 +2330,8 @@ public partial class RougeGameManager
                         EffectFlags = (int)SkillHitEffectTag.Slow,
                         EffectSlowPercent = tower.EffectPercent,
                         EffectSlowDuration = tower.EffectDuration,
-                        SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                        SourceTowerTypePlusOne = (int)tower.TowerType + 1,
+                        SourceTowerKillGoldBonus = tower.KillGoldBonus
                     });
                     SpawnAOERing(new Vector3(p.x, renderHeight + 0.08f, p.z), tower.AttackRange, 0.45f,
                         new Color(0.2f, 0.85f, 1f, 1f));
@@ -2231,19 +2339,9 @@ public partial class RougeGameManager
                 break;
             }
             case RougeTowerType.Cannon:
-                BeginCannonBurst(tower, target);
-                break;
             case RougeTowerType.Flame:
-            {
-                int targetIndex = tower.targetIndex;
-                tower.PlayAttackAnimation(() =>
-                {
-                    if (tower == null) return;
-                    SpawnTowerProjectile(RougeTowerType.Flame, GetTowerMuzzlePosition(tower), target, tower.Damage,
-                        tower.AoeRadius, 0.85f, 8f, targetIndex, tower.EffectDuration, tower.TickInterval);
-                });
+                BeginProjectileBurst(tower, towerListIndex, target);
                 break;
-            }
             case RougeTowerType.PiercingLaser:
             {
                 tower.PlayAttackAnimation(() =>
@@ -2262,7 +2360,8 @@ public partial class RougeGameManager
                         Length = beamLength,
                         Radius = beamWidth,
                         Damage = tower.Damage,
-                        SourceTowerTypePlusOne = (int)tower.TowerType + 1
+                        SourceTowerTypePlusOne = (int)tower.TowerType + 1,
+                        SourceTowerKillGoldBonus = tower.KillGoldBonus
                     });
                     SpawnTowerBeam(start, end, beamWidth, 0.2f);
                 });
@@ -2391,7 +2490,8 @@ public partial class RougeGameManager
                         // Positive angular speed moves counter-clockwise in X/Z, so the
                         // corresponding beam tangent is (-direction.y, direction.x).
                         AuxA = tower.OrbitAngularSpeed < 0f ? -1f : 1f,
-                        SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1
+                        SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1,
+                        SourceTowerKillGoldBonus = tower.KillGoldBonus
                     });
                 }
                 attack.DamageTimer += damageInterval;
@@ -2411,7 +2511,7 @@ public partial class RougeGameManager
 
     private void SpawnTowerProjectile(RougeTowerType type, Vector3 start, Vector3 end, float damage, float radius,
         float duration, float arcHeight, int targetIndex, float effectDuration = 0f, float tickInterval = 0f,
-        float visualScaleMultiplier = 1f)
+        float visualScaleMultiplier = 1f, Vector2 targetOffset = default, int killGoldBonus = 0)
     {
         if (_towerProjectiles.Count >= 512) return;
         GameObject visual = GetTowerProjectileVisual(type);
@@ -2423,7 +2523,8 @@ public partial class RougeGameManager
             Visual = visual,
             Type = type,
             Start = start,
-            End = new Vector3(end.x, renderHeight + 0.2f, end.z),
+            End = new Vector3(end.x + targetOffset.x, renderHeight + 0.2f,
+                end.z + targetOffset.y),
             Elapsed = 0f,
             Duration = Mathf.Max(0.02f, duration),
             ArcHeight = arcHeight,
@@ -2431,7 +2532,9 @@ public partial class RougeGameManager
             Radius = radius,
             EffectDuration = effectDuration,
             TickInterval = tickInterval,
-            TargetIndex = targetIndex
+            TargetIndex = targetIndex,
+            TargetOffset = targetOffset,
+            KillGoldBonus = killGoldBonus
         });
     }
 
@@ -2471,7 +2574,8 @@ public partial class RougeGameManager
                 projectile.TargetIndex < _stateA.Length && _stateA[projectile.TargetIndex].x > 0f)
             {
                 float4 target = _positionsA[projectile.TargetIndex];
-                projectile.End = new Vector3(target.x, renderHeight + 0.2f, target.z);
+                projectile.End = new Vector3(target.x + projectile.TargetOffset.x,
+                    renderHeight + 0.2f, target.z + projectile.TargetOffset.y);
             }
             float t = Mathf.Clamp01(projectile.Elapsed / projectile.Duration);
             Vector3 position = Vector3.Lerp(projectile.Start, projectile.End, t);
@@ -2505,14 +2609,15 @@ public partial class RougeGameManager
             if (projectile.Damage > 0f &&
                 TryFindEnemyAtMachineGunImpact(impact, projectile.Radius, out int enemyIndex))
             {
-                AccumulateTowerTargetDamage(RougeTowerType.MachineGun, enemyIndex, projectile.Damage);
+                AccumulateTowerTargetDamage(RougeTowerType.MachineGun, projectile.KillGoldBonus,
+                    enemyIndex, projectile.Damage);
             }
             return;
         }
         if (projectile.Type == RougeTowerType.Flame)
         {
             AddTowerFireZone(projectile.End, projectile.Radius, projectile.EffectDuration,
-                projectile.Damage, projectile.TickInterval);
+                projectile.Damage, projectile.TickInterval, projectile.KillGoldBonus);
             SpawnAOERing(projectile.End, projectile.Radius, 0.38f, new Color(1f, 0.24f, 0.04f, 1f));
             return;
         }
@@ -2523,7 +2628,8 @@ public partial class RougeGameManager
             Position = impact,
             Radius = projectile.Radius,
             Damage = projectile.Damage,
-            SourceTowerTypePlusOne = (int)projectile.Type + 1
+            SourceTowerTypePlusOne = (int)projectile.Type + 1,
+            SourceTowerKillGoldBonus = projectile.KillGoldBonus
         });
         if (projectile.Type == RougeTowerType.Cannon)
         {
@@ -2577,7 +2683,8 @@ public partial class RougeGameManager
         _towerProjectileVisualPool.Push(visual);
     }
 
-    private void AddTowerFireZone(Vector3 position, float radius, float duration, float damagePerTick, float tickInterval)
+    private void AddTowerFireZone(Vector3 position, float radius, float duration, float damagePerTick,
+        float tickInterval, int killGoldBonus)
     {
         GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         visual.name = "Tower Fire Zone";
@@ -2595,6 +2702,7 @@ public partial class RougeGameManager
             DamagePerTick = damagePerTick,
             TickInterval = Mathf.Max(0.01f, tickInterval),
             TickTimer = 0f,
+            KillGoldBonus = killGoldBonus,
             Visual = visual
         });
     }
@@ -2621,7 +2729,8 @@ public partial class RougeGameManager
                     Position = new float2(zone.Position.x, zone.Position.z),
                     Radius = zone.Radius,
                     Damage = zone.DamagePerTick,
-                    SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1
+                    SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1,
+                    SourceTowerKillGoldBonus = zone.KillGoldBonus
                 });
                 zone.TickTimer += zone.TickInterval;
                 ticksThisFrame++;
@@ -2750,6 +2859,19 @@ public partial class RougeGameManager
         _towerDamageRankingText = CreateUiText("Damage Ranking", damagePanel.transform, 19, TextAnchor.UpperLeft);
         StretchRect(_towerDamageRankingText.rectTransform, 18f, 14f, 18f, 14f);
 
+        _towerPlaceEffectPanel = CreateUiPanel("Tower Grid Effect", canvasObject.transform,
+            new Color(0.025f, 0.04f, 0.07f, 0.92f));
+        RectTransform effectRect = _towerPlaceEffectPanel.GetComponent<RectTransform>();
+        effectRect.anchorMin = new Vector2(0f, 1f);
+        effectRect.anchorMax = new Vector2(0f, 1f);
+        effectRect.pivot = new Vector2(0f, 1f);
+        effectRect.anchoredPosition = new Vector2(24f, -280f);
+        effectRect.sizeDelta = new Vector2(460f, 150f);
+        _towerPlaceEffectText = CreateUiText("Grid Effect", _towerPlaceEffectPanel.transform,
+            19, TextAnchor.UpperLeft);
+        StretchRect(_towerPlaceEffectText.rectTransform, 18f, 14f, 18f, 14f);
+        _towerPlaceEffectPanel.SetActive(false);
+
         GameObject buildPanel = CreateUiPanel("Build Panel", canvasObject.transform, new Color(0.025f, 0.04f, 0.07f, 0.92f));
         RectTransform buildRect = buildPanel.GetComponent<RectTransform>();
         buildRect.anchorMin = new Vector2(0.5f, 0f);
@@ -2792,7 +2914,7 @@ public partial class RougeGameManager
         cancelRect.anchorMax = new Vector2(0.5f, 0f);
         cancelRect.anchoredPosition = new Vector2(500f, 18f);
         cancelRect.sizeDelta = new Vector2(200f, 68f);
-        cancelBuildButton.onClick.AddListener(CancelTowerBuildSelection);
+        cancelBuildButton.onClick.AddListener(() => SetTowerPlacementMode(false));
 
         _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] UPGRADE", new Color(0.15f, 0.58f, 0.28f, 1f));
         RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
@@ -2945,16 +3067,17 @@ public partial class RougeGameManager
         for (int typeIndex = 0; typeIndex < _towerBuildButtons.Length; typeIndex++)
         {
             RougeTowerType type = (RougeTowerType)typeIndex;
-            TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
+            TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out _);
             bool disabled = IsTowerTypeDisabled(type);
             SetPurchaseButtonAvailability(_towerBuildButtons[typeIndex], _towerBuildButtonTexts[typeIndex],
-                !disabled && !_towerDefenseGameOver && _towerDefenseGold >= cost);
+                !disabled && !_towerDefenseGameOver && CanAffordTowerType(type));
             if (_towerBuildButtonTexts[typeIndex] != null)
                 _towerBuildButtonTexts[typeIndex].text = disabled
                     ? $"{TowerDefenseVisuals.GetTowerName(type)}\nDISABLED"
                     : GetTowerBuildLabel(typeIndex + 1, type);
         }
         RefreshTowerDamageRanking();
+        RefreshTowerPlaceEffectHud();
         if (CommanderSkillsEnabled) RefreshTacticalSkillUi();
         if (_towerSellButton != null)
         {
@@ -2962,7 +3085,9 @@ public partial class RougeGameManager
             _towerSellButton.gameObject.SetActive(showSell);
             if (showSell)
             {
-                int refund = Mathf.FloorToInt(_selectedTower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier));
+                int refund = _selectedTower.AllowsSellRefund
+                    ? Mathf.FloorToInt(_selectedTower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier))
+                    : 0;
                 if (_towerSellButtonText != null) _towerSellButtonText.text = $"SELL  +{refund}";
             }
         }
@@ -2972,9 +3097,27 @@ public partial class RougeGameManager
             _towerTargetPriorityButton.gameObject.SetActive(showPriority);
             if (showPriority && _towerTargetPriorityButtonText != null)
             {
-                _towerTargetPriorityButtonText.text = _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                    ? "[MMB] TARGET\nBOSS FIRST"
-                    : "[MMB] TARGET\nNEAREST GOAL";
+                if (_selectedTower.TowerType == RougeTowerType.MachineGun)
+                {
+                    _towerTargetPriorityButtonText.text =
+                        _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
+                            ? "[MMB] FOCUSED\nBOSS | DMG -2 (-30%)"
+                            : "[MMB] SCATTER\nNEAREST GOAL";
+                }
+                else if (_selectedTower.TowerType == RougeTowerType.Flame)
+                {
+                    _towerTargetPriorityButtonText.text =
+                        _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
+                            ? "[MMB] FOCUSED\nBOSS | DMG -2 (-30%)"
+                            : "[MMB] ROTATE\nNEAREST GOAL";
+                }
+                else
+                {
+                    _towerTargetPriorityButtonText.text =
+                        _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
+                            ? "[MMB] TARGET\nBOSS FIRST"
+                            : "[MMB] TARGET\nNEAREST GOAL";
+                }
             }
         }
         if (_bossPanel != null)
@@ -2997,7 +3140,11 @@ public partial class RougeGameManager
         {
             if (_debugUnitViewMode)
             {
-                _towerDefenseModeText.text = GetDebugUnitViewStatusText();
+                string speedHint = _towerDefenseDoubleSpeed ? "SPEED ×2" : "SPEED ×1";
+                string modeHint = _towerPlacementMode
+                    ? "  |  EDIT ×0.5  |  LMB PLACE/SELECT  |  TAB EXIT EDIT"
+                    : $"  |  {speedHint}  |  F10 TOGGLE SPEED  |  TAB EDIT  |  LMB SELECT TOWER";
+                _towerDefenseModeText.text = GetDebugUnitViewStatusText() + modeHint;
             }
             else if (_towerPlacementMode)
             {
@@ -3007,8 +3154,11 @@ public partial class RougeGameManager
                     : _selectedTower != null
                     ? $"SELECTED: {_selectedTower.DisplayName}  LV {_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
                       $"{GetTowerUiStats(_selectedTower)}" +
+                      (string.IsNullOrEmpty(_selectedTower.GetBuffDisplayText())
+                          ? string.Empty
+                          : $"  |  BUFF {_selectedTower.GetBuffDisplayText()}") +
                       (_selectedTower.IsTargetedDamage
-                          ? $"  |  TARGET {(_selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst ? "BOSS FIRST" : "NEAREST GOAL")}  |  MMB SWITCH"
+                          ? $"  |  {GetTowerTargetModeDescription(_selectedTower)}  |  MMB SWITCH"
                           : string.Empty)
                     : _towerBuildSelectionActive
                         ? $"BUILD: {TowerDefenseVisuals.GetTowerName(_selectedBuildType)}  |  LEFT CLICK PLACE/SELECT"
@@ -3043,8 +3193,8 @@ public partial class RougeGameManager
             if (_towerDefenseGameOver)
             {
                 _towerDefenseGameOverText.text = _towerDefenseVictory
-                    ? $"MISSION COMPLETE\n{_towerDefenseGameOverReason}\n\nPRESS R TO RESTART"
-                    : $"MISSION FAILED\n{_towerDefenseGameOverReason}\n\nPRESS R TO RESTART";
+                    ? $"任务完成\n{_towerDefenseGameOverReason}"
+                    : $"任务失败\n{_towerDefenseGameOverReason}\n\n按 R 重新开始";
                 _towerDefenseGameOverText.color = _towerDefenseVictory
                     ? new Color(0.3f, 1f, 0.7f, 1f)
                     : Color.white;
@@ -3085,6 +3235,32 @@ public partial class RougeGameManager
         _towerDamageRankingText.text = builder.ToString();
     }
 
+    private void RefreshTowerPlaceEffectHud()
+    {
+        if (_towerPlaceEffectPanel == null || _towerPlaceEffectText == null) return;
+        RougeDefenseTower contextTower = _towerPreview != null &&
+                                         _towerPreview.gameObject.activeInHierarchy
+            ? _towerPreview
+            : _selectedTower;
+        bool show = _towerPlacementMode && contextTower != null;
+        _towerPlaceEffectPanel.SetActive(show);
+        if (!show) return;
+
+        RougeTowerPlaceEffect effect = contextTower.TowerPlaceEffect;
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        string center = map != null && map.WorldToCell(contextTower.transform.position, out Vector2Int cell)
+            ? $"中心格  [{cell.x}, {cell.y}]"
+            : "中心格  --";
+        string cost = contextTower == _towerPreview
+            ? $"建造花费  ${contextTower.PlacementCost}"
+            : $"下次升级  {(contextTower.CanUpgrade ? "$" + contextTower.UpgradeCost : "已满级")}";
+        _towerPlaceEffectText.text =
+            "塔楼地图格效果\n" +
+            RougeTowerPlaceEffectRules.GetDisplayName(effect) + "\n" +
+            RougeTowerPlaceEffectRules.GetDescription(effect) + "\n" +
+            center + "   |   " + cost;
+    }
+
     private static string FormatCompactDamage(double value)
     {
         if (value >= 1000000d) return $"{value / 1000000d:0.##}M";
@@ -3103,20 +3279,42 @@ public partial class RougeGameManager
         switch (tower.TowerType)
         {
             case RougeTowerType.Ice:
-                return $"DMG {tower.Damage:0.#}  CD {tower.AttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  SLOW {tower.EffectPercent:0}%/{tower.EffectDuration:0.#}s";
+                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  SLOW {tower.EffectPercent:0}%/{tower.EffectDuration:0.#}s";
             case RougeTowerType.MachineGun:
-                return $"DMG {tower.Damage:0.#}  3 FRAMES  RADIUS {tower.AttackRange:0.#}  TARGETS {tower.TargetCount}";
+                bool focusedMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+                float halfSpread = MachineGunScatterHalfAngleDegrees *
+                    (focusedMode ? MachineGunFocusedSpreadMultiplier : 1f);
+                return $"DMG {tower.Damage:0.##}  CD {tower.EffectiveAttackInterval:0.###}s  RADIUS {tower.AttackRange:0.#}  PELLETS {tower.TargetCount}  SPREAD ±{halfSpread:0.#}°";
             case RougeTowerType.Cannon:
-                return $"DMG {tower.Damage:0.#}  CD {tower.AttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  SHELLS {tower.ProjectileCount}";
+                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  SHELLS {tower.ProjectileCount} @ {TowerProjectileBurstInterval:0.##}s";
             case RougeTowerType.Flame:
-                return $"TICK {tower.Damage:0.#}/{tower.TickInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  LIFE {tower.EffectDuration:0.#}s";
+                return $"TICK {tower.Damage:0.##}/{tower.TickInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  LIFE {tower.EffectDuration:0.#}s  FIREBALLS {tower.ProjectileCount} @ {TowerProjectileBurstInterval:0.##}s  OFFSET ≤{tower.AoeRadius * FlameLandingOffsetRadiusMultiplier:0.#}";
             case RougeTowerType.Laser:
                 return $"DMG {tower.Damage / 60f:0.#}/FRAME  RADIUS {tower.AttackRange:0.#}  TARGETS {tower.TargetCount}";
             case RougeTowerType.PiercingLaser:
-                return $"DMG {tower.Damage:0.#}  CD {tower.AttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  BEAM LEN {tower.AttackRange * 2f:0.#}";
+                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  BEAM LEN {tower.AttackRange * 2f:0.#}";
             default:
                 return $"CRYSTAL LASER DMG {tower.Damage:0.#}/{tower.TickInterval:0.##}s  COUNT {tower.ProjectileCount}  RADIUS {tower.OrbitSphereRadius:0.#}  MAX R {tower.AttackRange:0.#}  HOLD {tower.OrbitOuterHoldDuration:0.##}s  RADIAL {tower.OrbitRadialSpeed:0.#}  ROT {tower.OrbitAngularSpeed:0.#}°/s";
         }
+    }
+
+    private static string GetTowerTargetModeDescription(RougeDefenseTower tower)
+    {
+        bool bossFirst = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+        if (tower.TowerType == RougeTowerType.MachineGun)
+        {
+            return bossFirst
+                ? "MODE FOCUSED (BOSS FIRST, DMG -2/-30%, SPREAD -50%)"
+                : "MODE SCATTER (NEAREST GOAL)";
+        }
+        if (tower.TowerType == RougeTowerType.Flame)
+        {
+            return bossFirst
+                ? "MODE FOCUSED (BOSS FIRST, DMG -2/-30%)"
+                : "MODE ROTATE (NEAREST GOAL, DIFFERENT TARGETS)";
+        }
+
+        return $"TARGET {(bossFirst ? "BOSS FIRST" : "NEAREST GOAL")}";
     }
 
     private static GameObject CreateUiPanel(string name, Transform parent, Color color)

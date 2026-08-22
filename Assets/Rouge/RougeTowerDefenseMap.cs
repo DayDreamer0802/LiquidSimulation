@@ -4,11 +4,124 @@ using UnityEngine;
 
 public enum RougeLevelVictoryConditionType
 {
+    [InspectorName("击杀 Boss")]
     KillBoss = 0,
+    [InspectorName("击杀指定数量敌人")]
     KillEnemies = 1,
+    [InspectorName("生存指定时间")]
     SurviveSeconds = 2,
+    [InspectorName("消灭全部敌人")]
     KillAllEnemies = 3,
+    [InspectorName("累计获得金币")]
     EarnGold = 4
+}
+
+public enum RougeTowerPlaceEffect
+{
+    [InspectorName("0 - 无效果")]
+    None = 0,
+    [InspectorName("1 - 伤害 +2，范围 -1，金币消耗 +25%")]
+    DamageAmplifier = 1,
+    [InspectorName("2 - 范围 +2，攻速 -1，金币消耗 +25%")]
+    RangeAmplifier = 2,
+    [InspectorName("3 - 攻速 +2，伤害 -1，金币消耗 +25%")]
+    AttackSpeedAmplifier = 3,
+    [InspectorName("4 - 全属性 +1，金币消耗 +50%")]
+    PremiumAmplifier = 4,
+    [InspectorName("5 - 全属性 -1，初始等级 +1，出售无金币")]
+    FreeLevelNoRefund = 5,
+    [InspectorName("6 - 全属性 -2，击杀金币 +1")]
+    Bounty = 6,
+    [InspectorName("7 - 全属性 -1，金币消耗 -25%")]
+    Discount = 7
+}
+
+public static class RougeTowerPlaceEffectRules
+{
+    public static RougeTowerBuffLevels GetBuffLevels(RougeTowerPlaceEffect effect)
+    {
+        switch (effect)
+        {
+            case RougeTowerPlaceEffect.DamageAmplifier: return new RougeTowerBuffLevels(2, -1, 0);
+            case RougeTowerPlaceEffect.RangeAmplifier: return new RougeTowerBuffLevels(0, 2, -1);
+            case RougeTowerPlaceEffect.AttackSpeedAmplifier: return new RougeTowerBuffLevels(-1, 0, 2);
+            case RougeTowerPlaceEffect.PremiumAmplifier: return new RougeTowerBuffLevels(1, 1, 1);
+            case RougeTowerPlaceEffect.FreeLevelNoRefund: return new RougeTowerBuffLevels(-1, -1, -1);
+            case RougeTowerPlaceEffect.Bounty: return new RougeTowerBuffLevels(-2, -2, -2);
+            case RougeTowerPlaceEffect.Discount: return new RougeTowerBuffLevels(-1, -1, -1);
+            default: return default;
+        }
+    }
+
+    public static float GetGoldCostMultiplier(RougeTowerPlaceEffect effect)
+    {
+        switch (effect)
+        {
+            case RougeTowerPlaceEffect.DamageAmplifier:
+            case RougeTowerPlaceEffect.RangeAmplifier:
+            case RougeTowerPlaceEffect.AttackSpeedAmplifier:
+                return 1.25f;
+            case RougeTowerPlaceEffect.PremiumAmplifier:
+                return 1.5f;
+            case RougeTowerPlaceEffect.Discount:
+                return 0.75f;
+            default:
+                return 1f;
+        }
+    }
+
+    public static int GetInitialLevelBonus(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.FreeLevelNoRefund ? 1 : 0;
+    }
+
+    public static bool AllowsSellRefund(RougeTowerPlaceEffect effect)
+    {
+        return effect != RougeTowerPlaceEffect.FreeLevelNoRefund;
+    }
+
+    public static int GetKillGoldBonus(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.Bounty ? 1 : 0;
+    }
+
+    public static string GetDisplayName(RougeTowerPlaceEffect effect)
+    {
+        switch (effect)
+        {
+            case RougeTowerPlaceEffect.DamageAmplifier: return "效果 1 - 伤害强化";
+            case RougeTowerPlaceEffect.RangeAmplifier: return "效果 2 - 范围强化";
+            case RougeTowerPlaceEffect.AttackSpeedAmplifier: return "效果 3 - 攻速强化";
+            case RougeTowerPlaceEffect.PremiumAmplifier: return "效果 4 - 全面强化";
+            case RougeTowerPlaceEffect.FreeLevelNoRefund: return "效果 5 - 免费等级 / 禁止返还金币";
+            case RougeTowerPlaceEffect.Bounty: return "效果 6 - 击杀赏金";
+            case RougeTowerPlaceEffect.Discount: return "效果 7 - 金币折扣";
+            default: return "无塔楼格特殊效果";
+        }
+    }
+
+    public static string GetDescription(RougeTowerPlaceEffect effect)
+    {
+        switch (effect)
+        {
+            case RougeTowerPlaceEffect.DamageAmplifier:
+                return "伤害 +2   范围 -1   建造/升级金币消耗 +25%";
+            case RougeTowerPlaceEffect.RangeAmplifier:
+                return "范围 +2   攻速 -1   建造/升级金币消耗 +25%";
+            case RougeTowerPlaceEffect.AttackSpeedAmplifier:
+                return "攻速 +2   伤害 -1   建造/升级金币消耗 +25%";
+            case RougeTowerPlaceEffect.PremiumAmplifier:
+                return "伤害 +1   范围 +1   攻速 +1   建造/升级金币消耗 +50%";
+            case RougeTowerPlaceEffect.FreeLevelNoRefund:
+                return "伤害 -1   范围 -1   攻速 -1   初始等级 +1   出售金币 0";
+            case RougeTowerPlaceEffect.Bounty:
+                return "伤害 -2   范围 -2   攻速 -2   击杀金币 +1";
+            case RougeTowerPlaceEffect.Discount:
+                return "伤害 -1   范围 -1   攻速 -1   建造/升级金币消耗 -25%";
+            default:
+                return "此地图格没有特殊效果";
+        }
+    }
 }
 
 [CreateAssetMenu(fileName = "TowerDefenseMap", menuName = "Rouge/Tower Defense Map")]
@@ -30,6 +143,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         public Color editorColor = Color.gray;
         public bool blocksNavigation;
         public bool towerPlace;
+        [Tooltip("Special effect applied from the single terrain cell under the placed tower's center.")]
+        public RougeTowerPlaceEffect towerPlaceEffect;
         [Min(0.02f)] public float fallbackHeight = 0.2f;
         public float yOffset;
         public Vector3 prefabEulerAngles;
@@ -245,6 +360,28 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         int tileIndex = GetTile(cell);
         TileDefinition definition = GetDefinition(tileIndex);
         return tileIndex > 0 && definition != null && definition.towerPlace;
+    }
+
+    public RougeTowerPlaceEffect GetTowerPlaceEffect(Vector2Int cell)
+    {
+        int tileIndex = GetTile(cell);
+        TileDefinition definition = GetDefinition(tileIndex);
+        return tileIndex > 0 && definition != null && definition.towerPlace
+            ? definition.towerPlaceEffect
+            : RougeTowerPlaceEffect.None;
+    }
+
+    public float GetMinimumTowerGoldCostMultiplier()
+    {
+        float minimum = 1f;
+        for (int i = 0; i < tileDefinitions.Count; i++)
+        {
+            TileDefinition definition = tileDefinitions[i];
+            if (definition == null || !definition.towerPlace) continue;
+            minimum = Mathf.Min(minimum,
+                RougeTowerPlaceEffectRules.GetGoldCostMultiplier(definition.towerPlaceEffect));
+        }
+        return minimum;
     }
 
     public bool IsNavigationBlocked(Vector2Int cell)

@@ -2,13 +2,24 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // Keep the first four values stable so already-serialized towers retain their type.
-public enum RougeTowerType { Ice, MachineGun, Cannon, Flame, Laser, PiercingLaser, OrbitSphere }
+public enum RougeTowerType
+{
+    [InspectorName("冰塔")] Ice,
+    [InspectorName("机枪塔")] MachineGun,
+    [InspectorName("加农炮")] Cannon,
+    [InspectorName("火焰塔")] Flame,
+    [InspectorName("激光塔")] Laser,
+    [InspectorName("穿透激光塔")] PiercingLaser,
+    [InspectorName("水晶塔")] OrbitSphere
+}
 
 public enum RougeTowerTargetPriority
 {
     // Zero is intentional: old scene towers that did not serialize this field
     // automatically migrate to the desired default mode.
+    [InspectorName("普通模式（终点最近）")]
     NearestToGoal = 0,
+    [InspectorName("集中模式（Boss 优先）")]
     BossFirst = 1
 }
 

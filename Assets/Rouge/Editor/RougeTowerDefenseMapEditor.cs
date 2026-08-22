@@ -46,11 +46,11 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private static int[] s_bossOptionIds;
     private static string[] s_bossOptionLabels;
 
-    [MenuItem("Rouge/Tower Defense/Map Painter")]
+    [MenuItem("Rouge/塔防/地图编辑器")]
     public static void Open()
     {
         RougeTowerDefenseMapEditor window = GetWindow<RougeTowerDefenseMapEditor>();
-        window.titleContent = new GUIContent("TD Map Painter");
+        window.titleContent = new GUIContent("塔防地图编辑器");
         window.minSize = new Vector2(900f, 640f);
         window.Show();
     }
@@ -72,7 +72,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         DrawTopBar();
         if (_map == null)
         {
-            EditorGUILayout.HelpBox("Create or select a Tower Defense Map asset.", MessageType.Info);
+            EditorGUILayout.HelpBox("请新建或选择一个塔防地图资源。", MessageType.Info);
             return;
         }
 
@@ -93,19 +93,19 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             RougeTowerDefenseMap selected = (RougeTowerDefenseMap)EditorGUILayout.ObjectField(
                 _map, typeof(RougeTowerDefenseMap), false, GUILayout.Width(260f));
             if (EditorGUI.EndChangeCheck()) SetMap(selected);
-            if (GUILayout.Button("New Map", EditorStyles.toolbarButton, GUILayout.Width(75f))) CreateMapAsset();
+            if (GUILayout.Button("新建地图", EditorStyles.toolbarButton, GUILayout.Width(75f))) CreateMapAsset();
             using (new EditorGUI.DisabledScope(_map == null))
             {
-                if (GUILayout.Button("Add/Update Scene Loader", EditorStyles.toolbarButton, GUILayout.Width(160f)))
+                if (GUILayout.Button("添加/更新场景加载器", EditorStyles.toolbarButton, GUILayout.Width(160f)))
                     AddOrUpdateLoader();
-                if (GUILayout.Button("Save", EditorStyles.toolbarButton, GUILayout.Width(55f)))
+                if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(55f)))
                 {
                     EditorUtility.SetDirty(_map);
                     AssetDatabase.SaveAssets();
                 }
             }
             GUILayout.FlexibleSpace();
-            GUILayout.Label("Standalone 2D editor — Scene painting is not used", EditorStyles.miniLabel);
+            GUILayout.Label("独立二维编辑器——不使用场景绘制", EditorStyles.miniLabel);
         }
     }
 
@@ -116,23 +116,23 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         using (new EditorGUILayout.VerticalScope(GUILayout.Width(360f)))
         {
             _settingsScroll = EditorGUILayout.BeginScrollView(_settingsScroll);
-            EditorGUILayout.LabelField("Layer / Brush", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("图层 / 画笔", EditorStyles.boldLabel);
             PaintTool nextTool = (PaintTool)GUILayout.Toolbar((int)_tool,
-                new[] { "Map", "Enemy", "Main", "Boss", "Erase" }, GUILayout.Height(28f));
+                new[] { "地图", "敌人", "主塔", "Boss", "擦除" }, GUILayout.Height(28f));
             if (nextTool != _tool)
             {
                 _tool = nextTool;
                 _settingsScroll = Vector2.zero;
                 GUI.FocusControl(null);
             }
-            _pixelSize = EditorGUILayout.Slider("Canvas Cell Pixels", _pixelSize, 15f, 30f);
+            _pixelSize = EditorGUILayout.Slider("画布格子像素", _pixelSize, 15f, 30f);
 
             if (_tool == PaintTool.Tile)
-                EditorGUILayout.HelpBox("Left: paint base tile. Right: erase base tile and its upper object. The main tower tile is protected.", MessageType.None);
+                EditorGUILayout.HelpBox("左键：绘制地形。右键：删除地形及其上层对象。主塔所在格受保护。", MessageType.None);
             else if (_tool == PaintTool.EnemySpawn)
-                EditorGUILayout.HelpBox("Click an empty walkable tile to create an enemy spawn. Drag an existing numbered marker to move it. Right-click removes only the upper marker.", MessageType.None);
+                EditorGUILayout.HelpBox("点击空的可行走地块创建敌人出生点。拖动已有编号标记可移动；右键只删除上层标记。", MessageType.None);
             else
-                EditorGUILayout.HelpBox("Upper layer only: objects require a walkable base tile and cannot overlap. Right-click keeps the base tile. Main tower cannot be deleted.", MessageType.None);
+                EditorGUILayout.HelpBox("只编辑上层：对象必须放在可行走地块上且不能重叠。右键会保留底层地形；主塔不能删除。", MessageType.None);
 
             switch (_tool)
             {
@@ -156,15 +156,15 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void DrawMapLayerSettings()
     {
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Map Size", EditorStyles.boldLabel);
-        _pendingWidth = EditorGUILayout.IntSlider("Width", _pendingWidth, 1, RougeTowerDefenseMap.MaxMapCells);
-        _pendingHeight = EditorGUILayout.IntSlider("Height", _pendingHeight, 1, RougeTowerDefenseMap.MaxMapCells);
-        _pendingCellSize = EditorGUILayout.FloatField("World Cell Size", _pendingCellSize);
+        EditorGUILayout.LabelField("地图尺寸", EditorStyles.boldLabel);
+        _pendingWidth = EditorGUILayout.IntSlider("宽度", _pendingWidth, 1, RougeTowerDefenseMap.MaxMapCells);
+        _pendingHeight = EditorGUILayout.IntSlider("高度", _pendingHeight, 1, RougeTowerDefenseMap.MaxMapCells);
+        _pendingCellSize = EditorGUILayout.FloatField("世界格子尺寸", _pendingCellSize);
         using (new EditorGUI.DisabledScope(
                    _pendingWidth == _map.Width && _pendingHeight == _map.Height &&
                    Mathf.Approximately(_pendingCellSize, _map.CellSize)))
         {
-            if (GUILayout.Button("Apply Size (keep existing cells)"))
+            if (GUILayout.Button("应用尺寸（保留已有格子）"))
             {
                 Undo.RecordObject(_map, "Resize Tower Defense Map");
                 _map.ResizeGrid(_pendingWidth, _pendingHeight, _pendingCellSize, true);
@@ -172,31 +172,51 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             }
         }
         EditorGUILayout.HelpBox(
-            $"World size: {_map.Width * _map.CellSize:0.#} × {_map.Height * _map.CellSize:0.#}\n" +
-            $"Each terrain cell contains {RougeTowerDefenseMap.MicroCellsPerTile} × {RougeTowerDefenseMap.MicroCellsPerTile} micro cells.\n" +
-            "The map stays centered at world (0,0).",
+            $"世界尺寸：{_map.Width * _map.CellSize:0.#} × {_map.Height * _map.CellSize:0.#}\n" +
+            $"每个地形格包含 {RougeTowerDefenseMap.MicroCellsPerTile} × {RougeTowerDefenseMap.MicroCellsPerTile} 个微格。\n" +
+            "地图中心始终位于世界坐标 (0,0)。",
             MessageType.None);
 
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Tile Palette", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("地块调色板", EditorStyles.boldLabel);
         for (int i = 1; i < _map.TileDefinitions.Count; i++)
         {
             RougeTowerDefenseMap.TileDefinition definition = _map.TileDefinitions[i];
             Rect row = EditorGUILayout.GetControlRect(false, 24f);
             Rect swatch = new Rect(row.x + 3f, row.y + 3f, 18f, 18f);
             EditorGUI.DrawRect(swatch, definition.editorColor);
+            string effectSuffix = definition.towerPlace &&
+                                  definition.towerPlaceEffect != RougeTowerPlaceEffect.None
+                ? $"  [效果 {(int)definition.towerPlaceEffect}]"
+                : string.Empty;
             if (GUI.Toggle(new Rect(row.x + 25f, row.y, row.width - 25f, row.height),
-                    _tileIndex == i, $"{i}: {definition.name}", "Button")) _tileIndex = i;
+                    _tileIndex == i, $"{i}: {definition.name}{effectSuffix}", "Button")) _tileIndex = i;
         }
 
-        DrawLevelRulesSettings();
-        DrawLevelCameraSettings();
+        if (_tileIndex > 0 && _tileIndex < _map.TileDefinitions.Count &&
+            _map.TileDefinitions[_tileIndex].towerPlace)
+        {
+            RougeTowerDefenseMap.TileDefinition selectedDefinition = _map.TileDefinitions[_tileIndex];
+            EditorGUI.BeginChangeCheck();
+            RougeTowerPlaceEffect selectedEffect = (RougeTowerPlaceEffect)EditorGUILayout.EnumPopup(
+                "所选塔楼格效果", selectedDefinition.towerPlaceEffect);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RecordObject(_map, "Change Tower Grid Effect");
+                selectedDefinition.towerPlaceEffect = selectedEffect;
+                EditorUtility.SetDirty(_map);
+            }
+            EditorGUILayout.HelpBox(
+                RougeTowerPlaceEffectRules.GetDisplayName(selectedDefinition.towerPlaceEffect) + "\n" +
+                RougeTowerPlaceEffectRules.GetDescription(selectedDefinition.towerPlaceEffect),
+                MessageType.None);
+        }
 
         EditorGUILayout.Space(8f);
-        EditorGUILayout.LabelField("Tile Definitions", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("地块定义", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "AutoTile index uses N/E/S/W bits: North 1, East 2, South 4, West 8. " +
-            "Missing variants use the base Prefab.", MessageType.None);
+            "自动地块索引使用北/东/南/西位：北 1、东 2、南 4、西 8。缺少的变体会使用基础预制体。" +
+            "塔楼格效果按地块定义配置；一座塔只读取其中心点下方的一个地形格。", MessageType.None);
         _serializedMap.Update();
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("tileDefinitions"), true);
         if (_serializedMap.ApplyModifiedProperties()) EditorUtility.SetDirty(_map);
@@ -213,7 +233,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             HasUnlimitedEnemySpawner(_serializedMap.FindProperty("enemySpawns")))
         {
             EditorGUILayout.HelpBox(
-                "Kill All Enemies cannot complete while any spawn point has unlimited waves. Enable Maximum Waves for every spawn point.",
+                "存在无限波次的出生点时，无法完成“消灭全部敌人”。请为所有出生点启用波次限制。",
                 MessageType.Warning);
         }
         ApplyMapPropertyChanges("Edit Enemy Spawn Settings");
@@ -222,22 +242,26 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void DrawMainTowerLayerSettings()
     {
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Main Tower", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("主塔", EditorStyles.boldLabel);
         _serializedMap.Update();
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("mainTowerPrefab"),
-            new GUIContent("Main Tower Prefab"));
+            new GUIContent("主塔预制体"));
         ApplyMapPropertyChanges("Edit Main Tower Settings");
+
+        // Level-wide gameplay rules live on the Main tab so the Map tab stays focused on terrain.
+        DrawLevelRulesSettings();
+        DrawLevelCameraSettings();
     }
 
     private void DrawBossLayerSettings()
     {
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("Boss Layer", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Boss 图层", EditorStyles.boldLabel);
         _serializedMap.Update();
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("bossPrefab"),
-            new GUIContent("Boss Prefab"));
+            new GUIContent("Boss 预制体"));
         EditorGUILayout.Space(5f);
         DrawBossEncounters(_serializedMap.FindProperty("bossEncounters"));
         if (!ContainsVictoryCondition(_serializedMap.FindProperty("victoryConditions"),
@@ -245,7 +269,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             HasVictoryBossEncounter(_serializedMap.FindProperty("bossEncounters")))
         {
             EditorGUILayout.HelpBox(
-                "A Boss has Victory On Defeat enabled, but this level has no Kill Boss victory condition; defeating it will not win.",
+                "某个 Boss 启用了“击败后胜利”，但本关没有“击杀 Boss”胜利条件，因此击败它不会获胜。",
                 MessageType.Warning);
         }
         ApplyMapPropertyChanges("Edit Boss Layer Settings");
@@ -272,15 +296,15 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         if (_draggedEnemySpawnIndex >= 0 && GUIUtility.hotControl == dragControlId &&
             currentEvent.type == EventType.MouseDrag)
             _enemySpawnDropIndex = 0;
-        EditorGUILayout.LabelField("Enemy Spawn Points", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("敌人出生点", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Numbers match the red markers on the map. Drag the left handle to reorder; map IDs update with the list.",
+            "编号与地图上的红色标记对应。拖动左侧把手可以排序，地图标记编号会随列表更新。",
             MessageType.Info);
         if (spawns != null && _expandedEnemySpawnIndex >= spawns.arraySize)
             _expandedEnemySpawnIndex = -1;
         if (spawns == null || spawns.arraySize == 0)
         {
-            EditorGUILayout.HelpBox("No enemy spawn points. Click a walkable map cell to add one.",
+            EditorGUILayout.HelpBox("当前没有敌人出生点。点击可行走地图格即可添加。",
                 MessageType.None);
             return;
         }
@@ -308,7 +332,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 {
                     EditorGUI.DrawRect(headerRect, new Color(0.12f, 0.55f, 1f, 0.22f));
                 }
-                GUI.Label(dragRect, new GUIContent("≡", "Drag to reorder and change map marker IDs"),
+                GUI.Label(dragRect, new GUIContent("≡", "拖动排序并更新地图标记编号"),
                     EditorStyles.centeredGreyMiniLabel);
                 EditorGUIUtility.AddCursorRect(dragRect, MouseCursor.Pan);
                 if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0 &&
@@ -327,15 +351,15 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 }
                 bool expanded = _expandedEnemySpawnIndex == i;
                 bool nextExpanded = EditorGUI.Foldout(foldoutRect, expanded,
-                    $"#{i + 1}   Cell ({cellValue.x}, {cellValue.y})   {typeName}", true,
+                    $"#{i + 1}   格子 ({cellValue.x}, {cellValue.y})   {typeName}", true,
                     EditorStyles.foldoutHeader);
                 if (nextExpanded != expanded)
                     _expandedEnemySpawnIndex = nextExpanded ? i : -1;
-                if (GUI.Button(removeRect, new GUIContent("×", "Delete this spawn point")) &&
-                    EditorUtility.DisplayDialog("Delete Enemy Spawn Point",
-                        $"Delete spawn #{i + 1} at Cell ({cellValue.x}, {cellValue.y})?\n\n" +
-                        "Map marker IDs after it will move forward. You can also use Ctrl+Z to undo.",
-                        "Delete", "Cancel"))
+                if (GUI.Button(removeRect, new GUIContent("×", "删除这个出生点")) &&
+                    EditorUtility.DisplayDialog("删除敌人出生点",
+                        $"确定删除格子 ({cellValue.x}, {cellValue.y}) 上的出生点 #{i + 1} 吗？\n\n" +
+                        "后续地图标记编号会前移，也可以按 Ctrl+Z 撤销。",
+                        "删除", "取消"))
                 {
                     spawns.DeleteArrayElementAtIndex(i);
                     if (_expandedEnemySpawnIndex == i) _expandedEnemySpawnIndex = -1;
@@ -355,24 +379,24 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
                 float previousLabelWidth = EditorGUIUtility.labelWidth;
                 EditorGUIUtility.labelWidth = 125f;
-                EditorGUILayout.LabelField("Cell", $"({cellValue.x}, {cellValue.y})");
+                EditorGUILayout.LabelField("格子", $"({cellValue.x}, {cellValue.y})");
                 SerializedProperty spawnCount = spawn.FindPropertyRelative("spawnCount");
                 spawnCount.intValue = Mathf.Clamp(
-                    EditorGUILayout.IntField("Enemies per Wave", spawnCount.intValue), 1, 64);
+                    EditorGUILayout.IntField("每波敌人数", spawnCount.intValue), 1, 64);
                 SerializedProperty spawnInterval = spawn.FindPropertyRelative("spawnInterval");
                 spawnInterval.floatValue = Mathf.Max(0.1f,
-                    EditorGUILayout.FloatField("Spawn Interval", spawnInterval.floatValue));
+                    EditorGUILayout.FloatField("生成间隔", spawnInterval.floatValue));
                 SerializedProperty startDelay = spawn.FindPropertyRelative("startDelay");
                 startDelay.floatValue = Mathf.Max(0f,
-                    EditorGUILayout.FloatField("Start Delay", startDelay.floatValue));
-                EditorGUILayout.PropertyField(enemyType, new GUIContent("Enemy Type"));
+                    EditorGUILayout.FloatField("开始延迟", startDelay.floatValue));
+                EditorGUILayout.PropertyField(enemyType, new GUIContent("敌人类型"));
                 SerializedProperty limitWaves = spawn.FindPropertyRelative("limitWaveCount");
-                EditorGUILayout.PropertyField(limitWaves, new GUIContent("Limit Waves"));
+                EditorGUILayout.PropertyField(limitWaves, new GUIContent("限制波次数"));
                 if (limitWaves.boolValue)
                 {
                     SerializedProperty maximumWaves = spawn.FindPropertyRelative("maximumWaves");
                     maximumWaves.intValue = Mathf.Max(1,
-                        EditorGUILayout.IntField("Maximum Waves", maximumWaves.intValue));
+                        EditorGUILayout.IntField("最大波次数", maximumWaves.intValue));
                 }
                 EditorGUIUtility.labelWidth = previousLabelWidth;
             }
@@ -433,20 +457,20 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void DrawLevelRulesSettings()
     {
         EditorGUILayout.Space(8f);
-        EditorGUILayout.LabelField("Level Rules", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("关卡规则", EditorStyles.boldLabel);
         _serializedMap.Update();
         EditorGUI.BeginChangeCheck();
 
         DrawVictoryConditions(_serializedMap.FindProperty("victoryConditions"));
 
         EditorGUILayout.Space(5f);
-        EditorGUILayout.LabelField("Level Economy / Multipliers", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("startingGold"), new GUIContent("Starting Gold"));
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyHealthMultiplier"), new GUIContent("Enemy Health ×"));
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyMoveSpeedMultiplier"), new GUIContent("Enemy Move Speed ×"));
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerGoldCostMultiplier"), new GUIContent("Tower Gold Cost ×"));
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerDamageMultiplier"), new GUIContent("Tower Damage ×"));
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerAttackSpeedMultiplier"), new GUIContent("Tower Attack Speed ×"));
+        EditorGUILayout.LabelField("关卡经济 / 倍率", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("startingGold"), new GUIContent("初始金币"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyHealthMultiplier"), new GUIContent("敌人生命倍率"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyMoveSpeedMultiplier"), new GUIContent("敌人移速倍率"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerGoldCostMultiplier"), new GUIContent("塔楼金币消耗倍率"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerDamageMultiplier"), new GUIContent("塔楼伤害倍率"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerAttackSpeedMultiplier"), new GUIContent("塔楼攻速倍率"));
 
         EditorGUILayout.Space(5f);
         DrawDisabledTowerIds(_serializedMap.FindProperty("disabledTowerTypeIds"));
@@ -498,8 +522,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private static void DrawVictoryConditions(SerializedProperty conditions)
     {
-        EditorGUILayout.LabelField("Victory Conditions (ANY / OR)", EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox("The level wins as soon as any configured condition is satisfied.", MessageType.Info);
+        EditorGUILayout.LabelField("胜利条件（任意一个 / 或）", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox("只要满足任意一个已配置条件，本关立即胜利。", MessageType.Info);
         for (int i = 0; i < conditions.arraySize; i++)
         {
             SerializedProperty condition = conditions.GetArrayElementAtIndex(i);
@@ -520,21 +544,21 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 if (conditionType == RougeLevelVictoryConditionType.KillEnemies)
                 {
                     EditorGUILayout.PropertyField(condition.FindPropertyRelative("targetAmount"),
-                        new GUIContent("Enemy Kills"));
+                        new GUIContent("击杀敌人数"));
                 }
                 else if (conditionType == RougeLevelVictoryConditionType.SurviveSeconds)
                 {
                     EditorGUILayout.PropertyField(condition.FindPropertyRelative("targetSeconds"),
-                        new GUIContent("Survival Seconds"));
+                        new GUIContent("生存秒数"));
                 }
                 else if (conditionType == RougeLevelVictoryConditionType.EarnGold)
                 {
                     EditorGUILayout.PropertyField(condition.FindPropertyRelative("targetAmount"),
-                        new GUIContent("Earned Gold"));
+                        new GUIContent("累计获得金币"));
                 }
             }
         }
-        if (GUILayout.Button("Add Victory Condition"))
+        if (GUILayout.Button("添加胜利条件"))
         {
             int index = conditions.arraySize;
             conditions.InsertArrayElementAtIndex(index);
@@ -545,14 +569,14 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             added.FindPropertyRelative("targetSeconds").floatValue = 300f;
         }
         if (conditions.arraySize == 0)
-            EditorGUILayout.HelpBox("No victory condition is configured; this level cannot be completed.", MessageType.Warning);
+            EditorGUILayout.HelpBox("尚未配置胜利条件，本关将无法完成。", MessageType.Warning);
     }
 
     private static void DrawDisabledTowerIds(SerializedProperty disabledIds)
     {
-        EditorGUILayout.LabelField("Disabled Towers", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("禁用塔楼", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Known integer IDs are shown as tower enums. The serialized list remains List<int> so future mod tower IDs can be entered directly.",
+            "已知整数 ID 会显示为塔楼类型。底层仍保存为 List<int>，以后可以直接输入 Mod 塔楼 ID。",
             MessageType.None);
         for (int i = 0; i < disabledIds.arraySize; i++)
         {
@@ -567,7 +591,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 }
                 else
                 {
-                    id.intValue = EditorGUILayout.IntField($"Mod Tower ID {i + 1}", id.intValue);
+                    id.intValue = EditorGUILayout.IntField($"Mod 塔楼 ID {i + 1}", id.intValue);
                 }
                 if (GUILayout.Button("−", GUILayout.Width(24f)))
                 {
@@ -576,7 +600,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 }
             }
         }
-        if (GUILayout.Button("Add Disabled Tower"))
+        if (GUILayout.Button("添加禁用塔楼"))
         {
             int index = disabledIds.arraySize;
             disabledIds.InsertArrayElementAtIndex(index);
@@ -607,9 +631,10 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private static void DrawBossEncounters(SerializedProperty encounters)
     {
-        EditorGUILayout.LabelField("Boss Schedule", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Boss 出场计划", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Bosses use the map's Boss spawn marker. Multiple entries spawn sequentially; a later Boss waits if the previous one is still alive. Victory On Defeat also requires a Kill Boss victory condition.",
+            "Boss 使用地图上的 Boss 出生标记。多个 Boss 会按顺序生成；前一个仍存活时，后一个会等待。" +
+            "“击败后胜利”还需要配置“击杀 Boss”胜利条件。",
             MessageType.Info);
         GetBossEditorOptions(out int[] bossIds, out string[] bossLabels);
         for (int i = 0; i < encounters.arraySize; i++)
@@ -637,12 +662,12 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                     }
                 }
                 EditorGUILayout.PropertyField(encounter.FindPropertyRelative("spawnMinute"),
-                    new GUIContent("Spawn At Minute"));
+                    new GUIContent("出场分钟"));
                 EditorGUILayout.PropertyField(encounter.FindPropertyRelative("defeatGrantsVictory"),
-                    new GUIContent("Victory On Defeat"));
+                    new GUIContent("击败后胜利"));
             }
         }
-        if (GUILayout.Button("Add Boss Encounter"))
+        if (GUILayout.Button("添加 Boss"))
         {
             int index = encounters.arraySize;
             encounters.InsertArrayElementAtIndex(index);
@@ -691,7 +716,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         if (idList.Count == 0)
         {
             idList.Add(0);
-            labelList.Add("Overlord (ID 0)");
+            labelList.Add("霸主（ID 0）");
         }
         s_bossOptionsJsonHash = jsonHash;
         s_bossOptionIds = idList.ToArray();
@@ -703,19 +728,19 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void DrawLevelCameraSettings()
     {
         EditorGUILayout.Space(8f);
-        EditorGUILayout.LabelField("Level Camera Clamp / Zoom", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("关卡镜头边界 / 缩放", EditorStyles.boldLabel);
         _serializedMap.Update();
         EditorGUI.BeginChangeCheck();
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("configureCameraBounds"),
-            new GUIContent("Enable Camera Clamp"));
+            new GUIContent("启用镜头边界"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("cameraBoundsCenter"),
-            new GUIContent("Clamp Center (World X/Z)"));
+            new GUIContent("边界中心（世界 X/Z）"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("cameraBoundsSize"),
-            new GUIContent("Clamp Size (Width/Height)"));
+            new GUIContent("边界尺寸（宽/高）"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("minimumCameraZoom"),
-            new GUIContent("Minimum Zoom"));
+            new GUIContent("最小缩放"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("maximumCameraZoom"),
-            new GUIContent("Maximum Zoom"));
+            new GUIContent("最大缩放"));
         if (EditorGUI.EndChangeCheck())
         {
             Undo.RecordObject(_map, "Edit Level Camera Clamp");
@@ -734,8 +759,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             _serializedMap.ApplyModifiedProperties();
         }
         EditorGUILayout.HelpBox(
-            "Saved in the selected Map asset, so every level has independent values. " +
-            "A scene Loader using this Map applies them at runtime.",
+            "这些数值保存在当前地图资源中，因此每个关卡互相独立。使用该地图的场景加载器会在运行时应用它们。",
             MessageType.None);
     }
 
@@ -744,8 +768,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         using (new EditorGUILayout.VerticalScope())
         {
             string hover = _map.Contains(_hoverCell)
-                ? $"Cell {_hoverCell.x}, {_hoverCell.y}  |  World {FormatWorld(_hoverCell)}"
-                : "Left drag: paint    Right drag: erase";
+                ? $"格子 {_hoverCell.x}, {_hoverCell.y}  |  世界坐标 {FormatWorld(_hoverCell)}"
+                : "左键拖动：绘制    右键拖动：擦除";
             EditorGUILayout.LabelField(hover, EditorStyles.boldLabel);
 
             float width = _map.Width * _pixelSize;
@@ -1115,7 +1139,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void CreateMapAsset()
     {
         string path = EditorUtility.SaveFilePanelInProject(
-            "Create Tower Defense Map", "TowerDefenseMap", "asset", "Choose the map asset location.");
+            "创建塔防地图", "TowerDefenseMap", "asset", "请选择地图资源的保存位置。" );
         if (string.IsNullOrEmpty(path)) return;
         RougeTowerDefenseMap created = CreateInstance<RougeTowerDefenseMap>();
         created.InitializeDefaults();

@@ -247,6 +247,7 @@ public partial class RougeGameManager : MonoBehaviour
     private int _towerTargetScheduledCount;
     private NativeArray<float> _towerLaserDamage;
     private NativeArray<int> _towerLaserDamageFrames;
+    private NativeArray<int> _towerKillGoldBonus;
     private NativeArray<byte> _towerDefenseEnemyKinds;
     private NativeArray<int> _enemyRenderKinds;
     private NativeArray<int> _towerDefenseGoldEarned;
@@ -1040,6 +1041,7 @@ public partial class RougeGameManager : MonoBehaviour
             MaxJobifiedTowerCount * FindTowerTargetsJob.MaxTargetsPerTower, Allocator.Persistent);
         _towerLaserDamage = new NativeArray<float>(enemyCount, Allocator.Persistent);
         _towerLaserDamageFrames = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerKillGoldBonus = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseEnemyKinds = new NativeArray<byte>(enemyCount, Allocator.Persistent);
         _enemyRenderKinds = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseGoldEarned = new NativeArray<int>(1, Allocator.Persistent);
@@ -2629,6 +2631,7 @@ public partial class RougeGameManager : MonoBehaviour
             EliteKillGold = Mathf.Max(0, enemyBalance.eliteKillGold),
             TowerLaserDamage = _towerLaserDamage,
             TowerLaserDamageFrames = _towerLaserDamageFrames,
+            TowerKillGoldBonus = _towerKillGoldBonus,
             TowerLaserDamageFrame = _towerLaserDamageFrame,
             TowerDamageByType = _towerDamageByType,
             TowerDamageByTypeFrames = _towerDamageByTypeFrames,
@@ -3282,6 +3285,7 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _towerTargetResultDistances);
         ReleaseNative(ref _towerLaserDamage);
         ReleaseNative(ref _towerLaserDamageFrames);
+        ReleaseNative(ref _towerKillGoldBonus);
         ReleaseNative(ref _towerDefenseEnemyKinds);
         ReleaseNative(ref _enemyRenderKinds);
         ReleaseNative(ref _towerDefenseGoldEarned);
@@ -3858,6 +3862,7 @@ public struct RougeSkillArea
     public float EffectBurnDamage;
     public float EffectBurnDuration;
     public int SourceTowerTypePlusOne;
+    public int SourceTowerKillGoldBonus;
 }
 
 public struct RougeEnemyEffectState
@@ -3880,6 +3885,7 @@ public struct RougeEnemyEffectState
     public float LaunchMotionTimer;
     public float LaunchStackTimer;
     public float BurnDuration;
+    public int TowerKillGoldBonus;
     public float NavigationDirectionX;
     public float NavigationDirectionY;
     public float NavigationReverseCooldown;

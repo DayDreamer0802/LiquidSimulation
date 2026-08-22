@@ -637,7 +637,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 156, y: 1, z: 156}
+  m_Size: {x: 142, y: 1, z: 142}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &995686287
 Transform:
@@ -3310,7 +3310,7 @@ MonoBehaviour:
     navigationRadius: 1.25
     fallbackSpawnPosition: {x: 0, y: 0.25, z: 135}
     interferenceRadius: 20
-    interferenceAttackSpeedMultiplier: 0.75
+    interferenceAttackSpeedBuffLevel: -2
     shieldRadius: 30
     shieldDamageMultiplier: 0.5
     minimumShieldedDamage: 1
@@ -3333,7 +3333,7 @@ MonoBehaviour:
     navigationRadius: 1.25
     fallbackSpawnPosition: {x: 0, y: 0.25, z: 135}
     interferenceRadius: 20
-    interferenceAttackSpeedMultiplier: 0.75
+    interferenceAttackSpeedBuffLevel: -2
     shieldRadius: 30
     shieldDamageMultiplier: 0.5
     minimumShieldedDamage: 1
@@ -3377,8 +3377,9 @@ MonoBehaviour:
       costMultiplier: 1.5
       cooldown: 15
       duration: 7
-      attackSpeedMultiplier: 1.3
-      damageMultiplier: 1.3
+      damageBuffLevel: 2
+      rangeBuffLevel: 0
+      attackSpeedBuffLevel: 2
     missileBarrage:
       cooldown: 25
       selectionRadius: 50

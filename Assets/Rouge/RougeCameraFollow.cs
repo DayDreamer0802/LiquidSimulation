@@ -4,6 +4,8 @@ using UnityEngine.InputSystem;
 [DefaultExecutionOrder(1000)]
 public class RougeCameraFollow : MonoBehaviour
 {
+    private const float DebugFreeMinimumHeight = 0f;
+    private const float DebugFreeMaximumHeight = 100f;
     private static float s_runtimeHeightOffset;
     private static float s_runtimeFovOffset;
     private static float s_runtimeZoomScale = 1f;
@@ -232,6 +234,7 @@ public class RougeCameraFollow : MonoBehaviour
         _debugFreeViewActive = true;
         _panDragButton = 0;
         _debugLookActive = false;
+        ClampDebugFreePosition();
     }
 
     public void EndDebugFreeView()
@@ -265,7 +268,11 @@ public class RougeCameraFollow : MonoBehaviour
         transform.rotation = Quaternion.Euler(_debugFreePitch, _debugFreeYaw, 0f);
 
         Keyboard keyboard = Keyboard.current;
-        if (keyboard == null) return;
+        if (keyboard == null)
+        {
+            ClampDebugFreePosition();
+            return;
+        }
         float horizontal = (keyboard.dKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed ? 1f : 0f);
         float forwardInput = (keyboard.wKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed ? 1f : 0f);
         float vertical = (keyboard.spaceKey.isPressed || keyboard.eKey.isPressed ? 1f : 0f) -
@@ -278,6 +285,7 @@ public class RougeCameraFollow : MonoBehaviour
         bool fast = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
         float speed = debugFreeMoveSpeed * (fast ? debugFreeFastMultiplier : 1f);
         transform.position += movement * speed * Time.unscaledDeltaTime;
+        ClampDebugFreePosition();
     }
 
     private void SetDebugLookActive(bool active)
@@ -402,29 +410,8 @@ public class RougeCameraFollow : MonoBehaviour
     private void ClampToMovementBounds()
     {
         Vector3 position = transform.position;
-        float minX;
-        float maxX;
-        float minZ;
-        float maxZ;
-        float groundPlaneY;
-        if (movementBounds != null)
-        {
-            Bounds bounds = movementBounds.WorldBounds;
-            minX = bounds.min.x;
-            maxX = bounds.max.x;
-            minZ = bounds.min.z;
-            maxZ = bounds.max.z;
-            groundPlaneY = bounds.center.y;
-        }
-        else
-        {
-            Vector2 halfSize = new Vector2(Mathf.Max(1f, fallbackBoundsSize.x), Mathf.Max(1f, fallbackBoundsSize.y)) * 0.5f;
-            minX = fallbackBoundsCenter.x - halfSize.x;
-            maxX = fallbackBoundsCenter.x + halfSize.x;
-            minZ = fallbackBoundsCenter.y - halfSize.y;
-            maxZ = fallbackBoundsCenter.y + halfSize.y;
-            groundPlaneY = 0f;
-        }
+        GetPlanarMovementBounds(out float minX, out float maxX, out float minZ, out float maxZ,
+            out float groundPlaneY);
 
         Camera camera = _camera != null ? _camera : GetComponent<Camera>();
         if (camera != null && TryGetViewportGroundCenter(camera, groundPlaneY, out Vector3 groundCenter))
@@ -443,6 +430,43 @@ public class RougeCameraFollow : MonoBehaviour
             position.z = Mathf.Clamp(position.z, minZ, maxZ);
         }
         transform.position = position;
+    }
+
+    private void ClampDebugFreePosition()
+    {
+        Vector3 position = transform.position;
+        position.y = Mathf.Clamp(position.y, DebugFreeMinimumHeight, DebugFreeMaximumHeight);
+        if (_movementClampEnabled)
+        {
+            GetPlanarMovementBounds(out float minX, out float maxX, out float minZ, out float maxZ,
+                out _);
+            position.x = Mathf.Clamp(position.x, minX, maxX);
+            position.z = Mathf.Clamp(position.z, minZ, maxZ);
+        }
+        transform.position = position;
+    }
+
+    private void GetPlanarMovementBounds(out float minX, out float maxX, out float minZ,
+        out float maxZ, out float groundPlaneY)
+    {
+        if (movementBounds != null)
+        {
+            Bounds bounds = movementBounds.WorldBounds;
+            minX = bounds.min.x;
+            maxX = bounds.max.x;
+            minZ = bounds.min.z;
+            maxZ = bounds.max.z;
+            groundPlaneY = bounds.center.y;
+        }
+        else
+        {
+            Vector2 halfSize = new Vector2(Mathf.Max(1f, fallbackBoundsSize.x), Mathf.Max(1f, fallbackBoundsSize.y)) * 0.5f;
+            minX = fallbackBoundsCenter.x - halfSize.x;
+            maxX = fallbackBoundsCenter.x + halfSize.x;
+            minZ = fallbackBoundsCenter.y - halfSize.y;
+            maxZ = fallbackBoundsCenter.y + halfSize.y;
+            groundPlaneY = 0f;
+        }
     }
 
     private static bool TryGetViewportGroundCenter(Camera camera, float groundPlaneY,

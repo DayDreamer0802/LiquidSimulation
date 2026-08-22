@@ -14,13 +14,13 @@ public partial class RougeGameManager
             return true;
         }
 
-        // Consume normal tower/build mouse input while the free camera owns it.
-        return _debugUnitViewMode;
+        // Free camera movement and tower placement can run together. Right mouse owns
+        // camera look while it is held; regular tower input remains available otherwise.
+        return false;
     }
 
     private void EnterDebugUnitView()
     {
-        if (_towerPlacementMode) SetTowerPlacementMode(false);
         RougeCameraFollow follow = ResolveDebugCameraFollow();
         if (follow == null) return;
         _debugUnitViewMode = true;
@@ -44,6 +44,6 @@ public partial class RougeGameManager
 
     private static string GetDebugUnitViewStatusText()
     {
-        return "DEBUG FREE CAMERA  |  F1 EXIT  |  WASD MOVE  |  MOUSE LOOK  |  SPACE/E UP  |  CTRL/Q DOWN  |  SHIFT FAST";
+        return "DEBUG FREE CAMERA  |  F1 EXIT  |  WASD MOVE  |  RMB LOOK  |  SPACE/E UP  |  CTRL/Q DOWN  |  SHIFT FAST";
     }
 }

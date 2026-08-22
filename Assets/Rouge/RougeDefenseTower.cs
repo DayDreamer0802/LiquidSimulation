@@ -1,5 +1,116 @@
 using UnityEngine;
 
+public enum RougeTowerBuffStat
+{
+    Damage,
+    Range,
+    AttackSpeed
+}
+
+[System.Serializable]
+public struct RougeTowerBuffLevels
+{
+    public int Damage;
+    public int Range;
+    public int AttackSpeed;
+
+    public RougeTowerBuffLevels(int damage, int range, int attackSpeed)
+    {
+        Damage = damage;
+        Range = range;
+        AttackSpeed = attackSpeed;
+    }
+
+    public int Get(RougeTowerBuffStat stat)
+    {
+        switch (stat)
+        {
+            case RougeTowerBuffStat.Range: return Range;
+            case RougeTowerBuffStat.AttackSpeed: return AttackSpeed;
+            default: return Damage;
+        }
+    }
+
+    public void Add(RougeTowerBuffStat stat, int amount)
+    {
+        switch (stat)
+        {
+            case RougeTowerBuffStat.Range:
+                Range = AddWithoutOverflow(Range, amount);
+                break;
+            case RougeTowerBuffStat.AttackSpeed:
+                AttackSpeed = AddWithoutOverflow(AttackSpeed, amount);
+                break;
+            default:
+                Damage = AddWithoutOverflow(Damage, amount);
+                break;
+        }
+    }
+
+    public static RougeTowerBuffLevels operator +(RougeTowerBuffLevels left, RougeTowerBuffLevels right)
+    {
+        return new RougeTowerBuffLevels(
+            AddWithoutOverflow(left.Damage, right.Damage),
+            AddWithoutOverflow(left.Range, right.Range),
+            AddWithoutOverflow(left.AttackSpeed, right.AttackSpeed));
+    }
+
+    private static int AddWithoutOverflow(int left, int right)
+    {
+        long sum = (long)left + right;
+        return sum > int.MaxValue ? int.MaxValue : sum < int.MinValue ? int.MinValue : (int)sum;
+    }
+}
+
+public static class RougeTowerBuffMath
+{
+    public const int MinimumEffectiveLevel = -3;
+    public const int MaximumEffectiveLevel = 3;
+
+    public static int GetEffectiveLevel(int rawLevel)
+    {
+        return Mathf.Clamp(rawLevel, MinimumEffectiveLevel, MaximumEffectiveLevel);
+    }
+
+    public static float GetMultiplier(int rawLevel)
+    {
+        switch (GetEffectiveLevel(rawLevel))
+        {
+            case -3: return 0.5f;
+            case -2: return 0.7f;
+            case -1: return 0.85f;
+            case 1: return 1.15f;
+            case 2: return 1.3f;
+            case 3: return 1.5f;
+            default: return 1f;
+        }
+    }
+
+    public static int GetPercent(int rawLevel)
+    {
+        switch (GetEffectiveLevel(rawLevel))
+        {
+            case -3: return -50;
+            case -2: return -30;
+            case -1: return -15;
+            case 1: return 15;
+            case 2: return 30;
+            case 3: return 50;
+            default: return 0;
+        }
+    }
+}
+
+internal enum RougeTowerBuffSource
+{
+    Permanent,
+    TowerPlace,
+    BossSkill,
+    FocusedMode,
+    Overclock,
+    Count
+}
+
 [DisallowMultipleComponent]
 public sealed class RougeDefenseTower : MonoBehaviour
 {
@@ -14,11 +125,14 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [SerializeField] private int investedGold;
     [SerializeField] private bool isTargetedDamage = true;
     [SerializeField] private RougeTowerTargetPriority targetPriority = RougeTowerTargetPriority.NearestToGoal;
+    [SerializeField] private RougeTowerPlaceEffect towerPlaceEffect;
     [System.NonSerialized] internal float attackTimer;
     [System.NonSerialized] internal int targetIndex = -1;
-    [System.NonSerialized] internal int cannonBurstShotsRemaining;
-    [System.NonSerialized] internal float cannonBurstTimer;
-    [System.NonSerialized] internal Vector3 cannonBurstTarget;
+    [System.NonSerialized] internal int projectileBurstShotsRemaining;
+    [System.NonSerialized] internal int projectileBurstShotIndex;
+    [System.NonSerialized] internal float projectileBurstTimer;
+    [System.NonSerialized] internal int projectileBurstPrimaryTargetIndex = -1;
+    [System.NonSerialized] internal Vector3 projectileBurstPrimaryTarget;
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
     [System.NonSerialized] internal LineRenderer attackRing;
@@ -36,10 +150,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private GameObject laserBeamObject;
     private Mesh laserBeamMesh;
     private GameObject bossInterferenceMarker;
-    private float bossAttackSpeedMultiplier = 1f;
-    private float overclockAttackSpeedMultiplier = 1f;
-    private float overclockDamageMultiplier = 1f;
+    private readonly RougeTowerBuffLevels[] buffSources =
+        new RougeTowerBuffLevels[(int)RougeTowerBuffSource.Count];
     private float overclockRemaining;
+    private bool towerPlaceInitialLevelApplied;
     private ParticleSystem overclockParticles;
     private Material overclockParticleMaterial;
 
@@ -48,9 +162,11 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public int Level => level;
     public int MaxLevel => TowerDefenseVisuals.MaxTowerLevel;
     public bool CanUpgrade => level < MaxLevel;
-    public float Damage => Stats.Damage * overclockDamageMultiplier;
+    public float Damage => Stats.Damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
     public float AttackInterval => Stats.AttackInterval;
-    public float AttackRange => Stats.AttackRadius;
+    public float EffectiveAttackInterval => Stats.AttackInterval /
+        Mathf.Max(0.01f, GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed));
+    public float AttackRange => Stats.AttackRadius * GetBuffMultiplier(RougeTowerBuffStat.Range);
     public Vector2Int FootprintCells => TowerDefenseVisuals.GetFootprintSize(towerType);
     public int TargetCount => Stats.TargetCount;
     public int ProjectileCount => Stats.ProjectileCount;
@@ -64,33 +180,44 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float OrbitOuterHoldDuration => Stats.OrbitOuterHoldDuration;
     public float PlacementRadius => placementRadius;
     public int PurchaseCost => purchaseCost;
+    public int PlacementCost => ScaleGoldCost(purchaseCost);
     public int InvestedGold => investedGold;
     public bool IsTargetedDamage => isTargetedDamage;
     public RougeTowerTargetPriority TargetPriority => targetPriority;
-    public float AttackSpeedMultiplier => bossAttackSpeedMultiplier * overclockAttackSpeedMultiplier;
+    public float AttackSpeedMultiplier => GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed);
     public bool IsOverclocked => overclockRemaining > 0f;
+    public RougeTowerPlaceEffect TowerPlaceEffect => towerPlaceEffect;
+    public bool AllowsSellRefund => RougeTowerPlaceEffectRules.AllowsSellRefund(towerPlaceEffect);
+    public int KillGoldBonus => RougeTowerPlaceEffectRules.GetKillGoldBonus(towerPlaceEffect);
     // Lv1 purchase is 1x. Upgrades to Lv2..Lv5 cost 2x, 4x, 8x and 16x.
-    public int UpgradeCost => CanUpgrade ? purchaseCost * (1 << level) : 0;
+    public int UpgradeCost => CanUpgrade ? ScaleGoldCost(purchaseCost * (1 << level)) : 0;
     public string DisplayName => TowerDefenseVisuals.GetTowerName(towerType);
 
     internal void Configure(RougeTowerType type, bool preview)
     {
         towerType = type;
         level = 1;
+        towerPlaceEffect = RougeTowerPlaceEffect.None;
+        towerPlaceInitialLevelApplied = false;
+        SetBuffSource(RougeTowerBuffSource.TowerPlace, default);
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out placementRadius, out purchaseCost);
         isTargetedDamage = GetDefaultTargetedDamage(type);
         investedGold = preview ? 0 : purchaseCost;
         attackTimer = type == RougeTowerType.Laser ? 0f : AttackInterval * 0.25f;
         targetIndex = -1;
-        cannonBurstShotsRemaining = 0;
-        cannonBurstTimer = 0f;
+        projectileBurstShotsRemaining = 0;
+        projectileBurstShotIndex = 0;
+        projectileBurstTimer = 0f;
+        projectileBurstPrimaryTargetIndex = -1;
+        RefreshFocusedModeBuff();
         CacheEditHintRadii();
         InitializePrefabVisuals(preview);
     }
 
     internal void FinalizePlacement()
     {
-        investedGold = purchaseCost;
+        ApplyTowerPlaceInitialLevelBonus();
+        investedGold = PlacementCost;
         Collider collider = GetComponent<Collider>();
         if (collider != null) collider.enabled = false;
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, false, Color.white);
@@ -101,8 +228,19 @@ public sealed class RougeDefenseTower : MonoBehaviour
         TowerDefenseVisuals.GetBaseStats(towerType, out _, out _, out _, out placementRadius, out purchaseCost);
         isTargetedDamage = GetDefaultTargetedDamage(towerType);
         investedGold = Mathf.Max(investedGold, purchaseCost);
+        RefreshFocusedModeBuff();
         CacheEditHintRadii();
         InitializePrefabVisuals(false);
+    }
+
+    internal void ApplyTowerPlaceEffect(RougeTowerPlaceEffect effect, bool existingTower = false)
+    {
+        towerPlaceEffect = effect;
+        SetBuffSource(RougeTowerBuffSource.TowerPlace,
+            RougeTowerPlaceEffectRules.GetBuffLevels(effect));
+        if (!existingTower) return;
+        ApplyTowerPlaceInitialLevelBonus();
+        investedGold = Mathf.Max(investedGold, PlacementCost);
     }
 
     internal void SetPreviewState(bool valid, bool[] cellValidity = null)
@@ -119,7 +257,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
         level++;
         investedGold += cost;
         targetIndex = -1;
-        cannonBurstShotsRemaining = 0;
+        projectileBurstShotsRemaining = 0;
+        projectileBurstShotIndex = 0;
+        projectileBurstTimer = 0f;
+        projectileBurstPrimaryTargetIndex = -1;
         return true;
     }
 
@@ -129,6 +270,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
             ? RougeTowerTargetPriority.NearestToGoal
             : RougeTowerTargetPriority.BossFirst;
         targetIndex = -1;
+        RefreshFocusedModeBuff();
     }
 
     internal void SetRangeVisibility(bool visible, bool valid = true)
@@ -282,10 +424,50 @@ public sealed class RougeDefenseTower : MonoBehaviour
         return GetShootPosition();
     }
 
-    internal void SetBossInterference(bool active, float speedMultiplier)
+    public void AddBuff(RougeTowerBuffStat stat, int levelDelta)
     {
-        bossAttackSpeedMultiplier = active ? Mathf.Clamp(speedMultiplier, 0.05f, 1f) : 1f;
-        if (!active)
+        RougeTowerBuffLevels buffs = buffSources[(int)RougeTowerBuffSource.Permanent];
+        buffs.Add(stat, levelDelta);
+        SetBuffSource(RougeTowerBuffSource.Permanent, buffs);
+    }
+
+    public void AddBuff(RougeTowerBuffLevels levelDeltas)
+    {
+        SetBuffSource(RougeTowerBuffSource.Permanent,
+            buffSources[(int)RougeTowerBuffSource.Permanent] + levelDeltas);
+    }
+
+    public int GetRawBuffLevel(RougeTowerBuffStat stat)
+    {
+        int total = 0;
+        for (int i = 0; i < buffSources.Length; i++)
+        {
+            long next = (long)total + buffSources[i].Get(stat);
+            total = next > int.MaxValue ? int.MaxValue : next < int.MinValue ? int.MinValue : (int)next;
+        }
+        return total;
+    }
+
+    public int GetEffectiveBuffLevel(RougeTowerBuffStat stat)
+    {
+        return RougeTowerBuffMath.GetEffectiveLevel(GetRawBuffLevel(stat));
+    }
+
+    public string GetBuffDisplayText()
+    {
+        string text = string.Empty;
+        AppendBuffDisplay(ref text, "DMG", RougeTowerBuffStat.Damage);
+        AppendBuffDisplay(ref text, "RANGE", RougeTowerBuffStat.Range);
+        AppendBuffDisplay(ref text, "ASPD", RougeTowerBuffStat.AttackSpeed);
+        return text;
+    }
+
+    internal void SetBossInterference(bool active, int attackSpeedBuffLevel)
+    {
+        SetBuffSource(RougeTowerBuffSource.BossSkill,
+            active ? new RougeTowerBuffLevels(0, 0, attackSpeedBuffLevel) : default);
+        bool showDebuff = active && GetEffectiveBuffLevel(RougeTowerBuffStat.AttackSpeed) < 0;
+        if (!showDebuff)
         {
             if (bossInterferenceMarker != null) bossInterferenceMarker.SetActive(false);
             return;
@@ -306,11 +488,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
         bossInterferenceMarker.transform.localScale = Vector3.one * pulse;
     }
 
-    internal void ActivateOverclock(float duration, float attackSpeed, float damage)
+    internal void ActivateOverclock(float duration, RougeTowerBuffLevels buffs)
     {
         overclockRemaining = Mathf.Max(overclockRemaining, Mathf.Max(0f, duration));
-        overclockAttackSpeedMultiplier = Mathf.Max(1f, attackSpeed);
-        overclockDamageMultiplier = Mathf.Max(1f, damage);
+        SetBuffSource(RougeTowerBuffSource.Overclock, buffs);
         EnsureOverclockParticles();
         if (overclockParticles != null && !overclockParticles.isPlaying) overclockParticles.Play(true);
     }
@@ -320,8 +501,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (overclockRemaining <= 0f) return;
         overclockRemaining = Mathf.Max(0f, overclockRemaining - Mathf.Max(0f, dt));
         if (overclockRemaining > 0f) return;
-        overclockAttackSpeedMultiplier = 1f;
-        overclockDamageMultiplier = 1f;
+        SetBuffSource(RougeTowerBuffSource.Overclock, default);
         if (overclockParticles != null)
             overclockParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
     }
@@ -382,6 +562,54 @@ public sealed class RougeDefenseTower : MonoBehaviour
     {
         level = Mathf.Clamp(level, 1, TowerDefenseVisuals.MaxTowerLevel);
         isTargetedDamage = GetDefaultTargetedDamage(towerType);
+        RefreshFocusedModeBuff();
+    }
+
+    private void RefreshFocusedModeBuff()
+    {
+        bool focused = targetPriority == RougeTowerTargetPriority.BossFirst;
+        int damageLevel = focused &&
+            (towerType == RougeTowerType.MachineGun || towerType == RougeTowerType.Flame) ? -2 : 0;
+        SetBuffSource(RougeTowerBuffSource.FocusedMode,
+            new RougeTowerBuffLevels(damageLevel, 0, 0));
+    }
+
+    private void SetBuffSource(RougeTowerBuffSource source, RougeTowerBuffLevels buffs)
+    {
+        float previousRange = AttackRange;
+        buffSources[(int)source] = buffs;
+        if (attackRing != null && attackRing.enabled && !Mathf.Approximately(previousRange, AttackRange))
+            SetRangeVisibility(true);
+    }
+
+    private float GetBuffMultiplier(RougeTowerBuffStat stat)
+    {
+        return RougeTowerBuffMath.GetMultiplier(GetRawBuffLevel(stat));
+    }
+
+    private void AppendBuffDisplay(ref string text, string label, RougeTowerBuffStat stat)
+    {
+        int level = GetEffectiveBuffLevel(stat);
+        if (level == 0) return;
+        if (text.Length > 0) text += "  ";
+        text += $"{label} {(level > 0 ? "+" : string.Empty)}{level}";
+    }
+
+    private void ApplyTowerPlaceInitialLevelBonus()
+    {
+        if (towerPlaceInitialLevelApplied) return;
+        towerPlaceInitialLevelApplied = true;
+        int levelBonus = RougeTowerPlaceEffectRules.GetInitialLevelBonus(towerPlaceEffect);
+        level = Mathf.Clamp(level + levelBonus, 1, MaxLevel);
+        if (levelBonus > 0)
+            attackTimer = towerType == RougeTowerType.Laser ? 0f : EffectiveAttackInterval * 0.25f;
+        targetIndex = -1;
+    }
+
+    private int ScaleGoldCost(int baseCost)
+    {
+        return Mathf.Max(0, Mathf.RoundToInt(Mathf.Max(0, baseCost) *
+            RougeTowerPlaceEffectRules.GetGoldCostMultiplier(towerPlaceEffect)));
     }
 
     private void InitializePrefabVisuals(bool preview)

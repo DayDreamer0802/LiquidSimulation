@@ -344,7 +344,8 @@ public sealed class RougeBossBalanceConfig
     [Min(0.1f)] public float navigationRadius = 1.25f;
     public Vector3 fallbackSpawnPosition = new Vector3(0f, 0.25f, 135f);
     [Min(0f)] public float interferenceRadius = 20f;
-    [Range(0.05f, 1f)] public float interferenceAttackSpeedMultiplier = 0.75f;
+    [Tooltip("Tower attack-speed Buff level applied by interference. Raw levels stack without a limit; the effect is capped to -3..+3.")]
+    public int interferenceAttackSpeedBuffLevel = -2;
     [Min(0f)] public float shieldRadius = 30f;
     [Range(0.01f, 1f)] public float shieldDamageMultiplier = 0.5f;
     [Min(1f)] public float minimumShieldedDamage = 1f;
@@ -370,7 +371,6 @@ public sealed class RougeBossBalanceConfig
         radius = Mathf.Max(0.5f, radius);
         if (navigationRadius <= 0f) navigationRadius = 1.25f;
         interferenceRadius = Mathf.Max(0f, interferenceRadius);
-        interferenceAttackSpeedMultiplier = Mathf.Clamp(interferenceAttackSpeedMultiplier, 0.05f, 1f);
         shieldRadius = Mathf.Max(0f, shieldRadius);
         shieldDamageMultiplier = Mathf.Clamp(shieldDamageMultiplier, 0.01f, 1f);
         minimumShieldedDamage = Mathf.Max(1f, minimumShieldedDamage);
@@ -425,8 +425,12 @@ public sealed class RougeOverclockTacticalSkillConfig
     [Min(1f)] public float costMultiplier = 1.5f;
     [Min(0f)] public float cooldown = 15f;
     [Min(0.05f)] public float duration = 7f;
-    [Min(1f)] public float attackSpeedMultiplier = 1.3f;
-    [Min(1f)] public float damageMultiplier = 1.3f;
+    [Tooltip("Raw damage Buff levels. Effective level is capped to -3..+3.")]
+    public int damageBuffLevel = 2;
+    [Tooltip("Raw range Buff levels. Effective level is capped to -3..+3.")]
+    public int rangeBuffLevel;
+    [Tooltip("Raw attack-speed Buff levels. Effective level is capped to -3..+3.")]
+    public int attackSpeedBuffLevel = 2;
 }
 
 [Serializable]
@@ -464,7 +468,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 2;
+    public int version = 3;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -495,7 +499,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 2);
+        version = Mathf.Max(version, 3);
     }
 }
 
@@ -538,7 +542,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 2,
+            version = 3,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,
