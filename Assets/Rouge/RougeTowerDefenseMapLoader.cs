@@ -18,9 +18,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     private readonly List<Renderer> _towerPlaceGridRenderers = new List<Renderer>();
     private Material _towerPlaceGridMaterial;
     private Material _towerFootprintGridMaterial;
-    private readonly HashSet<Vector2Int> _redTowerGridCells = new HashSet<Vector2Int>();
-    private readonly HashSet<Vector2Int> _greenTowerGridCells = new HashSet<Vector2Int>();
-    private readonly HashSet<Vector2Int> _darkRedTowerGridCells = new HashSet<Vector2Int>();
+    private readonly HashSet<Vector2Int> _bluePlacedTowerGridCells = new HashSet<Vector2Int>();
+    private readonly HashSet<Vector2Int> _greenValidTowerGridCells = new HashSet<Vector2Int>();
+    private readonly HashSet<Vector2Int> _redInvalidTowerGridCells = new HashSet<Vector2Int>();
     private TowerFootprintGridOverlay _towerFootprintGridOverlay;
 
     private sealed class TowerFootprintGridOverlay
@@ -30,7 +30,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         public MeshRenderer renderer;
         public Vector2Int anchor = new Vector2Int(int.MinValue, int.MinValue);
         public Vector2Int size;
-        public int colorStateHash = int.MinValue;
+        public readonly HashSet<Vector2Int> blueCells = new HashSet<Vector2Int>();
+        public readonly HashSet<Vector2Int> greenCells = new HashSet<Vector2Int>();
+        public readonly HashSet<Vector2Int> redCells = new HashSet<Vector2Int>();
     }
 
     public RougeTowerDefenseMap Map => map;
@@ -242,7 +244,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     }
 
     public void SetTowerPlaceGridState(bool visible, IReadOnlyList<RougeDefenseTower> towers,
-        RougeDefenseTower previewTower)
+        RougeDefenseTower previewTower, IReadOnlyList<bool> previewCellValidity)
     {
         for (int i = _towerPlaceGridRenderers.Count - 1; i >= 0; i--)
         {
@@ -256,15 +258,16 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         }
 
         if (map == null || _runtimeRoot == null) return;
-        SyncTowerFootprintGridOverlays(visible, towers, previewTower);
+        SyncTowerFootprintGridOverlays(visible, towers, previewTower, previewCellValidity);
     }
 
     private void SyncTowerFootprintGridOverlays(bool visible,
-        IReadOnlyList<RougeDefenseTower> towers, RougeDefenseTower previewTower)
+        IReadOnlyList<RougeDefenseTower> towers, RougeDefenseTower previewTower,
+        IReadOnlyList<bool> previewCellValidity)
     {
-        _redTowerGridCells.Clear();
-        _greenTowerGridCells.Clear();
-        _darkRedTowerGridCells.Clear();
+        _bluePlacedTowerGridCells.Clear();
+        _greenValidTowerGridCells.Clear();
+        _redInvalidTowerGridCells.Clear();
         bool previewIsPlaced = false;
         if (towers != null)
         {
@@ -276,8 +279,16 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 Vector2Int size = tower.FootprintCells;
                 Vector2Int anchor = map.WorldToMicroFootprintAnchor(tower.transform.position, size);
                 for (int y = 0; y < size.y; y++)
+                {
                     for (int x = 0; x < size.x; x++)
-                        _redTowerGridCells.Add(anchor + new Vector2Int(x, y));
+                    {
+                        Vector2Int cell = anchor + new Vector2Int(x, y);
+                        // The occupied overlay is a state of the white build grid,
+                        // so it must never render beyond that grid's actual cells.
+                        if (map.IsTowerPlaceMicroCell(cell))
+                            _bluePlacedTowerGridCells.Add(cell);
+                    }
+                }
             }
         }
 
@@ -288,56 +299,59 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             Vector2Int previewSize = previewTower.FootprintCells;
             Vector2Int previewAnchor = map.WorldToMicroFootprintAnchor(
                 previewTower.transform.position, previewSize);
+            int expectedValidityCount = previewSize.x * previewSize.y;
+            bool hasExplicitValidity = previewCellValidity != null &&
+                previewCellValidity.Count == expectedValidityCount;
+            bool previewTouchesTowerPlace = false;
             for (int y = 0; y < previewSize.y; y++)
             {
                 for (int x = 0; x < previewSize.x; x++)
                 {
                     Vector2Int cell = previewAnchor + new Vector2Int(x, y);
-                    _greenTowerGridCells.Add(cell);
+                    bool isTowerPlaceCell = map.IsTowerPlaceMicroCell(cell);
+                    previewTouchesTowerPlace |= isTowerPlaceCell;
+                    int validityIndex = y * previewSize.x + x;
+                    bool cellIsValid = hasExplicitValidity
+                        ? previewCellValidity[validityIndex]
+                        : isTowerPlaceCell && !_bluePlacedTowerGridCells.Contains(cell);
+                    if (cellIsValid && !_bluePlacedTowerGridCells.Contains(cell))
+                    {
+                        _greenValidTowerGridCells.Add(cell);
+                    }
+                    else
+                    {
+                        _redInvalidTowerGridCells.Add(cell);
+                    }
                 }
+            }
+
+            // Keep out-of-bounds cells visible in red while any part of the
+            // footprint still touches the white build grid. Hide the footprint once
+            // it has moved completely outside the buildable area.
+            if (!previewTouchesTowerPlace)
+            {
+                _greenValidTowerGridCells.Clear();
+                _redInvalidTowerGridCells.Clear();
             }
         }
 
-        // Each cell belongs to exactly one visual state: placed, preview, or overlap.
-        _darkRedTowerGridCells.UnionWith(_redTowerGridCells);
-        _darkRedTowerGridCells.IntersectWith(_greenTowerGridCells);
-        _redTowerGridCells.ExceptWith(_darkRedTowerGridCells);
-        _greenTowerGridCells.ExceptWith(_darkRedTowerGridCells);
+        // A placed footprint remains in the persistent blue layer. Invalid preview
+        // cells are allowed to overlap it and are appended after blue in the mesh,
+        // producing a temporary red overlay without mutating the occupied state.
+        _greenValidTowerGridCells.ExceptWith(_bluePlacedTowerGridCells);
+        _greenValidTowerGridCells.ExceptWith(_redInvalidTowerGridCells);
 
-        int renderedCellCount = _redTowerGridCells.Count + _greenTowerGridCells.Count +
-            _darkRedTowerGridCells.Count;
+        int renderedCellCount = _bluePlacedTowerGridCells.Count + _greenValidTowerGridCells.Count +
+            _redInvalidTowerGridCells.Count;
         if (visible && renderedCellCount > 0)
         {
             if (_towerFootprintGridOverlay == null)
                 _towerFootprintGridOverlay = CreateTowerFootprintGridOverlay("Tower Footprint Grid States");
-            int stateHash = GetTowerGridStateHash();
-            UpdateTowerGridStateOverlay(_towerFootprintGridOverlay, stateHash);
+            UpdateTowerGridStateOverlay(_towerFootprintGridOverlay);
             _towerFootprintGridOverlay.renderer.enabled = true;
         }
         else if (_towerFootprintGridOverlay != null)
             _towerFootprintGridOverlay.renderer.enabled = false;
-    }
-
-    private static int GetTowerCellSetHash(HashSet<Vector2Int> cells)
-    {
-        unchecked
-        {
-            int hash = 17 + cells.Count * 31;
-            foreach (Vector2Int cell in cells)
-                hash ^= cell.x * 73856093 ^ cell.y * 19349663;
-            return hash;
-        }
-    }
-
-    private int GetTowerGridStateHash()
-    {
-        unchecked
-        {
-            int hash = GetTowerCellSetHash(_redTowerGridCells);
-            hash = hash * 397 ^ GetTowerCellSetHash(_greenTowerGridCells);
-            hash = hash * 397 ^ GetTowerCellSetHash(_darkRedTowerGridCells);
-            return hash;
-        }
     }
 
     private TowerFootprintGridOverlay CreateTowerFootprintGridOverlay(string overlayName)
@@ -376,25 +390,35 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         return _towerFootprintGridMaterial;
     }
 
-    private void UpdateTowerGridStateOverlay(TowerFootprintGridOverlay overlay, int colorStateHash)
+    private void UpdateTowerGridStateOverlay(TowerFootprintGridOverlay overlay)
     {
         Vector2Int min = new Vector2Int(int.MaxValue, int.MaxValue);
         Vector2Int max = new Vector2Int(int.MinValue, int.MinValue);
-        IncludeTowerCellSetBounds(_redTowerGridCells, ref min, ref max);
-        IncludeTowerCellSetBounds(_greenTowerGridCells, ref min, ref max);
-        IncludeTowerCellSetBounds(_darkRedTowerGridCells, ref min, ref max);
+        IncludeTowerCellSetBounds(_bluePlacedTowerGridCells, ref min, ref max);
+        IncludeTowerCellSetBounds(_greenValidTowerGridCells, ref min, ref max);
+        IncludeTowerCellSetBounds(_redInvalidTowerGridCells, ref min, ref max);
         Vector2Int size = max - min + Vector2Int.one;
         float y = GetTowerFootprintGridHeight(min, size);
         overlay.root.transform.position = map.MicroFootprintCenter(min, size, y);
         overlay.root.transform.rotation = Quaternion.identity;
         overlay.root.transform.localScale = Vector3.one;
-        if (overlay.anchor == min && overlay.size == size &&
-            overlay.colorStateHash == colorStateHash) return;
+        bool cellsUnchanged = overlay.blueCells.SetEquals(_bluePlacedTowerGridCells) &&
+            overlay.greenCells.SetEquals(_greenValidTowerGridCells) &&
+            overlay.redCells.SetEquals(_redInvalidTowerGridCells);
+        if (overlay.anchor == min && overlay.size == size && cellsUnchanged) return;
 
         overlay.anchor = min;
         overlay.size = size;
-        overlay.colorStateHash = colorStateHash;
+        CopyTowerCellSet(_bluePlacedTowerGridCells, overlay.blueCells);
+        CopyTowerCellSet(_greenValidTowerGridCells, overlay.greenCells);
+        CopyTowerCellSet(_redInvalidTowerGridCells, overlay.redCells);
         BuildTowerGridStateMesh(overlay.mesh, min, size);
+    }
+
+    private static void CopyTowerCellSet(HashSet<Vector2Int> source, HashSet<Vector2Int> destination)
+    {
+        destination.Clear();
+        destination.UnionWith(source);
     }
 
     private static void IncludeTowerCellSetBounds(HashSet<Vector2Int> cells,
@@ -409,8 +433,8 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
 
     private void BuildTowerGridStateMesh(Mesh mesh, Vector2Int anchor, Vector2Int boundsSize)
     {
-        int cellCount = _redTowerGridCells.Count + _greenTowerGridCells.Count +
-            _darkRedTowerGridCells.Count;
+        int cellCount = _bluePlacedTowerGridCells.Count + _greenValidTowerGridCells.Count +
+            _redInvalidTowerGridCells.Count;
         Vector3[] vertices = new Vector3[cellCount * 4];
         Color32[] colors = new Color32[cellCount * 4];
         int[] triangles = new int[cellCount * 6];
@@ -419,11 +443,11 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         float originZ = boundsSize.y * cellSize * -0.5f;
 
         int cellIndex = 0;
-        AppendTowerCellSet(_redTowerGridCells, new Color32(255, 18, 12, 150), anchor,
+        AppendTowerCellSet(_bluePlacedTowerGridCells, new Color32(35, 125, 255, 165), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_greenTowerGridCells, new Color32(24, 255, 62, 135), anchor,
+        AppendTowerCellSet(_greenValidTowerGridCells, new Color32(24, 255, 62, 145), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_darkRedTowerGridCells, new Color32(120, 0, 0, 210), anchor,
+        AppendTowerCellSet(_redInvalidTowerGridCells, new Color32(255, 28, 18, 205), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
 
         mesh.Clear();
@@ -488,9 +512,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     {
         DestroyTowerFootprintGridOverlay(_towerFootprintGridOverlay);
         _towerFootprintGridOverlay = null;
-        _redTowerGridCells.Clear();
-        _greenTowerGridCells.Clear();
-        _darkRedTowerGridCells.Clear();
+        _bluePlacedTowerGridCells.Clear();
+        _greenValidTowerGridCells.Clear();
+        _redInvalidTowerGridCells.Clear();
     }
 
     private void DestroyTowerFootprintGridOverlay(TowerFootprintGridOverlay overlay)
@@ -534,7 +558,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             go.transform.position = map.CellCenter(source.cell, 0.25f);
             RougeEnemySpawnPoint spawn = go.AddComponent<RougeEnemySpawnPoint>();
             spawn.ConfigureFromMap(source.spawnCount, source.spawnInterval, source.startDelay,
-                map.CellSize, source.enemyType);
+                map.CellSize, source.enemyType, source.limitWaveCount, source.maximumWaves);
         }
 
         if (map.HasMainTower)

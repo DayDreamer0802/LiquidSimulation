@@ -2604,6 +2604,7 @@ public partial class RougeGameManager : MonoBehaviour
             EffectStateOut = _effectStateB,
             DensityFieldFixed = _smoothedDensityFieldFixed,
             FlowDirections = _flowDirectionField,
+            FlowDistances = _flowDistanceField,
             Bullets = _bullets,
             BulletCellHeads = _bulletCellHeads,
             BulletCellEntries = _bulletCellEntries,
@@ -2713,7 +2714,9 @@ public partial class RougeGameManager : MonoBehaviour
                 CellNext = _crowdPbdCellNext,
                 GridOrigin = _flowGridOrigin,
                 InvCellSize = invCellSize,
-                GridDim = _flowGridDim
+                GridDim = _flowGridDim,
+                RenderHeight = renderHeight,
+                ExcludeAirborne = true
             }.ScheduleBatch(
                 activeEnemyCount,
                 simulationBatchSize,
@@ -2768,7 +2771,9 @@ public partial class RougeGameManager : MonoBehaviour
                 CellNext = _enemyTargetCellNext,
                 GridOrigin = _flowGridOrigin,
                 InvCellSize = invCellSize,
-                GridDim = _flowGridDim
+                GridDim = _flowGridDim,
+                RenderHeight = renderHeight,
+                ExcludeAirborne = true
             }.ScheduleBatch(
                 activeEnemyCount,
                 simulationBatchSize,
@@ -3875,6 +3880,10 @@ public struct RougeEnemyEffectState
     public float LaunchMotionTimer;
     public float LaunchStackTimer;
     public float BurnDuration;
+    public float NavigationDirectionX;
+    public float NavigationDirectionY;
+    public float NavigationReverseCooldown;
+    public float FacingDirection;
 }
 
 public enum RougeSkillEventType

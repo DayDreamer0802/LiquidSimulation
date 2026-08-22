@@ -1,18 +1,36 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
-using System.Text;
 
 public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 {
+    private enum BalanceTab
+    {
+        Towers,
+        Enemies,
+        Bosses
+    }
+
+    private static readonly string[] TabLabels = { "Towers / Levels", "Enemies", "Bosses" };
+    private static readonly Dictionary<string, Texture2D> ResourceTextureCache =
+        new Dictionary<string, Texture2D>();
+
     private RougeTowerDefenseBalanceProfile _profile;
     private SerializedObject _serializedProfile;
-    private Vector2 _scroll;
+    [SerializeField] private BalanceTab _selectedTab;
+    [SerializeField] private Vector2 _towerScroll;
+    [SerializeField] private Vector2 _enemyScroll;
+    [SerializeField] private Vector2 _bossScroll;
     private string _status;
     private bool _hasUnsavedChanges;
     private int _enemyPreviewLevel = 1;
+    private int _enemyPreviewHash = int.MinValue;
+    private string _enemyPreviewSummary = string.Empty;
+    private string _enemyPreviewTable = string.Empty;
 
-    [MenuItem("Tools/Rouge/Tower Defense Balance")]
+    [MenuItem("Rouge/Tower Defense/Balance")]
     internal static void Open()
     {
         RougeTowerDefenseBalanceEditor window = GetWindow<RougeTowerDefenseBalanceEditor>();
@@ -52,6 +70,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         _profile.hideFlags = HideFlags.HideInHierarchy;
         _profile.EnsureDefaults();
         _serializedProfile = new SerializedObject(_profile);
+        InvalidatePreviewCaches();
     }
 
     private void OnGUI()
@@ -73,21 +92,27 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             if (GUILayout.Button("Restore Defaults", GUILayout.Height(32f))) ResetDefaults();
             if (GUILayout.Button("Locate JSON", GUILayout.Height(32f))) PingJson();
         }
-        if (GUILayout.Button("Edit Camera Bounds (cyan Scene rectangle)", GUILayout.Height(28f))) SelectCameraBounds();
-
         EditorGUILayout.Space(4f);
         EditorGUILayout.LabelField("Runtime path", RougeTowerDefenseBalanceJson.AssetPath);
         if (_hasUnsavedChanges) EditorGUILayout.HelpBox("Unsaved changes.", MessageType.Warning);
         if (!string.IsNullOrEmpty(_status)) EditorGUILayout.HelpBox(_status, MessageType.None);
 
+        EditorGUILayout.Space(6f);
+        BalanceTab nextTab = (BalanceTab)GUILayout.Toolbar((int)_selectedTab, TabLabels,
+            GUILayout.Height(30f));
+        if (nextTab != _selectedTab)
+        {
+            _selectedTab = nextTab;
+            GUI.FocusControl(null);
+        }
+
         _serializedProfile.Update();
         EditorGUI.BeginChangeCheck();
-        _scroll = EditorGUILayout.BeginScrollView(_scroll);
-        DrawSection("TOWERS / LEVELS", "towerBalance");
-        DrawSection("ENEMIES", "enemyBalance");
-        DrawSection("BOSS", "bossBalance");
-        DrawSection("TACTICAL SKILLS (4 slots, 3 enabled)", "tacticalSkillBalance");
+        Vector2 scroll = GetSelectedScroll();
+        scroll = EditorGUILayout.BeginScrollView(scroll);
+        DrawSelectedTab();
         EditorGUILayout.EndScrollView();
+        SetSelectedScroll(scroll);
         if (EditorGUI.EndChangeCheck())
         {
             _serializedProfile.ApplyModifiedProperties();
@@ -100,25 +125,123 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         }
     }
 
-    private void DrawSection(string title, string propertyName)
+    private void DrawSelectedTab()
     {
         EditorGUILayout.Space(8f);
-        EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
-        SerializedProperty property = _serializedProfile.FindProperty(propertyName);
-        if (property != null)
+        switch (_selectedTab)
         {
-            if (propertyName == "towerBalance")
+            case BalanceTab.Towers:
+                DrawTowerBalance(_serializedProfile.FindProperty("towerBalance"));
+                break;
+            case BalanceTab.Enemies:
+                DrawEnemyBalance(_serializedProfile.FindProperty("enemyBalance"));
+                break;
+            case BalanceTab.Bosses:
+                DrawBossBalances(_serializedProfile.FindProperty("bossBalances"));
+                break;
+        }
+    }
+
+    private Vector2 GetSelectedScroll()
+    {
+        switch (_selectedTab)
+        {
+            case BalanceTab.Enemies: return _enemyScroll;
+            case BalanceTab.Bosses: return _bossScroll;
+            default: return _towerScroll;
+        }
+    }
+
+    private void SetSelectedScroll(Vector2 value)
+    {
+        switch (_selectedTab)
+        {
+            case BalanceTab.Enemies:
+                _enemyScroll = value;
+                break;
+            case BalanceTab.Bosses:
+                _bossScroll = value;
+                break;
+            default:
+                _towerScroll = value;
+                break;
+        }
+    }
+
+    private static void DrawBossBalances(SerializedProperty bosses)
+    {
+        EditorGUILayout.HelpBox(
+            "Boss IDs are stable integers used by level schedules. Keep IDs unique; level spawn time and victory behavior are configured in the Map Painter.",
+            MessageType.Info);
+        for (int i = 0; i < bosses.arraySize; i++)
+        {
+            SerializedProperty boss = bosses.GetArrayElementAtIndex(i);
+            SerializedProperty id = boss.FindPropertyRelative("bossId");
+            SerializedProperty displayName = boss.FindPropertyRelative("displayName");
+            string title = $"Boss {id.intValue}: {displayName.stringValue}";
+            boss.isExpanded = EditorGUILayout.Foldout(boss.isExpanded, title, true, EditorStyles.foldoutHeader);
+            if (!boss.isExpanded) continue;
+            using (new EditorGUI.IndentLevelScope())
             {
-                DrawTowerBalance(property);
-                return;
+                EditorGUILayout.PropertyField(id, new GUIContent("Boss ID (integer)"));
+                EditorGUILayout.PropertyField(displayName);
+                EditorGUILayout.PropertyField(boss.FindPropertyRelative("targetTravelTimeSeconds"),
+                    new GUIContent("Target Travel Time (seconds)"));
+                DrawRemainingBossFields(boss, "bossId", "displayName", "spawnTimeSeconds",
+                    "targetArrivalTimeSeconds", "targetTravelTimeSeconds");
+                if (GUILayout.Button("Remove Boss"))
+                {
+                    bosses.DeleteArrayElementAtIndex(i);
+                    break;
+                }
             }
-            if (propertyName == "enemyBalance")
+            EditorGUILayout.Space(4f);
+        }
+        if (GUILayout.Button("Add Boss Configuration"))
+        {
+            int index = bosses.arraySize;
+            bosses.InsertArrayElementAtIndex(index);
+            SerializedProperty added = bosses.GetArrayElementAtIndex(index);
+            added.FindPropertyRelative("bossId").intValue = GetNextBossId(bosses, index);
+            added.FindPropertyRelative("displayName").stringValue = $"Boss {added.FindPropertyRelative("bossId").intValue}";
+            added.isExpanded = true;
+        }
+    }
+
+    private static void DrawRemainingBossFields(SerializedProperty boss, params string[] excluded)
+    {
+        SerializedProperty iterator = boss.Copy();
+        SerializedProperty end = iterator.GetEndProperty();
+        bool enterChildren = true;
+        while (iterator.NextVisible(enterChildren) && !SerializedProperty.EqualContents(iterator, end))
+        {
+            enterChildren = false;
+            bool skip = false;
+            for (int i = 0; i < excluded.Length; i++)
             {
-                DrawEnemyBalance(property);
-                return;
+                if (iterator.name != excluded[i]) continue;
+                skip = true;
+                break;
             }
-            property.isExpanded = true;
-            EditorGUILayout.PropertyField(property, true);
+            if (!skip) EditorGUILayout.PropertyField(iterator, true);
+        }
+    }
+
+    private static int GetNextBossId(SerializedProperty bosses, int excludedIndex)
+    {
+        int candidate = 0;
+        while (true)
+        {
+            bool used = false;
+            for (int i = 0; i < bosses.arraySize; i++)
+            {
+                if (i == excludedIndex) continue;
+                if (bosses.GetArrayElementAtIndex(i).FindPropertyRelative("bossId").intValue != candidate) continue;
+                used = true;
+                break;
+            }
+            if (!used) return candidate;
+            candidate++;
         }
     }
 
@@ -189,6 +312,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 DrawLevelField(level, "orbitSphereRadius", "Sphere Radius");
                 DrawLevelField(level, "orbitRadialSpeed", "Radial Move Speed");
                 DrawLevelField(level, "orbitAngularSpeed", "Rotation Speed (deg/s)");
+                DrawLevelField(level, "orbitOuterHoldDuration", "Outer Hold Duration (seconds)");
                 DrawLevelField(level, "tickInterval", "Damage Interval");
                 break;
         }
@@ -300,37 +424,69 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             spawnSpeedCurveProperty == null || elitePermilleCurveProperty == null) return;
         _enemyPreviewLevel = EditorGUILayout.IntSlider("Preview Enemy Level", _enemyPreviewLevel, 1,
             RougeEnemyBalanceConfig.MaximumEnemyLevel);
-        float reachedSeconds = (_enemyPreviewLevel - 1) * Mathf.Max(1f, intervalProperty.floatValue);
-        float healthMultiplier = Mathf.Max(0.01f,
-            healthCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
-        float speedMultiplier = Mathf.Max(0.01f,
-            speedCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
-        float spawnSpeedMultiplier = Mathf.Max(0.01f,
-            spawnSpeedCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
-        float elitePermille = Mathf.Max(0f,
-            elitePermilleCurveProperty.animationCurveValue.Evaluate(_enemyPreviewLevel));
-        EditorGUILayout.HelpBox(
+        AnimationCurve healthCurve = healthCurveProperty.animationCurveValue;
+        AnimationCurve speedCurve = speedCurveProperty.animationCurveValue;
+        AnimationCurve spawnSpeedCurve = spawnSpeedCurveProperty.animationCurveValue;
+        AnimationCurve elitePermilleCurve = elitePermilleCurveProperty.animationCurveValue;
+        float interval = Mathf.Max(1f, intervalProperty.floatValue);
+        int previewHash = ComputeEnemyPreviewHash(interval, healthCurveProperty, speedCurveProperty,
+            spawnSpeedCurveProperty, elitePermilleCurveProperty);
+        if (previewHash != _enemyPreviewHash)
+        {
+            RebuildEnemyPreview(interval, healthCurve, speedCurve, spawnSpeedCurve,
+                elitePermilleCurve);
+            _enemyPreviewHash = previewHash;
+        }
+        EditorGUILayout.HelpBox(_enemyPreviewSummary, MessageType.Info);
+        EditorGUILayout.LabelField("Level multiplier preview", EditorStyles.miniBoldLabel);
+        EditorGUILayout.HelpBox(_enemyPreviewTable, MessageType.None);
+    }
+
+    private int ComputeEnemyPreviewHash(float interval, SerializedProperty healthCurve,
+        SerializedProperty speedCurve, SerializedProperty spawnSpeedCurve,
+        SerializedProperty elitePermilleCurve)
+    {
+        unchecked
+        {
+            int hash = 17;
+            hash = hash * 31 + _enemyPreviewLevel;
+            hash = hash * 31 + interval.GetHashCode();
+            hash = hash * 31 + healthCurve.contentHash.GetHashCode();
+            hash = hash * 31 + speedCurve.contentHash.GetHashCode();
+            hash = hash * 31 + spawnSpeedCurve.contentHash.GetHashCode();
+            hash = hash * 31 + elitePermilleCurve.contentHash.GetHashCode();
+            return hash;
+        }
+    }
+
+    private void RebuildEnemyPreview(float interval, AnimationCurve healthCurve,
+        AnimationCurve speedCurve, AnimationCurve spawnSpeedCurve, AnimationCurve elitePermilleCurve)
+    {
+        float reachedSeconds = (_enemyPreviewLevel - 1) * interval;
+        float healthMultiplier = Mathf.Max(0.01f, healthCurve.Evaluate(_enemyPreviewLevel));
+        float speedMultiplier = Mathf.Max(0.01f, speedCurve.Evaluate(_enemyPreviewLevel));
+        float spawnSpeedMultiplier = Mathf.Max(0.01f, spawnSpeedCurve.Evaluate(_enemyPreviewLevel));
+        float elitePermille = Mathf.Max(0f, elitePermilleCurve.Evaluate(_enemyPreviewLevel));
+        _enemyPreviewSummary =
             $"Level {_enemyPreviewLevel}  |  reached at {FormatEnemyLevelTime(reachedSeconds)}  |  " +
             $"HP x{healthMultiplier:0.##}  |  Move x{speedMultiplier:0.###}  |  " +
-            $"Spawn x{spawnSpeedMultiplier:0.###}  |  Elite {elitePermille:0.###}‰", MessageType.Info);
+            $"Spawn x{spawnSpeedMultiplier:0.###}  |  Elite {elitePermille:0.###}‰";
 
         StringBuilder preview = new StringBuilder(512);
-        for (int level = 1; level <= RougeEnemyBalanceConfig.MaximumEnemyLevel; level += level == 1 ? 9 : 10)
+        for (int level = 1; level <= RougeEnemyBalanceConfig.MaximumEnemyLevel;
+             level += level == 1 ? 9 : 10)
         {
             if (preview.Length > 0) preview.AppendLine();
-            float hp = Mathf.Max(0.01f, healthCurveProperty.animationCurveValue.Evaluate(level));
-            float speed = Mathf.Max(0.01f, speedCurveProperty.animationCurveValue.Evaluate(level));
-            float spawnSpeed = Mathf.Max(0.01f,
-                spawnSpeedCurveProperty.animationCurveValue.Evaluate(level));
-            float eliteAtLevel = Mathf.Max(0f,
-                elitePermilleCurveProperty.animationCurveValue.Evaluate(level));
-            float levelSeconds = (level - 1) * Mathf.Max(1f, intervalProperty.floatValue);
+            float hp = Mathf.Max(0.01f, healthCurve.Evaluate(level));
+            float speed = Mathf.Max(0.01f, speedCurve.Evaluate(level));
+            float spawnSpeed = Mathf.Max(0.01f, spawnSpeedCurve.Evaluate(level));
+            float eliteAtLevel = Mathf.Max(0f, elitePermilleCurve.Evaluate(level));
+            float levelSeconds = (level - 1) * interval;
             preview.Append($"Lv {level,3}    {FormatEnemyLevelTime(levelSeconds),16}    " +
                 $"HP x{hp,7:0.##}    Move x{speed,6:0.###}    " +
                 $"Spawn x{spawnSpeed,6:0.###}    Elite {eliteAtLevel,6:0.###}‰");
         }
-        EditorGUILayout.LabelField("Level multiplier preview", EditorStyles.miniBoldLabel);
-        EditorGUILayout.HelpBox(preview.ToString(), MessageType.None);
+        _enemyPreviewTable = preview.ToString();
     }
 
     private static string FormatEnemyLevelTime(float seconds)
@@ -343,11 +499,13 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
     private static void DrawResourceTextureField(SerializedProperty pathProperty, string label)
     {
+        string previousPath = pathProperty.stringValue;
         Texture2D current = FindResourceTexture(pathProperty.stringValue);
         Texture2D next = (Texture2D)EditorGUILayout.ObjectField(label, current, typeof(Texture2D), false);
         if (next == current) return;
         if (next == null)
         {
+            ResourceTextureCache.Remove(previousPath);
             pathProperty.stringValue = string.Empty;
             return;
         }
@@ -363,15 +521,30 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         string resourcePath = assetPath.Substring(marker + resourcesMarker.Length);
         pathProperty.stringValue = resourcePath.Substring(0,
             resourcePath.Length - System.IO.Path.GetExtension(resourcePath).Length);
+        ResourceTextureCache[pathProperty.stringValue] = next;
     }
 
     private static Texture2D FindResourceTexture(string resourcePath)
     {
         if (string.IsNullOrWhiteSpace(resourcePath)) return null;
-        // This field is redrawn frequently. AssetDatabase.FindAssets creates a native
-        // hierarchy iterator and can crash Unity while the asset database is refreshing.
-        // The serialized value is already a Resources-relative path, so load it directly.
-        return Resources.Load<Texture2D>(resourcePath);
+        if (ResourceTextureCache.TryGetValue(resourcePath, out Texture2D cached)) return cached;
+        Texture2D loaded = Resources.Load<Texture2D>(resourcePath);
+        ResourceTextureCache[resourcePath] = loaded;
+        return loaded;
+    }
+
+    private void InvalidatePreviewCaches()
+    {
+        _enemyPreviewHash = int.MinValue;
+        _enemyPreviewSummary = string.Empty;
+        _enemyPreviewTable = string.Empty;
+        ResourceTextureCache.Clear();
+    }
+
+    private void OnProjectChange()
+    {
+        ResourceTextureCache.Clear();
+        Repaint();
     }
 
     private void LoadJson(bool reportResult)
@@ -391,6 +564,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             RougeTowerDefenseBalanceJsonData data = JsonUtility.FromJson<RougeTowerDefenseBalanceJsonData>(jsonAsset.text);
             _profile.Apply(data);
             _serializedProfile = new SerializedObject(_profile);
+            InvalidatePreviewCaches();
             _status = "Loaded: " + RougeTowerDefenseBalanceJson.AssetPath;
             _hasUnsavedChanges = false;
         }
@@ -439,103 +613,4 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         }
     }
 
-    private static void SelectCameraBounds()
-    {
-        RougeCameraBounds bounds = Object.FindFirstObjectByType<RougeCameraBounds>();
-        if (bounds == null)
-        {
-            GameObject go = new GameObject("Camera Movement Bounds");
-            Undo.RegisterCreatedObjectUndo(go, "Create Camera Movement Bounds");
-            bounds = Undo.AddComponent<RougeCameraBounds>(go);
-        }
-        RougeCameraFollow follow = Object.FindFirstObjectByType<RougeCameraFollow>();
-        if (follow != null && follow.movementBounds != bounds)
-        {
-            Undo.RecordObject(follow, "Assign Camera Movement Bounds");
-            follow.movementBounds = bounds;
-            EditorUtility.SetDirty(follow);
-        }
-        Selection.activeGameObject = bounds.gameObject;
-        SceneView.lastActiveSceneView?.FrameSelected();
-    }
-}
-
-[CustomEditor(typeof(TextAsset), true)]
-public sealed class RougeTowerDefenseJsonInspector : Editor
-{
-    private string _editableJson;
-    private Vector2 _scroll;
-    private bool _changed;
-
-    private bool IsBalanceJson =>
-        AssetDatabase.GetAssetPath(target) == RougeTowerDefenseBalanceJson.AssetPath;
-
-    private void OnEnable()
-    {
-        if (IsBalanceJson) Reload();
-    }
-
-    public override void OnInspectorGUI()
-    {
-        if (!IsBalanceJson)
-        {
-            DrawDefaultInspector();
-            return;
-        }
-
-        EditorGUILayout.HelpBox(
-            "Editable runtime configuration. Edit raw JSON here or use the structured editor.",
-            MessageType.Info);
-        using (new EditorGUILayout.HorizontalScope())
-        {
-            if (GUILayout.Button("Open Structured Editor", GUILayout.Height(30f))) RougeTowerDefenseBalanceEditor.Open();
-            GUI.backgroundColor = _changed ? new Color(1f, 0.72f, 0.18f) : new Color(0.35f, 0.9f, 0.5f);
-            if (GUILayout.Button("Save JSON", GUILayout.Height(30f))) Save();
-            GUI.backgroundColor = Color.white;
-            if (GUILayout.Button("Reload", GUILayout.Height(30f))) Reload();
-        }
-
-        if (_changed) EditorGUILayout.HelpBox("Unsaved changes.", MessageType.Warning);
-        EditorGUI.BeginChangeCheck();
-        _scroll = EditorGUILayout.BeginScrollView(_scroll);
-        string next = EditorGUILayout.TextArea(_editableJson ?? string.Empty,
-            GUILayout.ExpandHeight(true), GUILayout.MinHeight(460f));
-        EditorGUILayout.EndScrollView();
-        if (EditorGUI.EndChangeCheck())
-        {
-            _editableJson = next;
-            _changed = true;
-        }
-    }
-
-    private void Reload()
-    {
-        TextAsset textAsset = target as TextAsset;
-        _editableJson = textAsset != null ? textAsset.text : string.Empty;
-        _changed = false;
-        Repaint();
-    }
-
-    private void Save()
-    {
-        try
-        {
-            RougeTowerDefenseBalanceJsonData data =
-                JsonUtility.FromJson<RougeTowerDefenseBalanceJsonData>(_editableJson);
-            if (data == null) throw new System.FormatException("JSON is empty or invalid.");
-            data.EnsureDefaults();
-
-            string projectRoot = Directory.GetParent(Application.dataPath)?.FullName ?? Application.dataPath;
-            string absolutePath = Path.Combine(projectRoot,
-                RougeTowerDefenseBalanceJson.AssetPath.Replace('/', Path.DirectorySeparatorChar));
-            File.WriteAllText(absolutePath, _editableJson, new System.Text.UTF8Encoding(false));
-            _changed = false;
-            AssetDatabase.ImportAsset(RougeTowerDefenseBalanceJson.AssetPath, ImportAssetOptions.ForceUpdate);
-            GUIUtility.ExitGUI();
-        }
-        catch (System.Exception exception)
-        {
-            EditorUtility.DisplayDialog("JSON Save Failed", exception.Message, "OK");
-        }
-    }
 }

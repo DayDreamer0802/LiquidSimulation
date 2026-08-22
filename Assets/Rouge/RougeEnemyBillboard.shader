@@ -10,6 +10,7 @@ Shader "Rouge/EnemyBillboard"
         [HideInInspector] _EnemySheetAnimation1("Enemy Sheet Animation 1", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation2("Enemy Sheet Animation 2", Vector) = (3,2,9,0)
         [HideInInspector] _EnemyTypeSizes("Enemy Type Sizes / Elite Multiplier", Vector) = (1,1,1,1)
+        [HideInInspector] _RenderHeight("Render Height", Float) = 0
         _BaseColor("Tint", Color) = (1,1,1,1)
         _ScaleMultiplier("Sprite Width / Height", Vector) = (1,1,0,0)
     }
@@ -18,6 +19,9 @@ Shader "Rouge/EnemyBillboard"
     {
         Tags { "RenderPipeline"="UniversalPipeline" "Queue"="AlphaTest" "RenderType"="TransparentCutout" }
         Cull Off
+        // Each billboard receives one constant depth from its feet in Vert. This
+        // restores bottom-to-top crowd ordering without intersecting quad planes.
+        ZTest LEqual
         ZWrite On
         Blend SrcAlpha OneMinusSrcAlpha
 
@@ -52,6 +56,7 @@ Shader "Rouge/EnemyBillboard"
                 float4 _EnemyTypeSizes;
                 float4 _BaseColor;
                 float4 _ScaleMultiplier;
+                float _RenderHeight;
             CBUFFER_END
 
             struct Attributes
@@ -70,6 +75,7 @@ Shader "Rouge/EnemyBillboard"
                 float curse : TEXCOORD3;
                 float slow : TEXCOORD4;
                 nointerpolation float enemyKind : TEXCOORD5;
+                float airborne : TEXCOORD6;
             };
 
             Varyings Vert(Attributes input)
@@ -89,13 +95,31 @@ Shader "Rouge/EnemyBillboard"
                 float2 spriteScale = max(enemyTypeSize * _ScaleMultiplier.xy, 0.001);
                 float3 cameraRight = normalize(UNITY_MATRIX_I_V[0].xyz);
                 float3 cameraUp = normalize(UNITY_MATRIX_I_V[1].xyz);
-                float3 center = positionScale.xyz + float3(0, spriteScale.y * 0.72, 0);
+                // Anchor the visible feet to the simulation position. The source
+                // sheets contain a small transparent margin below the character.
+                float3 center = positionScale.xyz + float3(0, spriteScale.y * 0.90, 0);
                 float3 positionWS = center
                     + cameraRight * (input.positionOS.x * spriteScale.x * 2.0)
                     + cameraUp * (input.positionOS.y * spriteScale.y * 2.0);
 
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
-                output.positionHCS = TransformWorldToHClip(positionWS);
+                float4 positionHCS = TransformWorldToHClip(positionWS);
+                float4 feetHCS = TransformWorldToHClip(positionScale.xyz);
+                // A camera-facing quad normally has a depth gradient across its plane,
+                // so overlapping enemies can intersect and flicker. Give every pixel
+                // of one enemy the depth of its feet instead. The enemy whose feet are
+                // lower/closer on screen then consistently covers the one above it.
+                float feetW = abs(feetHCS.w) > 0.00001 ? feetHCS.w : 0.00001;
+                float feetDepth = feetHCS.z / feetW;
+                // Keep the feet just in front of the floor while applying the same
+                // bias to every enemy, so their relative bottom-to-top order is intact.
+                #if UNITY_REVERSED_Z
+                    feetDepth += 0.00002;
+                #else
+                    feetDepth -= 0.00002;
+                #endif
+                positionHCS.z = saturate(feetDepth) * positionHCS.w;
+                output.positionHCS = positionHCS;
                 float dead = step(0.5, fmod(floor(visualFlags * 0.5), 2.0));
                 float4 animation = _EnemySheetAnimation0;
                 if (enemyKind == 1) animation = _EnemySheetAnimation1;
@@ -119,7 +143,11 @@ Shader "Rouge/EnemyBillboard"
                 int deathFrame = (frac(max(state.w, 0.0)) >= 0.5) ? hitFrame : finalDeathFrame;
                 int frame = dead > 0.5 ? deathFrame : movementFrame;
                 float2 frameUv = input.uv;
-                if (velocity.x < -0.01) frameUv.x = 1.0 - frameUv.x;
+                float facingLeft = step(0.5, fmod(floor(visualFlags * 0.0625), 2.0));
+                float facingValid = step(0.5, fmod(floor(visualFlags * 0.03125), 2.0));
+                float legacyFacingLeft = step(velocity.x, -0.01);
+                if (lerp(legacyFacingLeft, facingLeft, facingValid) > 0.5)
+                    frameUv.x = 1.0 - frameUv.x;
                 int column = frame % atlasColumns;
                 int topRow = frame / atlasColumns;
                 frameUv.x = (frameUv.x + column) / (float)atlasColumns;
@@ -130,6 +158,11 @@ Shader "Rouge/EnemyBillboard"
                 output.dead = dead;
                 output.slow = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
                 output.enemyKind = enemyKind;
+                float launchBuffered = step(0.5, fmod(floor(visualFlags * 0.25), 2.0));
+                float aboveGround = step(_RenderHeight + 0.05, positionScale.y);
+                float rising = step(0.05, velocity.y);
+                float launchMarked = step(2.5, velocity.w);
+                output.airborne = max(max(aboveGround, rising), max(launchMarked, launchBuffered));
                 return output;
             }
 
@@ -152,7 +185,15 @@ Shader "Rouge/EnemyBillboard"
                 color.rgb = lerp(color.rgb,
                     color.rgb * half3(0.55, 0.78, 1.35) + half3(0.02, 0.08, 0.2),
                     input.slow * 0.48);
-                color.rgb = lerp(color.rgb, half3(1, 1, 1), saturate(input.flash) * 0.8);
+                // Keep airborne units visibly desaturated, but retain enough texture
+                // contrast to read as light grey instead of a flat white silhouette.
+                half airborneLuminance = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));
+                half airborneGrey = lerp(airborneLuminance, 0.68h, 0.72h);
+                color.rgb = lerp(color.rgb, airborneGrey.xxx, input.airborne * 0.92h);
+                // A launch starts with a long hit timer; suppress that white flash while
+                // airborne so it cannot wash the grey state back to pure white.
+                half hitAmount = saturate(input.flash) * (1.0h - input.airborne);
+                color.rgb = lerp(color.rgb, half3(1, 1, 1), hitAmount * 0.8h);
                 return color;
             }
             ENDHLSL

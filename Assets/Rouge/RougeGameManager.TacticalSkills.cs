@@ -6,6 +6,9 @@ using UnityEngine.UI;
 
 public partial class RougeGameManager
 {
+    // Commander/tactical skills are intentionally kept dormant until their future insertion flow is designed.
+    private static readonly bool CommanderSkillsEnabled = false;
+
     private enum TacticalSkillSelectionState
     {
         None,

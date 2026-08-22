@@ -330,8 +330,13 @@ public sealed class RougeEnemyBalanceConfig
 [Serializable]
 public sealed class RougeBossBalanceConfig
 {
+    [Tooltip("Stable integer ID referenced by level Boss schedules and external content.")]
+    public int bossId;
+    public string displayName = "Overlord";
     [Min(1f)] public float spawnTimeSeconds = 900f;
     [Min(1f)] public float targetArrivalTimeSeconds = 1200f;
+    [Min(1f), Tooltip("Desired travel time from Boss spawn to the main tower. Level schedules control the actual spawn minute.")]
+    public float targetTravelTimeSeconds = 300f;
     [Min(1f)] public float maxHealth = 1000000f;
     [Min(0.1f)] public float moveSpeed = 3.5f; // Fallback when no valid route distance is available.
     [Range(0f, 95f)] public float maximumSlowPercent = 20f;
@@ -353,11 +358,23 @@ public sealed class RougeBossBalanceConfig
 
     public void EnsureDefaults()
     {
+        if (string.IsNullOrWhiteSpace(displayName)) displayName = $"Boss {bossId}";
         if (spawnTimeSeconds <= 0f) spawnTimeSeconds = 900f;
         if (targetArrivalTimeSeconds <= spawnTimeSeconds)
             targetArrivalTimeSeconds = spawnTimeSeconds + 300f;
+        if (targetTravelTimeSeconds <= 0f)
+            targetTravelTimeSeconds = Mathf.Max(30f, targetArrivalTimeSeconds - spawnTimeSeconds);
+        maxHealth = Mathf.Max(1f, maxHealth);
+        moveSpeed = Mathf.Max(0.1f, moveSpeed);
         maximumSlowPercent = Mathf.Clamp(maximumSlowPercent, 0f, 95f);
+        radius = Mathf.Max(0.5f, radius);
         if (navigationRadius <= 0f) navigationRadius = 1.25f;
+        interferenceRadius = Mathf.Max(0f, interferenceRadius);
+        interferenceAttackSpeedMultiplier = Mathf.Clamp(interferenceAttackSpeedMultiplier, 0.05f, 1f);
+        shieldRadius = Mathf.Max(0f, shieldRadius);
+        shieldDamageMultiplier = Mathf.Clamp(shieldDamageMultiplier, 0.01f, 1f);
+        minimumShieldedDamage = Mathf.Max(1f, minimumShieldedDamage);
+        hasteSpeedMultiplier = Mathf.Max(1f, hasteSpeedMultiplier);
         if (string.IsNullOrWhiteSpace(spriteResourcePath)) spriteResourcePath = "Sprites/boss_overlord";
         spriteSheetColumns = Mathf.Clamp(spriteSheetColumns, 1, 8);
         spriteSheetRows = Mathf.Clamp(spriteSheetRows, 1, 8);
@@ -447,9 +464,11 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 1;
+    public int version = 2;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
+    public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
+    [Tooltip("Legacy single-Boss field retained so older JSON files migrate without data loss.")]
     public RougeBossBalanceConfig bossBalance = new RougeBossBalanceConfig();
     public RougeTacticalSkillBalanceConfig tacticalSkillBalance = new RougeTacticalSkillBalanceConfig();
 
@@ -458,11 +477,25 @@ public sealed class RougeTowerDefenseBalanceJsonData
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalance ??= new RougeBossBalanceConfig();
+        bossBalances ??= new List<RougeBossBalanceConfig>();
+        if (bossBalances.Count == 0) bossBalances.Add(bossBalance);
+        for (int i = bossBalances.Count - 1; i >= 0; i--)
+        {
+            if (bossBalances[i] == null)
+            {
+                bossBalances.RemoveAt(i);
+                continue;
+            }
+            bossBalances[i].EnsureDefaults();
+        }
+        if (bossBalances.Count == 0) bossBalances.Add(new RougeBossBalanceConfig());
+        bossBalance = bossBalances[0];
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
+        version = Mathf.Max(version, 2);
     }
 }
 
@@ -470,6 +503,8 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
 {
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
+    public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
+    [HideInInspector]
     public RougeBossBalanceConfig bossBalance = new RougeBossBalanceConfig();
     public RougeTacticalSkillBalanceConfig tacticalSkillBalance = new RougeTacticalSkillBalanceConfig();
 
@@ -478,6 +513,19 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalance ??= new RougeBossBalanceConfig();
+        bossBalances ??= new List<RougeBossBalanceConfig>();
+        if (bossBalances.Count == 0) bossBalances.Add(bossBalance);
+        for (int i = bossBalances.Count - 1; i >= 0; i--)
+        {
+            if (bossBalances[i] == null)
+            {
+                bossBalances.RemoveAt(i);
+                continue;
+            }
+            bossBalances[i].EnsureDefaults();
+        }
+        if (bossBalances.Count == 0) bossBalances.Add(new RougeBossBalanceConfig());
+        bossBalance = bossBalances[0];
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
@@ -490,9 +538,10 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 1,
+            version = 2,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
+            bossBalances = bossBalances,
             bossBalance = bossBalance,
             tacticalSkillBalance = tacticalSkillBalance
         };
@@ -504,6 +553,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         data.EnsureDefaults();
         towerBalance = data.towerBalance;
         enemyBalance = data.enemyBalance;
+        bossBalances = data.bossBalances;
         bossBalance = data.bossBalance;
         tacticalSkillBalance = data.tacticalSkillBalance;
     }

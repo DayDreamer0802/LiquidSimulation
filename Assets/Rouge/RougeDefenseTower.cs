@@ -24,9 +24,15 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal LineRenderer attackRing;
     [System.NonSerialized] private LineRenderer selectedHintRing;
     [System.NonSerialized] private LineRenderer upgradeHintRing;
+    [System.NonSerialized] private float selectedHintRadius;
+    [System.NonSerialized] private float upgradeHintRadius;
+    private const float SelectedHintRadiusPadding = 0.2f;
+    private const float UpgradeHintRadiusPadding = 2.2f;
     private const int MaxLaserConnections = 30;
-    private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 2];
-    private readonly int[] laserIndices = new int[MaxLaserConnections * 2];
+    private const float OrbitLaserBeamWidth = 0.18f;
+    private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 4];
+    private readonly int[] laserLineIndices = new int[MaxLaserConnections * 2];
+    private readonly int[] laserRibbonIndices = new int[MaxLaserConnections * 12];
     private GameObject laserBeamObject;
     private Mesh laserBeamMesh;
     private GameObject bossInterferenceMarker;
@@ -78,6 +84,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         targetIndex = -1;
         cannonBurstShotsRemaining = 0;
         cannonBurstTimer = 0f;
+        CacheEditHintRadii();
         InitializePrefabVisuals(preview);
     }
 
@@ -94,6 +101,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         TowerDefenseVisuals.GetBaseStats(towerType, out _, out _, out _, out placementRadius, out purchaseCost);
         isTargetedDamage = GetDefaultTargetedDamage(towerType);
         investedGold = Mathf.Max(investedGold, purchaseCost);
+        CacheEditHintRadii();
         InitializePrefabVisuals(false);
     }
 
@@ -136,10 +144,26 @@ public sealed class RougeDefenseTower : MonoBehaviour
         bool showUpgradeable = editMode && upgradeAvailable;
         if (showSelected || showUpgradeable) EnsureEditHintVisuals();
 
-        TowerDefenseVisuals.UpdateCircle(selectedHintRing, transform.position, 10f,
+        // Placed tower ranges belong to the active edit selection only. Placement
+        // previews are not in _defenseTowers and keep using SetPreviewState instead.
+        SetRangeVisibility(showSelected);
+
+        TowerDefenseVisuals.UpdateCircle(selectedHintRing, transform.position, selectedHintRadius,
             new Color(1f, 0.46f, 0.05f, 1f), showSelected, 0.5f);
-        TowerDefenseVisuals.UpdateCircle(upgradeHintRing, transform.position, 12f,
+        TowerDefenseVisuals.UpdateCircle(upgradeHintRing, transform.position, upgradeHintRadius,
             new Color(0.18f, 1f, 0.38f, 1f), showUpgradeable, 0.5f);
+    }
+
+    private void CacheEditHintRadii()
+    {
+        Vector2Int footprint = FootprintCells;
+        float microCellSize = RougeTowerDefenseMapLoader.ActiveMap != null
+            ? RougeTowerDefenseMapLoader.ActiveMap.MicroCellSize
+            : 1f;
+        float squareSide = Mathf.Max(footprint.x, footprint.y) * Mathf.Max(0.001f, microCellSize);
+        float squareDiagonal = Mathf.Sqrt(squareSide * squareSide * 2f);
+        selectedHintRadius = (squareDiagonal + SelectedHintRadiusPadding)/2f;
+        upgradeHintRadius = (squareDiagonal + UpgradeHintRadiusPadding)/2f;
     }
 
     internal void ShowLaserBeams(Vector3 start, Vector3[] targets, int count)
@@ -152,6 +176,12 @@ public sealed class RougeDefenseTower : MonoBehaviour
         }
 
         EnsureLaserBeamMesh();
+        if (towerType == RougeTowerType.OrbitSphere)
+        {
+            ShowOrbitLaserRibbons(start, targets, connectionCount);
+            return;
+        }
+
         Vector3 localStart = transform.InverseTransformPoint(start);
         for (int i = 0; i < connectionCount; i++)
         {
@@ -163,7 +193,36 @@ public sealed class RougeDefenseTower : MonoBehaviour
         int vertexCount = connectionCount * 2;
         laserBeamMesh.Clear(false);
         laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
-        laserBeamMesh.SetIndices(laserIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
+        laserBeamMesh.SetIndices(laserLineIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
+        laserBeamObject.SetActive(true);
+    }
+
+    private void ShowOrbitLaserRibbons(Vector3 start, Vector3[] targets, int connectionCount)
+    {
+        Camera mainCamera = Camera.main;
+        Vector3 viewDirection = mainCamera != null ? mainCamera.transform.forward : Vector3.down;
+        float halfWidth = OrbitLaserBeamWidth * 0.5f;
+        for (int i = 0; i < connectionCount; i++)
+        {
+            Vector3 end = targets[i] + Vector3.up * 0.08f;
+            Vector3 beamDirection = end - start;
+            Vector3 side = Vector3.Cross(viewDirection, beamDirection);
+            if (side.sqrMagnitude < 0.0001f) side = Vector3.Cross(Vector3.up, beamDirection);
+            if (side.sqrMagnitude < 0.0001f) side = Vector3.right;
+            side = side.normalized * halfWidth;
+
+            int vertex = i * 4;
+            laserVertices[vertex] = transform.InverseTransformPoint(start - side);
+            laserVertices[vertex + 1] = transform.InverseTransformPoint(start + side);
+            laserVertices[vertex + 2] = transform.InverseTransformPoint(end - side);
+            laserVertices[vertex + 3] = transform.InverseTransformPoint(end + side);
+        }
+
+        int vertexCount = connectionCount * 4;
+        int indexCount = connectionCount * 12;
+        laserBeamMesh.Clear(false);
+        laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
+        laserBeamMesh.SetIndices(laserRibbonIndices, 0, indexCount, MeshTopology.Triangles, 0, true);
         laserBeamObject.SetActive(true);
     }
 
@@ -188,7 +247,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         int vertexCount = connectionCount * 2;
         laserBeamMesh.Clear(false);
         laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
-        laserBeamMesh.SetIndices(laserIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
+        laserBeamMesh.SetIndices(laserLineIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
         laserBeamObject.SetActive(true);
     }
 
@@ -369,7 +428,26 @@ public sealed class RougeDefenseTower : MonoBehaviour
         laserBeamMesh = new Mesh { name = "Tower Thin Laser Lines" };
         laserBeamMesh.MarkDynamic();
         filter.sharedMesh = laserBeamMesh;
-        for (int i = 0; i < laserIndices.Length; i++) laserIndices[i] = i;
+        for (int i = 0; i < laserLineIndices.Length; i++) laserLineIndices[i] = i;
+        for (int i = 0; i < MaxLaserConnections; i++)
+        {
+            int vertex = i * 4;
+            int index = i * 12;
+            // Duplicate the two triangles in reverse winding so the ribbon stays visible
+            // with every camera angle and material culling mode.
+            laserRibbonIndices[index] = vertex;
+            laserRibbonIndices[index + 1] = vertex + 2;
+            laserRibbonIndices[index + 2] = vertex + 1;
+            laserRibbonIndices[index + 3] = vertex + 1;
+            laserRibbonIndices[index + 4] = vertex + 2;
+            laserRibbonIndices[index + 5] = vertex + 3;
+            laserRibbonIndices[index + 6] = vertex;
+            laserRibbonIndices[index + 7] = vertex + 1;
+            laserRibbonIndices[index + 8] = vertex + 2;
+            laserRibbonIndices[index + 9] = vertex + 1;
+            laserRibbonIndices[index + 10] = vertex + 3;
+            laserRibbonIndices[index + 11] = vertex + 2;
+        }
     }
 
     private void ReleaseLaserBeamMesh()

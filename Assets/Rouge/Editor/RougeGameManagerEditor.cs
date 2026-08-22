@@ -20,6 +20,7 @@ public class RougeGameManagerEditor : Editor
             "playerHitRepulseLift",
             "towerBalance",
             "enemyBalance",
+            "bossBalances",
             "bossBalance",
             "tacticalSkillBalance");
         EditorGUILayout.HelpBox(
@@ -237,79 +238,6 @@ public class RougeGameManagerEditor : Editor
     {
         EditorGUILayout.Space(2f);
         EditorGUILayout.LabelField(title, EditorStyles.boldLabel);
-    }
-}
-
-[CustomEditor(typeof(RougeCameraFollow))]
-public sealed class RougeCameraFollowEditor : Editor
-{
-    public override void OnInspectorGUI()
-    {
-        DrawDefaultInspector();
-        RougeCameraFollow follow = (RougeCameraFollow)target;
-        if (follow.movementBounds != null)
-        {
-            EditorGUILayout.HelpBox("The visible camera footprint is inset automatically as zoom changes. Select the bounds and drag one of the four cyan edge handles.",
-                MessageType.Info);
-            if (GUILayout.Button("Select / Edit Camera Bounds", GUILayout.Height(28f)))
-            {
-                Selection.activeGameObject = follow.movementBounds.gameObject;
-                SceneView.lastActiveSceneView?.FrameSelected();
-            }
-        }
-        else
-        {
-            EditorGUILayout.HelpBox("Drag the four cyan edge handles in Scene, or assign a RougeCameraBounds object.",
-                MessageType.Info);
-        }
-    }
-
-    private void OnSceneGUI()
-    {
-        RougeCameraFollow follow = (RougeCameraFollow)target;
-        if (follow.movementBounds != null) return;
-        Vector3 center = new Vector3(follow.fallbackBoundsCenter.x, follow.transform.position.y,
-            follow.fallbackBoundsCenter.y);
-        Vector3 size = new Vector3(Mathf.Max(1f, follow.fallbackBoundsSize.x), 0.1f,
-            Mathf.Max(1f, follow.fallbackBoundsSize.y));
-        if (!RougeCameraBoundsHandleUtility.DrawXZ(ref center, ref size, Matrix4x4.identity)) return;
-        Undo.RecordObject(follow, "Resize Camera Movement Bounds");
-        follow.fallbackBoundsCenter = new Vector2(center.x, center.z);
-        follow.fallbackBoundsSize = new Vector2(Mathf.Max(1f, size.x), Mathf.Max(1f, size.z));
-        EditorUtility.SetDirty(follow);
-    }
-}
-
-[CustomEditor(typeof(RougeCameraBounds))]
-public sealed class RougeCameraBoundsEditor : Editor
-{
-    public override void OnInspectorGUI()
-    {
-        DrawDefaultInspector();
-        EditorGUILayout.HelpBox(
-            "This rectangle is the visible map boundary. Drag any of the four large cyan edge handles; runtime camera limits adapt to zoom.",
-            MessageType.Info);
-        if (GUILayout.Button("Frame Bounds In Scene", GUILayout.Height(28f)))
-        {
-            SceneView.lastActiveSceneView?.FrameSelected();
-        }
-    }
-
-    private void OnSceneGUI()
-    {
-        RougeCameraBounds cameraBounds = (RougeCameraBounds)target;
-        BoxCollider box = cameraBounds.GetComponent<BoxCollider>();
-        if (box == null) return;
-
-        Vector3 center = box.center;
-        Vector3 size = box.size;
-        if (!RougeCameraBoundsHandleUtility.DrawXZ(ref center, ref size,
-                cameraBounds.transform.localToWorldMatrix)) return;
-
-        Undo.RecordObject(box, "Resize Camera Movement Bounds");
-        box.center = center;
-        box.size = new Vector3(Mathf.Max(1f, size.x), Mathf.Max(0.1f, size.y), Mathf.Max(1f, size.z));
-        EditorUtility.SetDirty(box);
     }
 }
 

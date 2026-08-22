@@ -2,6 +2,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum RougeLevelVictoryConditionType
+{
+    KillBoss = 0,
+    KillEnemies = 1,
+    SurviveSeconds = 2,
+    KillAllEnemies = 3,
+    EarnGold = 4
+}
+
 [CreateAssetMenu(fileName = "TowerDefenseMap", menuName = "Rouge/Tower Defense Map")]
 public sealed class RougeTowerDefenseMap : ScriptableObject
 {
@@ -34,6 +43,28 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         [Min(0.1f)] public float spawnInterval = 5f;
         [Min(0f)] public float startDelay = 1f;
         public RougeEnemyType enemyType = RougeEnemyType.Standard;
+        [Tooltip("When enabled, this spawn point removes itself after the configured number of waves.")]
+        public bool limitWaveCount;
+        [Min(1)] public int maximumWaves = 1;
+    }
+
+    [Serializable]
+    public sealed class VictoryCondition
+    {
+        public RougeLevelVictoryConditionType type = RougeLevelVictoryConditionType.KillBoss;
+        [Min(1)] public int targetAmount = 1;
+        [Min(0.1f)] public float targetSeconds = 300f;
+    }
+
+    [Serializable]
+    public sealed class BossEncounter
+    {
+        [Tooltip("Integer Boss ID from the Tower Defense Balance JSON. IDs remain mod-friendly integers at runtime.")]
+        public int bossId;
+        [Min(0f), Tooltip("Game minute at which this Boss becomes eligible to spawn.")]
+        public float spawnMinute = 15f;
+        [Tooltip("Only grants victory when the level also contains the Kill Boss victory condition.")]
+        public bool defeatGrantsVictory = true;
     }
 
     [Header("Grid")]
@@ -55,6 +86,24 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     [SerializeField] private Vector2Int bossSpawnCell = new Vector2Int(32, 58);
     [SerializeField] private GameObject bossPrefab;
 
+    [Header("Level Rules")]
+    [SerializeField] private List<VictoryCondition> victoryConditions = new List<VictoryCondition>
+    {
+        new VictoryCondition { type = RougeLevelVictoryConditionType.KillBoss }
+    };
+    [SerializeField, Tooltip("Raw tower type IDs. The editor shows known IDs as RougeTowerType values, while serialized data stays integer-based.")]
+    private List<int> disabledTowerTypeIds = new List<int>();
+    [SerializeField, Min(0.01f)] private float enemyHealthMultiplier = 1f;
+    [SerializeField, Min(0.01f)] private float enemyMoveSpeedMultiplier = 1f;
+    [SerializeField, Min(0f)] private float towerGoldCostMultiplier = 1f;
+    [SerializeField, Min(0f)] private float towerDamageMultiplier = 1f;
+    [SerializeField, Min(0.01f)] private float towerAttackSpeedMultiplier = 1f;
+    [SerializeField, Min(0)] private int startingGold = 2000;
+    [SerializeField] private List<BossEncounter> bossEncounters = new List<BossEncounter>
+    {
+        new BossEncounter()
+    };
+
     [Header("Level Camera Clamp / Zoom")]
     [SerializeField] private bool configureCameraBounds = true;
     [SerializeField] private Vector2 cameraBoundsCenter = Vector2.zero;
@@ -75,6 +124,15 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public bool HasBossSpawn => hasBossSpawn;
     public Vector2Int BossSpawnCell => bossSpawnCell;
     public GameObject BossPrefab => bossPrefab;
+    public IReadOnlyList<VictoryCondition> VictoryConditions => victoryConditions;
+    public IReadOnlyList<int> DisabledTowerTypeIds => disabledTowerTypeIds;
+    public float EnemyHealthMultiplier => enemyHealthMultiplier;
+    public float EnemyMoveSpeedMultiplier => enemyMoveSpeedMultiplier;
+    public float TowerGoldCostMultiplier => towerGoldCostMultiplier;
+    public float TowerDamageMultiplier => towerDamageMultiplier;
+    public float TowerAttackSpeedMultiplier => towerAttackSpeedMultiplier;
+    public int StartingGold => startingGold;
+    public IReadOnlyList<BossEncounter> BossEncounters => bossEncounters;
     public bool ConfigureCameraBounds => configureCameraBounds;
     public Vector2 CameraBoundsCenter => cameraBoundsCenter;
     public Vector2 CameraBoundsSize => cameraBoundsSize;
@@ -82,6 +140,21 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public float MaximumCameraZoom => maximumCameraZoom;
 
     public bool Contains(Vector2Int cell) => cell.x >= 0 && cell.y >= 0 && cell.x < width && cell.y < height;
+
+    public bool HasVictoryCondition(RougeLevelVictoryConditionType type)
+    {
+        if (victoryConditions == null) return false;
+        for (int i = 0; i < victoryConditions.Count; i++)
+        {
+            if (victoryConditions[i] != null && victoryConditions[i].type == type) return true;
+        }
+        return false;
+    }
+
+    public bool IsTowerDisabled(int towerTypeId)
+    {
+        return disabledTowerTypeIds != null && disabledTowerTypeIds.Contains(towerTypeId);
+    }
 
     public int GetTile(Vector2Int cell)
     {
@@ -337,6 +410,18 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         enemySpawns.Clear();
         hasMainTower = false;
         hasBossSpawn = false;
+        victoryConditions = new List<VictoryCondition>
+        {
+            new VictoryCondition { type = RougeLevelVictoryConditionType.KillBoss }
+        };
+        disabledTowerTypeIds = new List<int>();
+        enemyHealthMultiplier = 1f;
+        enemyMoveSpeedMultiplier = 1f;
+        towerGoldCostMultiplier = 1f;
+        towerDamageMultiplier = 1f;
+        towerAttackSpeedMultiplier = 1f;
+        startingGold = 2000;
+        bossEncounters = new List<BossEncounter> { new BossEncounter() };
         tileDefinitions.Clear();
         tileDefinitions.Add(new TileDefinition { name = "Empty", editorColor = new Color(0f, 0f, 0f, 0f) });
         tileDefinitions.Add(new TileDefinition { name = "Ground", editorColor = new Color(0.2f, 0.3f, 0.38f, 0.85f), fallbackHeight = 0.08f });
@@ -355,6 +440,9 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         if (tiles == null || tiles.Length != width * height) Array.Resize(ref tiles, width * height);
         tileDefinitions ??= new List<TileDefinition>();
         enemySpawns ??= new List<EnemySpawn>();
+        victoryConditions ??= new List<VictoryCondition>();
+        disabledTowerTypeIds ??= new List<int>();
+        bossEncounters ??= new List<BossEncounter>();
     }
 
     private void OnValidate()
@@ -366,6 +454,12 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         cameraBoundsSize.y = Mathf.Max(1f, cameraBoundsSize.y);
         minimumCameraZoom = Mathf.Max(0.01f, minimumCameraZoom);
         maximumCameraZoom = Mathf.Max(minimumCameraZoom, maximumCameraZoom);
+        enemyHealthMultiplier = Mathf.Max(0.01f, enemyHealthMultiplier);
+        enemyMoveSpeedMultiplier = Mathf.Max(0.01f, enemyMoveSpeedMultiplier);
+        towerGoldCostMultiplier = Mathf.Max(0f, towerGoldCostMultiplier);
+        towerDamageMultiplier = Mathf.Max(0f, towerDamageMultiplier);
+        towerAttackSpeedMultiplier = Mathf.Max(0.01f, towerAttackSpeedMultiplier);
+        startingGold = Mathf.Max(0, startingGold);
         EnsureStorage();
         if (tileDefinitions.Count == 0)
         {
@@ -384,6 +478,11 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         for (int i = enemySpawns.Count - 1; i >= 0; i--)
         {
             EnemySpawn spawn = enemySpawns[i];
+            if (spawn == null)
+            {
+                enemySpawns.RemoveAt(i);
+                continue;
+            }
             spawn.cell = ClampCell(spawn.cell);
             if (!IsGround(spawn.cell) || !occupiedUpperCells.Add(spawn.cell))
             {
@@ -393,6 +492,28 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
             spawn.spawnCount = Mathf.Clamp(spawn.spawnCount, 1, 64);
             spawn.spawnInterval = Mathf.Max(0.1f, spawn.spawnInterval);
             spawn.startDelay = Mathf.Max(0f, spawn.startDelay);
+            spawn.maximumWaves = Mathf.Max(1, spawn.maximumWaves);
+        }
+        for (int i = victoryConditions.Count - 1; i >= 0; i--)
+        {
+            VictoryCondition condition = victoryConditions[i];
+            if (condition == null)
+            {
+                victoryConditions.RemoveAt(i);
+                continue;
+            }
+            condition.targetAmount = Mathf.Max(1, condition.targetAmount);
+            condition.targetSeconds = Mathf.Max(0.1f, condition.targetSeconds);
+        }
+        for (int i = bossEncounters.Count - 1; i >= 0; i--)
+        {
+            BossEncounter encounter = bossEncounters[i];
+            if (encounter == null)
+            {
+                bossEncounters.RemoveAt(i);
+                continue;
+            }
+            encounter.spawnMinute = Mathf.Max(0f, encounter.spawnMinute);
         }
         for (int i = 0; i < tileDefinitions.Count; i++)
         {

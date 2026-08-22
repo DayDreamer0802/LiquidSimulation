@@ -210,6 +210,9 @@ public struct RougeTowerTargetRequest
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
 {
+    private const float VisualStateFlagStep = 10f;
+    private const int BufferedLaunchVisualFlag = 4;
+
     [ReadOnly] public NativeArray<float4> Positions;
     [ReadOnly] public NativeArray<float4> States;
     [NativeDisableParallelForRestriction] public NativeArray<int> CellHeads;
@@ -217,6 +220,8 @@ public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
     public float2 GridOrigin;
     public float InvCellSize;
     public int GridDim;
+    public float RenderHeight;
+    public bool ExcludeAirborne;
 
     public void Execute(int startIndex, int count)
     {
@@ -229,6 +234,16 @@ public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
         {
             nextPtr[i] = -1;
             if (statePtr[i].x <= 0f) continue;
+            if (ExcludeAirborne)
+            {
+                int visualFlags = (int)math.floor(math.max(statePtr[i].w, 0f) /
+                    VisualStateFlagStep + 0.0001f);
+                if (positionPtr[i].y > RenderHeight + 0.05f ||
+                    (visualFlags & BufferedLaunchVisualFlag) != 0)
+                {
+                    continue;
+                }
+            }
             int cell = RougeMortonGridUtility.EncodeMortonFromWorld(
                 positionPtr[i].xz, GridOrigin, InvCellSize, GridDim);
             nextPtr[i] = System.Threading.Interlocked.Exchange(ref headPtr[cell], i);
@@ -1470,6 +1485,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const int DeadVisualFlag = 2;
     private const int BufferedLaunchVisualFlag = 4;
     private const int SlowVisualFlag = 8;
+    private const int FacingLeftVisualFlag = 16;
+    private const int FacingValidVisualFlag = 32;
     private const float LaunchMotionDuration = 0.22f;
     private const float LaunchStackDuration = 0.12f;
     private const float LaunchPlanarImpulseFactor = 1.05f;
@@ -1484,6 +1501,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const float BurnPatchReapplyCooldown = 0.85f;
     private const float BurnPatchDurationMultiplier = 0.45f;
     private const float BurnPatchDamageMultiplier = 0.55f;
+    private const float TowerKillLaunchGoalExclusionRadius = 15f;
+    private const float TowerKillLaunchVerticalImpulse = 12f;
+    private const float TowerKillLaunchPlanarImpulseFactor = 1.05f;
 
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
     [ReadOnly] public NativeArray<float4> VelocityIn;
@@ -1491,6 +1511,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<RougeEnemyEffectState> EffectStateIn;
     [ReadOnly] public NativeArray<int> DensityFieldFixed;
     [ReadOnly] public NativeArray<float2> FlowDirections;
+    [ReadOnly] public NativeArray<float> FlowDistances;
     [ReadOnly] public NativeArray<RougeBullet> Bullets;
     [ReadOnly] public NativeArray<int> BulletCellHeads;
     [ReadOnly] public NativeArray<int> BulletCellEntries;
@@ -1592,6 +1613,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         RougeEnemyEffectState* effectInPtr = (RougeEnemyEffectState*)EffectStateIn.GetUnsafeReadOnlyPtr();
         int* densityPtr = (int*)DensityFieldFixed.GetUnsafeReadOnlyPtr();
         float2* flowPtr = (float2*)FlowDirections.GetUnsafeReadOnlyPtr();
+        float* flowDistancePtr = (float*)FlowDistances.GetUnsafeReadOnlyPtr();
         RougeBullet* bulletPtr = (RougeBullet*)Bullets.GetUnsafeReadOnlyPtr();
         int* bulletHeadPtr = (int*)BulletCellHeads.GetUnsafeReadOnlyPtr();
         int* bulletEntryPtr = (int*)BulletCellEntries.GetUnsafeReadOnlyPtr();
@@ -1714,7 +1736,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true, false, false));
+                    EncodeVisualState(flashTimer, false, true, false, false,
+                        effects.FacingDirection < 0f));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
             }
@@ -1742,6 +1765,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             if (effects.LaunchStackTimer > 0f)
             {
                 effects.LaunchStackTimer = math.max(0f, effects.LaunchStackTimer - DeltaTime);
+            }
+
+            if (effects.NavigationReverseCooldown > 0f)
+            {
+                effects.NavigationReverseCooldown = math.max(0f,
+                    effects.NavigationReverseCooldown - DeltaTime);
             }
 
             if (effects.FreezeTimer > 0f)
@@ -1783,7 +1812,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
-                float2 desired = SampleFlowDirection(pos.xz, flowPtr);
+                float2 desired = SampleFlowDirection(pos.xz, flowPtr, flowDistancePtr);
                 if (math.lengthsq(desired) < 0.0001f)
                 {
                     desired = directToPlayer;
@@ -1797,6 +1826,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 {
                     desired = math.normalizesafe(math.lerp(desired, directToPlayer, snapWeight), directToPlayer);
                 }
+
+                desired = StabilizeNavigationDirection(ref effects, desired, sourceIndex);
+                SteerVelocityTowards(ref vel, desired);
 
                 acceleration.xz += desired * ChaseAcceleration;
 
@@ -1907,6 +1939,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     if ((uint)sourceTowerType < 7u && health < healthBeforeTowerSkill)
                     {
                         towerDamageByType[sourceTowerType] += healthBeforeTowerSkill - health;
+                    }
+                    if (!isBoss && !bufferedLaunchDeath &&
+                        healthBeforeTowerSkill > 0f && health <= 0f)
+                    {
+                        ApplyTowerKillLaunch(ref vel, ref flashTimer, ref tornadoMark, ref effects,
+                            pos, skill, sourceTowerType, sourceIndex);
                     }
                 }
             }
@@ -2267,7 +2305,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     effects.CurseExplosionDamage > 0f && effects.CurseExplosionRadius > 0f,
                     health <= 0f,
                     bufferedLaunchDeath && launchKillPending && health > 0f,
-                    effects.SlowTimer > 0f && effects.SlowPercent > 0f));
+                    effects.SlowTimer > 0f && effects.SlowPercent > 0f,
+                    effects.FacingDirection < 0f));
             effectOutPtr[sourceIndex] = effects;
         }
     }
@@ -2278,7 +2317,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     }
 
     private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual,
-        bool isBufferedLaunchVisual, bool isSlowedVisual)
+        bool isBufferedLaunchVisual, bool isSlowedVisual, bool isFacingLeft)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -2299,6 +2338,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (isSlowedVisual)
         {
             flags |= SlowVisualFlag;
+        }
+
+        flags |= FacingValidVisualFlag;
+        if (isFacingLeft)
+        {
+            flags |= FacingLeftVisualFlag;
         }
 
         return math.min(math.max(flashTimer, 0f), 0.99f) + flags * VisualStateFlagStep;
@@ -2345,13 +2390,106 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         return (value & 0x00FFFFFFu) * (1f / 16777215f);
     }
 
-    private float2 SampleFlowDirection(float2 worldPos, float2* flowPtr)
+    private float2 SampleFlowDirection(float2 worldPos, float2* flowPtr, float* flowDistancePtr)
     {
-        // Do not blend navigation vectors across opposite sides of a wall. Density is
-        // smoothed separately on the grid while navigation keeps an exact valid cell route.
         int2 containingCell = RougeMortonGridUtility.WorldToGrid(
             worldPos, GridOrigin, GridInvCellSize, GridDim);
-        return flowPtr[RougeMortonGridUtility.EncodeMorton(containingCell.x, containingCell.y)];
+        int containingIndex = RougeMortonGridUtility.EncodeMorton(containingCell.x, containingCell.y);
+        float2 direction = flowPtr[containingIndex];
+        if (math.lengthsq(direction) > 0.0001f)
+        {
+            return AimFlowThroughNextCellCenter(worldPos, containingCell, direction);
+        }
+
+        // Inertia or crowd projection can briefly place a unit in a padded blocked cell.
+        // Direct-to-goal fallback points through the obstacle and causes corner oscillation,
+        // so escape toward the best nearby routed cell instead.
+        float bestDistance = 1e20f;
+        int2 bestCell = containingCell;
+        float2 bestDirection = float2.zero;
+        for (int offsetY = -2; offsetY <= 2; offsetY++)
+        {
+            int cellY = containingCell.y + offsetY;
+            if (cellY < 0 || cellY >= GridDim) continue;
+            for (int offsetX = -2; offsetX <= 2; offsetX++)
+            {
+                int cellX = containingCell.x + offsetX;
+                if (cellX < 0 || cellX >= GridDim || (offsetX == 0 && offsetY == 0)) continue;
+                int candidateIndex = RougeMortonGridUtility.EncodeMorton(cellX, cellY);
+                float2 candidateDirection = flowPtr[candidateIndex];
+                float candidateDistance = flowDistancePtr[candidateIndex];
+                if (math.lengthsq(candidateDirection) <= 0.0001f ||
+                    !math.isfinite(candidateDistance) || candidateDistance >= bestDistance)
+                {
+                    continue;
+                }
+
+                bestDistance = candidateDistance;
+                bestCell = new int2(cellX, cellY);
+                bestDirection = candidateDirection;
+            }
+        }
+
+        if (math.lengthsq(bestDirection) <= 0.0001f) return float2.zero;
+        float2 escapeCenter = GridOrigin +
+            (new float2(bestCell.x + 0.5f, bestCell.y + 0.5f) * GridCellSize);
+        return math.normalizesafe(escapeCenter - worldPos, bestDirection);
+    }
+
+    private float2 AimFlowThroughNextCellCenter(float2 worldPos, int2 containingCell, float2 direction)
+    {
+        float2 cellCenter = GridOrigin +
+            (new float2(containingCell.x + 0.5f, containingCell.y + 0.5f) * GridCellSize);
+        float2 waypoint = cellCenter + direction * (GridCellSize * 0.72f);
+        return math.normalizesafe(waypoint - worldPos, direction);
+    }
+
+    private float2 StabilizeNavigationDirection(ref RougeEnemyEffectState effects,
+        float2 desired, int sourceIndex)
+    {
+        desired = math.normalizesafe(desired, new float2(0f, 1f));
+        float2 previous = new float2(effects.NavigationDirectionX, effects.NavigationDirectionY);
+        if (math.lengthsq(previous) <= 0.0001f)
+        {
+            previous = desired;
+        }
+        else
+        {
+            previous = math.normalize(previous);
+            bool reversing = math.dot(previous, desired) < -0.35f;
+            if (reversing && effects.NavigationReverseCooldown > 0f)
+            {
+                desired = previous;
+            }
+            else if (reversing)
+            {
+                effects.NavigationReverseCooldown = math.lerp(0.2f, 0.3f,
+                    Hash01((uint)(sourceIndex + 1) * 2246822519u + FrameSeed));
+            }
+        }
+
+        effects.NavigationDirectionX = desired.x;
+        effects.NavigationDirectionY = desired.y;
+        if (math.abs(desired.x) > 0.12f)
+        {
+            effects.FacingDirection = desired.x < 0f ? -1f : 1f;
+        }
+        else if (effects.FacingDirection == 0f)
+        {
+            effects.FacingDirection = 1f;
+        }
+        return desired;
+    }
+
+    private static void SteerVelocityTowards(ref float3 velocity, float2 desired)
+    {
+        float speedSq = math.lengthsq(velocity.xz);
+        if (speedSq <= 0.0001f) return;
+        float speed = math.sqrt(speedSq);
+        float2 currentDirection = velocity.xz / speed;
+        float alignment = math.clamp(math.dot(currentDirection, desired), -1f, 1f);
+        float turnWeight = math.saturate((1f - alignment) * 0.72f);
+        velocity.xz = math.lerp(velocity.xz, desired * speed, turnWeight);
     }
 
     private float SampleDensity(float2 worldPos, int* densityPtr)
@@ -2406,15 +2544,6 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float2 normal = math.normalizesafe(pushDelta, math.normalizesafe(currentPos - PlayerPos, new float2(1f, 0f)));
             pos.x = resolvedPos.x;
             pos.z = resolvedPos.y;
-            if (math.abs(normal.x) > math.abs(normal.y))
-            {
-                if (math.sign(vel.x) == math.sign(normal.x)) vel.x = 0f;
-            }
-            else
-            {
-                if (math.sign(vel.z) == math.sign(normal.y)) vel.z = 0f;
-            }
-
             float2 planarVelocity = vel.xz;
             RemoveInwardVelocity(ref planarVelocity, normal);
             vel.xz = planarVelocity;
@@ -2708,6 +2837,53 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (math.lengthsq(pos.xz - closest) > skill.Radius * skill.Radius) return;
         health -= skill.Type == 16 ? skill.Damage * DeltaTime : skill.Damage;
         flashTimer = math.max(flashTimer, skill.Type == 16 ? 0.2f : 0.9f);
+    }
+
+    private void ApplyTowerKillLaunch(ref float3 vel, ref float flashTimer, ref float tornadoMark,
+        ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill, int sourceTowerType,
+        int sourceIndex)
+    {
+        if (math.lengthsq(pos.xz - GoalPos) <
+            TowerKillLaunchGoalExclusionRadius * TowerKillLaunchGoalExclusionRadius)
+        {
+            return;
+        }
+
+        float2 launchDirection;
+        switch ((RougeTowerType)sourceTowerType)
+        {
+            case RougeTowerType.Cannon:
+                launchDirection = math.normalizesafe(pos.xz - skill.Position, new float2(0f, 1f));
+                break;
+            case RougeTowerType.PiercingLaser:
+            {
+                float along = math.clamp(math.dot(pos.xz - skill.Position, skill.Direction), 0f, skill.Length);
+                float2 closest = skill.Position + skill.Direction * along;
+                float2 beamNormal = new float2(-skill.Direction.y, skill.Direction.x);
+                launchDirection = math.normalizesafe(pos.xz - closest, beamNormal);
+                break;
+            }
+            case RougeTowerType.OrbitSphere:
+                launchDirection = new float2(-skill.Direction.y, skill.Direction.x) *
+                    (skill.AuxA < 0f ? -1f : 1f);
+                break;
+            default:
+                return;
+        }
+
+        float heightVariation = math.lerp(0.80f, 1.20f,
+            Hash01((uint)(sourceIndex + 1) * 3266489917u + FrameSeed));
+        float launchImpulse = TowerKillLaunchVerticalImpulse * heightVariation * KnockbackResist;
+        vel.y = math.max(vel.y, launchImpulse);
+        vel.xz += launchDirection * (launchImpulse * TowerKillLaunchPlanarImpulseFactor);
+        tornadoMark = 3f;
+        effects.LaunchMotionTimer = math.max(effects.LaunchMotionTimer, LaunchMotionDuration);
+        effects.LaunchStackTimer = math.max(effects.LaunchStackTimer, LaunchStackDuration);
+        // This is a death presentation, not a combat launch. Landing must not deal a
+        // second hit or create another area of effect.
+        effects.LaunchLandingDamage = 0f;
+        effects.LaunchLandingRadius = 0f;
+        flashTimer = math.max(flashTimer, 0.9f);
     }
 
     private void ProcessTacticalDamageArea(ref float health, ref float flashTimer, ref float3 vel,

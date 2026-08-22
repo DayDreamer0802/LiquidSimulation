@@ -58,11 +58,22 @@ internal static class TowerDefenseVisuals
     private static Material s_laserConnectionMaterial;
     private static Material s_crystalLaserMaterial;
     private static RougeTowerBalanceConfig s_runtimeBalance;
+    private static float s_runtimeGoldCostMultiplier = 1f;
+    private static float s_runtimeDamageMultiplier = 1f;
+    private static float s_runtimeAttackSpeedMultiplier = 1f;
 
     public static void SetRuntimeBalance(RougeTowerBalanceConfig balance)
     {
         s_runtimeBalance = balance;
         s_runtimeBalance?.EnsureDefaults();
+    }
+
+    public static void SetRuntimeLevelModifiers(float goldCostMultiplier, float damageMultiplier,
+        float attackSpeedMultiplier)
+    {
+        s_runtimeGoldCostMultiplier = Mathf.Max(0f, goldCostMultiplier);
+        s_runtimeDamageMultiplier = Mathf.Max(0f, damageMultiplier);
+        s_runtimeAttackSpeedMultiplier = Mathf.Max(0.01f, attackSpeedMultiplier);
     }
 
     public static string GetTowerName(RougeTowerType type)
@@ -104,7 +115,7 @@ internal static class TowerDefenseVisuals
         if (configured != null)
         {
             radius = Mathf.Max(0.1f, configured.placementRadius);
-            cost = Mathf.Max(0, configured.purchaseCost);
+            cost = ScaleGoldCost(configured.purchaseCost);
             return;
         }
         switch (type)
@@ -117,6 +128,7 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.PiercingLaser: radius = 2.8f; cost = 1000; break;
             default: radius = 2.5f; cost = 900; break;
         }
+        cost = ScaleGoldCost(cost);
     }
 
     public static Vector2Int GetFootprintSize(RougeTowerType type)
@@ -135,9 +147,33 @@ internal static class TowerDefenseVisuals
         if (configured != null && configured.levels != null && levelIndex < configured.levels.Count &&
             configured.levels[levelIndex] != null)
         {
-            return configured.levels[levelIndex].ToStats();
+            return ApplyRuntimeLevelModifiers(configured.levels[levelIndex].ToStats());
         }
-        return GetFallbackStats(type, requestedLevel);
+        return ApplyRuntimeLevelModifiers(GetFallbackStats(type, requestedLevel));
+    }
+
+    private static int ScaleGoldCost(int baseCost)
+    {
+        return Mathf.Max(0, Mathf.RoundToInt(Mathf.Max(0, baseCost) * s_runtimeGoldCostMultiplier));
+    }
+
+    private static RougeTowerStats ApplyRuntimeLevelModifiers(RougeTowerStats stats)
+    {
+        float attackSpeed = Mathf.Max(0.01f, s_runtimeAttackSpeedMultiplier);
+        return new RougeTowerStats(
+            stats.Damage * s_runtimeDamageMultiplier,
+            stats.AttackInterval / attackSpeed,
+            stats.AttackRadius,
+            stats.TargetCount,
+            stats.ProjectileCount,
+            stats.AoeRadius,
+            stats.EffectPercent,
+            stats.EffectDuration,
+            stats.TickInterval > 0f ? stats.TickInterval / attackSpeed : 0f,
+            stats.OrbitSphereRadius,
+            stats.OrbitRadialSpeed * attackSpeed,
+            stats.OrbitAngularSpeed * attackSpeed,
+            stats.OrbitOuterHoldDuration / attackSpeed);
     }
 
     public static RougeTowerStats GetFallbackStats(RougeTowerType type, int requestedLevel)

@@ -196,10 +196,14 @@
 
                 col = lerp(col, _NearPlayerColor.rgb, nearWeight * saturate(_NearPlayerColor.a));
                 col = lerp(col, _VeryNearPlayerColor.rgb, veryNearWeight * saturate(_VeryNearPlayerColor.a));
-                col = lerp(col, _AirborneColor.rgb, airborneWeight * saturate(_AirborneColor.a));
+                airborneWeight = max(airborneWeight, input.launchBuffered);
                 col = lerp(col, _DeadColor.rgb, input.dead * saturate(_DeadColor.a));
 
-                float flashAmt = saturate(input.flash);
+                half airborneLuminance = dot(col, half3(0.2126, 0.7152, 0.0722));
+                half airborneGrey = lerp(airborneLuminance, 0.68h, 0.72h);
+                col = lerp(col, airborneGrey.xxx, airborneWeight * 0.92h);
+
+                float flashAmt = saturate(input.flash) * (1.0 - airborneWeight);
                 col += _FlashColor.rgb * flashAmt * (0.35 + fresnel * 1.1);
 
                 return half4(saturate(col), _BaseColor.a);

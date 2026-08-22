@@ -129,112 +129,139 @@ MonoBehaviour:
   enemySpawns:
   - cell: {x: 8, y: 15}
     spawnCount: 32
-    spawnInterval: 3
-    startDelay: 0
+    spawnInterval: 20
+    startDelay: 1
     enemyType: 0
-  - cell: {x: 6, y: 15}
-    spawnCount: 16
-    spawnInterval: 4
-    startDelay: 12
-    enemyType: 0
-  - cell: {x: 10, y: 15}
-    spawnCount: 16
-    spawnInterval: 4
-    startDelay: 24
-    enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 4, y: 15}
-    spawnCount: 16
-    spawnInterval: 3
-    startDelay: 36
+    spawnCount: 32
+    spawnInterval: 19
+    startDelay: 15
     enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 12, y: 15}
-    spawnCount: 16
-    spawnInterval: 3
-    startDelay: 48
+    spawnCount: 32
+    spawnInterval: 18
+    startDelay: 30
     enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 8, y: 1}
     spawnCount: 32
-    spawnInterval: 3
-    startDelay: 60
+    spawnInterval: 17
+    startDelay: 45
     enemyType: 0
-  - cell: {x: 6, y: 1}
-    spawnCount: 16
-    spawnInterval: 4
-    startDelay: 72
-    enemyType: 0
-  - cell: {x: 10, y: 1}
-    spawnCount: 16
-    spawnInterval: 4
-    startDelay: 84
-    enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 4, y: 1}
-    spawnCount: 16
-    spawnInterval: 3
-    startDelay: 96
+    spawnCount: 32
+    spawnInterval: 16
+    startDelay: 45
     enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 12, y: 1}
     spawnCount: 16
-    spawnInterval: 3
-    startDelay: 108
+    spawnInterval: 15
+    startDelay: 60
     enemyType: 0
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 0, y: 16}
-    spawnCount: 25
-    spawnInterval: 5
-    startDelay: 0
+    spawnCount: 32
+    spawnInterval: 14
+    startDelay: 75
     enemyType: 1
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 16, y: 0}
-    spawnCount: 25
-    spawnInterval: 5
-    startDelay: 135
+    spawnCount: 32
+    spawnInterval: 13
+    startDelay: 90
     enemyType: 1
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 16, y: 16}
-    spawnCount: 25
-    spawnInterval: 5
-    startDelay: 150
+    spawnCount: 32
+    spawnInterval: 12
+    startDelay: 105
     enemyType: 1
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 0, y: 0}
-    spawnCount: 25
-    spawnInterval: 5
-    startDelay: 165
+    spawnCount: 35
+    spawnInterval: 11
+    startDelay: 120
     enemyType: 1
-  - cell: {x: 0, y: 10}
-    spawnCount: 32
-    spawnInterval: 6
-    startDelay: 0
+    limitWaveCount: 0
+    maximumWaves: 1
+  - cell: {x: 0, y: 12}
+    spawnCount: 16
+    spawnInterval: 12
+    startDelay: 135
     enemyType: 2
-  - cell: {x: 16, y: 6}
-    spawnCount: 32
-    spawnInterval: 6
+    limitWaveCount: 0
+    maximumWaves: 1
+  - cell: {x: 16, y: 5}
+    spawnCount: 16
+    spawnInterval: 11
+    startDelay: 150
+    enemyType: 2
+    limitWaveCount: 0
+    maximumWaves: 1
+  - cell: {x: 16, y: 12}
+    spawnCount: 16
+    spawnInterval: 10
+    startDelay: 165
+    enemyType: 2
+    limitWaveCount: 0
+    maximumWaves: 1
+  - cell: {x: 0, y: 5}
+    spawnCount: 16
+    spawnInterval: 10
     startDelay: 180
     enemyType: 2
-  - cell: {x: 16, y: 10}
-    spawnCount: 32
-    spawnInterval: 5
-    startDelay: 240
-    enemyType: 2
-  - cell: {x: 0, y: 6}
-    spawnCount: 32
-    spawnInterval: 5
-    startDelay: 240
-    enemyType: 2
+    limitWaveCount: 0
+    maximumWaves: 1
   - cell: {x: 1, y: 8}
     spawnCount: 64
-    spawnInterval: 4
+    spawnInterval: 0.1
     startDelay: 300
     enemyType: 0
+    limitWaveCount: 1
+    maximumWaves: 100
   - cell: {x: 15, y: 8}
     spawnCount: 64
-    spawnInterval: 4
+    spawnInterval: 0.1
     startDelay: 300
     enemyType: 0
+    limitWaveCount: 1
+    maximumWaves: 100
   hasMainTower: 1
   mainTowerCell: {x: 8, y: 8}
   mainTowerPrefab: {fileID: 919132149155446097, guid: 41c7c3b4cb3cabd41a434c96ee6390b9, type: 3}
   hasBossSpawn: 1
   bossSpawnCell: {x: 8, y: 16}
   bossPrefab: {fileID: 0}
+  victoryConditions:
+  - type: 0
+    targetAmount: 1
+    targetSeconds: 300
+  disabledTowerTypeIds: 
+  enemyHealthMultiplier: 1
+  enemyMoveSpeedMultiplier: 1
+  towerGoldCostMultiplier: 1
+  towerDamageMultiplier: 1
+  towerAttackSpeedMultiplier: 1
+  startingGold: 2000
+  bossEncounters:
+  - bossId: 0
+    spawnMinute: 15
+    defeatGrantsVictory: 1
   configureCameraBounds: 1
   cameraBoundsCenter: {x: 0, y: 0}
-  cameraBoundsSize: {x: 152, y: 152}
-  minimumCameraZoom: 0.5
-  maximumCameraZoom: 1.5
+  cameraBoundsSize: {x: 156, y: 156}
+  minimumCameraZoom: 1
+  maximumCameraZoom: 3

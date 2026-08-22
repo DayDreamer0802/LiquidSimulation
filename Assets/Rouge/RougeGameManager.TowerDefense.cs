@@ -34,6 +34,7 @@ public partial class RougeGameManager
     [SerializeField] private RougeMainTower mainTower;
     [SerializeField] private RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     [SerializeField] private RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
+    [SerializeField] private List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
     [SerializeField] private RougeBossBalanceConfig bossBalance = new RougeBossBalanceConfig();
     [SerializeField] private RougeTacticalSkillBalanceConfig tacticalSkillBalance = new RougeTacticalSkillBalanceConfig();
     [SerializeField] private RougeBossSpawnPoint bossSpawnPoint;
@@ -50,12 +51,16 @@ public partial class RougeGameManager
     private readonly Vector3[] _towerTargetPositions = new Vector3[FindTowerTargetsJob.MaxTargetsPerTower];
     private bool _towerDefenseInitialized;
     private bool _towerPlacementMode;
+    private bool _towerDefenseDoubleSpeed;
     private bool _towerBuildSelectionActive = true;
     private bool _towerDefenseGameOver;
     private string _towerDefenseGameOverReason;
     private int _towerDefenseGold;
+    private int _towerDefenseGoldEarnedTotal;
     private int _towerDefenseAliveEstimate;
     private float _towerDefenseSpawnerResolveRetryTimer;
+    private bool _towerDefenseAllSpawnersExhausted;
+    private float _nextKillAllVerificationTime;
     private int _towerDefenseSpawnSearchCursor;
     private RougeTowerType _selectedBuildType = RougeTowerType.Ice;
     private RougeDefenseTower _towerPreview;
@@ -110,7 +115,13 @@ public partial class RougeGameManager
     private float _bossDeathSequenceTimer;
     private int _bossDeathShockwaveStep;
     private bool _bossDeathExplosionTriggered;
+    private bool _bossDeathShouldGrantVictory;
     private bool _towerDefenseVictory;
+    private RougeTowerDefenseMap _towerDefenseLevel;
+    private readonly List<RougeTowerDefenseMap.BossEncounter> _bossSchedule =
+        new List<RougeTowerDefenseMap.BossEncounter>();
+    private int _nextBossEncounterIndex;
+    private RougeTowerDefenseMap.BossEncounter _activeBossEncounter;
     private bool _towerDefensePlayerWasActive;
     private bool _towerDefenseHudWasActive;
 
@@ -169,30 +180,43 @@ public partial class RougeGameManager
         {
             towerBalance = jsonBalance.towerBalance;
             enemyBalance = jsonBalance.enemyBalance;
+            bossBalances = jsonBalance.bossBalances;
             bossBalance = jsonBalance.bossBalance;
             tacticalSkillBalance = jsonBalance.tacticalSkillBalance;
         }
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
+        bossBalances ??= new List<RougeBossBalanceConfig>();
         bossBalance ??= new RougeBossBalanceConfig();
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
-        bossBalance.EnsureDefaults();
+        EnsureBossBalanceDefaults();
         tacticalSkillBalance.EnsureDefaults();
+        _towerDefenseLevel = RougeTowerDefenseMapLoader.ActiveMap;
         ApplyEnemySpriteSheetTextures();
         TowerDefenseVisuals.SetRuntimeBalance(towerBalance);
-        _towerDefenseGold = Mathf.Max(0, towerDefenseStartingGold);
+        TowerDefenseVisuals.SetRuntimeLevelModifiers(
+            _towerDefenseLevel != null ? _towerDefenseLevel.TowerGoldCostMultiplier : 1f,
+            _towerDefenseLevel != null ? _towerDefenseLevel.TowerDamageMultiplier : 1f,
+            _towerDefenseLevel != null ? _towerDefenseLevel.TowerAttackSpeedMultiplier : 1f);
+        _towerDefenseGold = _towerDefenseLevel != null
+            ? Mathf.Max(0, _towerDefenseLevel.StartingGold)
+            : Mathf.Max(0, towerDefenseStartingGold);
+        _towerDefenseGoldEarnedTotal = 0;
         _towerDefenseAliveEstimate = 0;
         _towerDefenseSpawnSearchCursor = 0;
+        _towerDefenseAllSpawnersExhausted = false;
+        _nextKillAllVerificationTime = 0f;
         _towerDefenseGameOver = false;
         _towerDefenseGameOverReason = string.Empty;
         _towerPlacementMode = false;
+        _towerDefenseDoubleSpeed = false;
         TowerDefenseBuildModeActive = false;
         _towerBuildSelectionActive = false;
         _pendingMainTowerAoe = false;
         Time.timeScale = 1f;
-        InitializeTacticalSkills();
+        if (CommanderSkillsEnabled) InitializeTacticalSkills();
         _bossEnemyIndex = -1;
         _bossSpawned = false;
         _bossDefeated = false;
@@ -205,7 +229,9 @@ public partial class RougeGameManager
         _bossDeathSequenceTimer = 0f;
         _bossDeathShockwaveStep = 0;
         _bossDeathExplosionTriggered = false;
+        _bossDeathShouldGrantVictory = false;
         _towerDefenseVictory = false;
+        BuildBossSchedule();
 
         if (bossSpawnPoint == null) bossSpawnPoint = UnityEngine.Object.FindFirstObjectByType<RougeBossSpawnPoint>();
         if (player != null)
@@ -261,6 +287,7 @@ public partial class RougeGameManager
         Time.timeScale = 1f;
         TowerDefenseBuildModeActive = false;
         _towerPlacementMode = false;
+        _towerDefenseDoubleSpeed = false;
         RefreshTowerEditHints();
         if (player != null)
         {
@@ -302,6 +329,10 @@ public partial class RougeGameManager
         _towerDefenseCanvas = null;
         _towerTargetRequestCount = 0;
         _towerTargetScheduledCount = 0;
+        _bossSchedule.Clear();
+        _activeBossEncounter = null;
+        _towerDefenseLevel = null;
+        TowerDefenseVisuals.SetRuntimeLevelModifiers(1f, 1f, 1f);
         _towerDefenseInitialized = false;
     }
 
@@ -311,12 +342,103 @@ public partial class RougeGameManager
             towerDefenseStartingGold = DefaultTowerDefenseStartingGold;
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
+        bossBalances ??= new List<RougeBossBalanceConfig>();
         bossBalance ??= new RougeBossBalanceConfig();
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
-        bossBalance.EnsureDefaults();
+        EnsureBossBalanceDefaults();
         tacticalSkillBalance.EnsureDefaults();
+    }
+
+    private void EnsureBossBalanceDefaults()
+    {
+        bossBalances ??= new List<RougeBossBalanceConfig>();
+        bossBalance ??= new RougeBossBalanceConfig();
+        if (bossBalances.Count == 0) bossBalances.Add(bossBalance);
+        for (int i = bossBalances.Count - 1; i >= 0; i--)
+        {
+            if (bossBalances[i] == null)
+            {
+                bossBalances.RemoveAt(i);
+                continue;
+            }
+            bossBalances[i].EnsureDefaults();
+        }
+        if (bossBalances.Count == 0) bossBalances.Add(new RougeBossBalanceConfig());
+        bossBalance = bossBalances[0];
+        bossBalance.EnsureDefaults();
+    }
+
+    private void BuildBossSchedule()
+    {
+        _bossSchedule.Clear();
+        _nextBossEncounterIndex = 0;
+        _activeBossEncounter = null;
+        if (_towerDefenseLevel != null)
+        {
+            IReadOnlyList<RougeTowerDefenseMap.BossEncounter> configured =
+                _towerDefenseLevel.BossEncounters;
+            for (int i = 0; configured != null && i < configured.Count; i++)
+            {
+                if (configured[i] != null) _bossSchedule.Add(configured[i]);
+            }
+        }
+        else
+        {
+            _bossSchedule.Add(new RougeTowerDefenseMap.BossEncounter
+            {
+                bossId = bossBalance.bossId,
+                spawnMinute = Mathf.Max(0f, bossBalance.spawnTimeSeconds / 60f),
+                defeatGrantsVictory = true
+            });
+        }
+        _bossSchedule.Sort((left, right) => left.spawnMinute.CompareTo(right.spawnMinute));
+    }
+
+    private RougeBossBalanceConfig FindBossBalance(int bossId)
+    {
+        for (int i = 0; i < bossBalances.Count; i++)
+        {
+            RougeBossBalanceConfig configured = bossBalances[i];
+            if (configured != null && configured.bossId == bossId) return configured;
+        }
+        return null;
+    }
+
+    private bool HasLevelVictoryCondition(RougeLevelVictoryConditionType type)
+    {
+        // Scenes without a map keep the legacy Boss-kill victory behavior.
+        return _towerDefenseLevel != null
+            ? _towerDefenseLevel.HasVictoryCondition(type)
+            : type == RougeLevelVictoryConditionType.KillBoss;
+    }
+
+    private bool IsTowerTypeDisabled(RougeTowerType type)
+    {
+        return _towerDefenseLevel != null && _towerDefenseLevel.IsTowerDisabled((int)type);
+    }
+
+    private bool CanAffordTowerType(RougeTowerType type)
+    {
+        if (IsTowerTypeDisabled(type)) return false;
+        TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
+        return _towerDefenseGold >= cost;
+    }
+
+    private bool CanAffordAnyTowerType()
+    {
+        for (int typeIndex = 0; typeIndex < TowerPrefabResourcePaths.Length; typeIndex++)
+        {
+            if (CanAffordTowerType((RougeTowerType)typeIndex)) return true;
+        }
+        return false;
+    }
+
+    private bool HasPendingBossEncounter()
+    {
+        return _bossSpawned || _bossDeathSequenceActive ||
+               _nextBossEncounterIndex < _bossSchedule.Count;
     }
 
     private void AssignNamedTowerPlaceLayers()
@@ -340,7 +462,7 @@ public partial class RougeGameManager
         RougeDefenseTower gridPreview = visible && _towerPreview != null &&
             _towerPreview.gameObject.activeInHierarchy ? _towerPreview : null;
         RougeTowerDefenseMapLoader.Active?.SetTowerPlaceGridState(
-            visible, _defenseTowers, gridPreview);
+            visible, _defenseTowers, gridPreview, _previewCellValidity);
     }
 
     private void ResolveMainTower()
@@ -357,6 +479,7 @@ public partial class RougeGameManager
 
     private void ResolveEnemySpawnPoints()
     {
+        if (_towerDefenseAllSpawnersExhausted) return;
         _towerDefenseSpawners.Clear();
         Scene activeScene = gameObject.scene.IsValid() ? gameObject.scene : SceneManager.GetActiveScene();
         bool useRuntimeMap = UnityEngine.Object.FindFirstObjectByType<RougeTowerDefenseMapLoader>() != null;
@@ -381,6 +504,7 @@ public partial class RougeGameManager
         {
             _towerDefenseSpawners[i].ResetWaves();
         }
+        _towerDefenseAllSpawnersExhausted = false;
         _towerDefenseSpawnerResolveRetryTimer = 0f;
         Debug.Log($"Tower Defense: found {_towerDefenseSpawners.Count} scene spawn points.", this);
     }
@@ -443,7 +567,9 @@ public partial class RougeGameManager
         if (!_towerDefenseInitialized || kills <= 0) return;
         if (_towerDefenseGoldEarned.IsCreated)
         {
-            _towerDefenseGold += Mathf.Max(0, _towerDefenseGoldEarned[0]);
+            int earned = Mathf.Max(0, _towerDefenseGoldEarned[0]);
+            _towerDefenseGold += earned;
+            _towerDefenseGoldEarnedTotal += earned;
             _towerDefenseGoldEarned[0] = 0;
         }
         _towerDefenseAliveEstimate = Mathf.Max(0, _towerDefenseAliveEstimate - kills);
@@ -497,6 +623,13 @@ public partial class RougeGameManager
             return;
         }
 
+        if (keyboard != null && keyboard.f10Key.wasPressedThisFrame && !_towerPlacementMode)
+        {
+            _towerDefenseDoubleSpeed = !_towerDefenseDoubleSpeed;
+            Time.timeScale = GetTowerDefensePlayTimeScale();
+            RefreshTowerDefenseUi(true);
+        }
+
         if (UpdateDebugUnitViewInput(keyboard, mouse)) return;
 
         if (keyboard != null && keyboard.tabKey.wasPressedThisFrame)
@@ -505,7 +638,7 @@ public partial class RougeGameManager
         }
 
         bool pointerOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-        if (UpdateTacticalSkillInput(mouse, pointerOverUi)) return;
+        if (CommanderSkillsEnabled && UpdateTacticalSkillInput(mouse, pointerOverUi)) return;
         if (!_towerPlacementMode)
         {
             if (mouse != null && mouse.leftButton.wasPressedThisFrame && !pointerOverUi)
@@ -603,7 +736,7 @@ public partial class RougeGameManager
             _towerMiddleClickTarget = null;
         }
         SetTowerPlaceVisualsVisible(enabled);
-        Time.timeScale = enabled ? 0.5f : 1f;
+        Time.timeScale = enabled ? 0.5f : GetTowerDefensePlayTimeScale();
 
         if (enabled)
         {
@@ -620,6 +753,11 @@ public partial class RougeGameManager
         RefreshTowerDefenseUi();
     }
 
+    private float GetTowerDefensePlayTimeScale()
+    {
+        return _towerDefenseDoubleSpeed ? 2f : 1f;
+    }
+
     private void EnterTowerEditMode(RougeDefenseTower tower)
     {
         if (tower == null) return;
@@ -632,6 +770,15 @@ public partial class RougeGameManager
 
     private void SelectTowerBuildType(RougeTowerType type)
     {
+        if (IsTowerTypeDisabled(type))
+        {
+            _towerBuildSelectionActive = false;
+            _previewValid = false;
+            if (_towerPreview != null) Destroy(_towerPreview.gameObject);
+            _towerPreview = null;
+            RefreshTowerDefenseUi();
+            return;
+        }
         _selectedBuildType = type;
         _towerBuildSelectionActive = true;
         if (!_towerPlacementMode) return;
@@ -690,6 +837,7 @@ public partial class RougeGameManager
 
     private void BeginTowerBuild(RougeTowerType type)
     {
+        if (IsTowerTypeDisabled(type)) return;
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
         if (_towerDefenseGameOver || _towerDefenseGold < cost) return;
         if (!_towerPlacementMode)
@@ -862,19 +1010,20 @@ public partial class RougeGameManager
         RougeDefenseTower placed = _towerPreview;
         _towerPreview = null;
         _towerTargetScheduledCount = 0;
-        if (_towerDefenseGold >= placed.PurchaseCost)
+        bool canRepeatSelectedType = CanAffordTowerType(_selectedBuildType);
+        bool canAffordAnyTower = canRepeatSelectedType || CanAffordAnyTowerType();
+        if (canRepeatSelectedType)
         {
             SelectTowerBuildType(_selectedBuildType);
         }
         else
         {
-            // Keep edit mode active, but stop repeating this build type when the
-            // remaining gold cannot purchase another copy.
+            // Keep edit mode active while cancelling the current build preparation.
             _towerBuildSelectionActive = false;
             _previewValid = false;
             SetTowerPlaceVisualsVisible(true);
+            SelectPlacedTower(canAffordAnyTower ? null : placed);
         }
-        SelectPlacedTower(placed);
         RefreshTowerDefenseUi();
     }
 
@@ -882,7 +1031,7 @@ public partial class RougeGameManager
     {
         if (_selectedTower != null) _selectedTower.SetRangeVisibility(false);
         _selectedTower = tower;
-        if (_selectedTower != null) _selectedTower.SetRangeVisibility(true);
+        if (_selectedTower != null) _selectedTower.SetRangeVisibility(_towerPlacementMode);
         RefreshTowerEditHints();
         RefreshTowerDefenseUi(true);
     }
@@ -916,7 +1065,7 @@ public partial class RougeGameManager
         if (!_selectedTower.Upgrade()) return;
         _towerDefenseGold -= cost;
         _selectedTower.name = _selectedTower.DisplayName + " Lv." + _selectedTower.Level;
-        _selectedTower.SetRangeVisibility(true);
+        _selectedTower.SetRangeVisibility(_towerPlacementMode);
         RefreshTowerDefenseUi(true);
     }
 
@@ -963,7 +1112,7 @@ public partial class RougeGameManager
             mainTower.aoeCooldownRemaining = Mathf.Max(0f, mainTower.aoeCooldownRemaining - dt);
         }
 
-        UpdateTacticalSkills(dt);
+        if (CommanderSkillsEnabled) UpdateTacticalSkills(dt);
         UpdateTowerDefenseBoss();
         UpdateTowerDefenseSpawners(dt);
         ApplyPendingMainTowerAoe();
@@ -973,15 +1122,13 @@ public partial class RougeGameManager
         UpdateOrbitSphereAttacks(dt);
         UpdateDefenseTowers(dt);
         PrepareTowerTargetRequests();
+        EvaluateTowerDefenseVictoryConditions();
         RefreshTowerDefenseUi();
     }
 
     private void UpdateTowerDefenseBoss()
     {
-        if (!_bossSpawned && !_bossDefeated && _survivalTime >= Mathf.Max(1f, bossBalance.spawnTimeSeconds))
-        {
-            TrySpawnTowerDefenseBoss();
-        }
+        if (!_bossSpawned && !_bossDeathSequenceActive) TryStartNextBossEncounter();
 
         if (!_bossSpawned || _bossEnemyIndex < 0 || _bossEnemyIndex >= _currentMaxEnemies ||
             _bossEnemyIndex >= _stateA.Length)
@@ -1004,7 +1151,7 @@ public partial class RougeGameManager
         float4 position = _positionsA[_bossEnemyIndex];
         _bossWorldPosition = new Vector3(position.x, renderHeight, position.z);
         _bossCurrentHealth = Mathf.Max(0f, state.x);
-        float healthRatio = Mathf.Clamp01(state.x / Mathf.Max(1f, bossBalance.maxHealth));
+        float healthRatio = Mathf.Clamp01(state.x / GetCurrentBossMaxHealth());
         bool activatedSkill = false;
         if (healthRatio <= 0.75f && !_bossInterferenceActive) { _bossInterferenceActive = true; activatedSkill = true; }
         if (healthRatio <= 0.50f && !_bossShieldActive) { _bossShieldActive = true; activatedSkill = true; }
@@ -1023,7 +1170,32 @@ public partial class RougeGameManager
         UpdateBossPhaseVisuals(Time.deltaTime);
     }
 
-    private void TrySpawnTowerDefenseBoss()
+    private void TryStartNextBossEncounter()
+    {
+        while (_nextBossEncounterIndex < _bossSchedule.Count)
+        {
+            RougeTowerDefenseMap.BossEncounter encounter = _bossSchedule[_nextBossEncounterIndex];
+            if (_survivalTime < Mathf.Max(0f, encounter.spawnMinute) * 60f) return;
+            RougeBossBalanceConfig configuredBoss = FindBossBalance(encounter.bossId);
+            if (configuredBoss == null)
+            {
+                Debug.LogWarning($"Level Boss schedule references unknown Boss ID {encounter.bossId}; entry skipped.",
+                    _towerDefenseLevel);
+                _nextBossEncounterIndex++;
+                continue;
+            }
+
+            bossBalance = configuredBoss;
+            bossBalance.EnsureDefaults();
+            _activeBossEncounter = encounter;
+            if (!TrySpawnTowerDefenseBoss()) return;
+            _nextBossEncounterIndex++;
+            _bossDefeated = false;
+            return;
+        }
+    }
+
+    private bool TrySpawnTowerDefenseBoss()
     {
         if (bossSpawnPoint == null)
         {
@@ -1036,7 +1208,7 @@ public partial class RougeGameManager
             if (_stateA[i].x <= 0f && _positionsA[i].y < -100f) { index = i; break; }
         }
         if (index < 0 && _currentMaxEnemies < enemyCount) index = _currentMaxEnemies++;
-        if (index < 0) return;
+        if (index < 0) return false;
 
         Vector3 spawn = bossSpawnPoint != null
             ? bossSpawnPoint.transform.position
@@ -1045,7 +1217,7 @@ public partial class RougeGameManager
         float radius = Mathf.Max(0.5f, bossBalance.radius);
         _positionsA[index] = new float4(spawn.x, renderHeight, spawn.z, radius);
         _velocitiesA[index] = float4.zero;
-        _stateA[index] = new float4(Mathf.Max(1f, bossBalance.maxHealth), radius,
+        _stateA[index] = new float4(GetCurrentBossMaxHealth(), radius,
             _bossBaseMoveSpeed, 0f);
         _effectStateA[index] = default;
         _towerDefenseEnemyKinds[index] = BossEnemyFlag;
@@ -1054,7 +1226,10 @@ public partial class RougeGameManager
         if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = 3;
         _bossEnemyIndex = index;
         _bossSpawned = true;
-        _bossCurrentHealth = Mathf.Max(1f, bossBalance.maxHealth);
+        _bossInterferenceActive = false;
+        _bossShieldActive = false;
+        _bossHasteActive = false;
+        _bossCurrentHealth = GetCurrentBossMaxHealth();
         if (_bossSpriteAnimator != null) Destroy(_bossSpriteAnimator.gameObject);
         _bossSpriteAnimator = RougeBossSpriteAnimator.Create(bossBalance, radius * 4.2f);
         if (_bossSpriteAnimator != null)
@@ -1064,6 +1239,7 @@ public partial class RougeGameManager
         }
         _towerDefenseAliveEstimate++;
         RefreshTowerDefenseUi();
+        return true;
     }
 
     private float CalculateBossMoveSpeedAtSpawn(Vector3 spawn)
@@ -1087,8 +1263,7 @@ public partial class RougeGameManager
             }
         }
 
-        float travelSeconds = Mathf.Max(30f,
-            bossBalance.targetArrivalTimeSeconds - _survivalTime);
+        float travelSeconds = Mathf.Max(30f, bossBalance.targetTravelTimeSeconds);
         float dampingCompensation = Mathf.Clamp(velocityDamping, 0.1f, 1f);
         float calculatedSpeed = routeDistance / travelSeconds / dampingCompensation;
         if (!float.IsFinite(calculatedSpeed) || calculatedSpeed <= 0f)
@@ -1103,11 +1278,15 @@ public partial class RougeGameManager
         _bossDeathSequenceTimer = 0f;
         _bossDeathShockwaveStep = 0;
         _bossDeathExplosionTriggered = false;
+        _bossDeathShouldGrantVictory = _activeBossEncounter != null &&
+            _activeBossEncounter.defeatGrantsVictory &&
+            HasLevelVictoryCondition(RougeLevelVictoryConditionType.KillBoss);
         _bossSpawned = false;
-        _bossDefeated = true;
+        _bossDefeated = _nextBossEncounterIndex >= _bossSchedule.Count;
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         SetTowerPlaceVisualsVisible(false);
+        Time.timeScale = GetTowerDefensePlayTimeScale();
         RefreshTowerEditHints();
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
         if (_bossSpriteAnimator != null) _bossSpriteAnimator.BeginDeath();
@@ -1142,7 +1321,7 @@ public partial class RougeGameManager
                 new Color(1f, 0.5f, 0.08f, 1f));
         }
 
-        while (_bossDeathShockwaveStep < 3 &&
+        while (_bossDeathShouldGrantVictory && _bossDeathShockwaveStep < 3 &&
                _bossDeathSequenceTimer >= 1.05f + _bossDeathShockwaveStep * 0.48f)
         {
             float radius = _bossDeathShockwaveStep == 0 ? 28f :
@@ -1155,9 +1334,46 @@ public partial class RougeGameManager
         }
 
         if (_bossDeathSequenceTimer < focusDuration) return;
-        EliminateEnemiesInsideBossShockwave(float.MaxValue, true);
+        if (_bossDeathShouldGrantVictory)
+            EliminateEnemiesInsideBossShockwave(float.MaxValue, true);
         _bossDeathSequenceActive = false;
-        TriggerTowerDefenseVictory();
+        ReleaseDefeatedBossSlot();
+        _bossEnemyIndex = -1;
+        _bossCurrentHealth = 0f;
+        _activeBossEncounter = null;
+        _bossInterferenceActive = false;
+        _bossShieldActive = false;
+        _bossHasteActive = false;
+        if (_bossSpriteAnimator != null) Destroy(_bossSpriteAnimator.gameObject);
+        _bossSpriteAnimator = null;
+        RougeCameraFollow endingFollow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
+        if (endingFollow != null) endingFollow.EndCinematicFocus();
+        if (_bossDeathShouldGrantVictory)
+        {
+            TriggerTowerDefenseVictory("BOSS DESTROYED");
+            return;
+        }
+        _bossDeathShouldGrantVictory = false;
+        EvaluateTowerDefenseVictoryConditions();
+    }
+
+    private void ReleaseDefeatedBossSlot()
+    {
+        int index = _bossEnemyIndex;
+        if (index < 0 || !_stateA.IsCreated || index >= _stateA.Length) return;
+        float4 state = _stateA[index];
+        state.x = 0f;
+        state.w = 20.99f;
+        float4 position = _positionsA[index];
+        position.y = -1000f;
+        _stateA[index] = state;
+        _positionsA[index] = position;
+        if (_stateB.IsCreated && index < _stateB.Length) _stateB[index] = state;
+        if (_positionsB.IsCreated && index < _positionsB.Length) _positionsB[index] = position;
+        if (_towerDefenseEnemyKinds.IsCreated && index < _towerDefenseEnemyKinds.Length)
+            _towerDefenseEnemyKinds[index] = 0;
+        if (_enemyRenderKinds.IsCreated && index < _enemyRenderKinds.Length)
+            _enemyRenderKinds[index] = 0;
     }
 
     private void EliminateEnemiesInsideBossShockwave(float radius, bool eliminateAll)
@@ -1187,16 +1403,77 @@ public partial class RougeGameManager
         _towerDefenseAliveEstimate = Mathf.Max(0, _towerDefenseAliveEstimate - removed);
     }
 
-    private void TriggerTowerDefenseVictory()
+    private void TriggerTowerDefenseVictory(string reason)
     {
         if (_towerDefenseGameOver) return;
         _towerDefenseVictory = true;
         _towerDefenseGameOver = true;
-        _towerDefenseGameOverReason = "BOSS DESTROYED";
+        _towerDefenseGameOverReason = string.IsNullOrWhiteSpace(reason) ? "VICTORY CONDITION MET" : reason;
         Time.timeScale = 0f;
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetCinematicShake(0f);
         RefreshTowerDefenseUi(true);
+    }
+
+    private void EvaluateTowerDefenseVictoryConditions()
+    {
+        if (_towerDefenseGameOver || _bossDeathSequenceActive || _towerDefenseLevel == null) return;
+        IReadOnlyList<RougeTowerDefenseMap.VictoryCondition> conditions =
+            _towerDefenseLevel.VictoryConditions;
+        for (int i = 0; conditions != null && i < conditions.Count; i++)
+        {
+            RougeTowerDefenseMap.VictoryCondition condition = conditions[i];
+            if (condition == null) continue;
+            switch (condition.type)
+            {
+                case RougeLevelVictoryConditionType.KillEnemies:
+                    if (totalKills >= Mathf.Max(1, condition.targetAmount))
+                        TriggerTowerDefenseVictory($"{Mathf.Max(1, condition.targetAmount)} ENEMIES DESTROYED");
+                    break;
+                case RougeLevelVictoryConditionType.SurviveSeconds:
+                    if (_survivalTime >= Mathf.Max(0.1f, condition.targetSeconds))
+                        TriggerTowerDefenseVictory($"SURVIVED {FormatGameTime(condition.targetSeconds)}");
+                    break;
+                case RougeLevelVictoryConditionType.KillAllEnemies:
+                    if (AreAllLevelEnemiesDefeated())
+                        TriggerTowerDefenseVictory("ALL ENEMIES DESTROYED");
+                    break;
+                case RougeLevelVictoryConditionType.EarnGold:
+                    if (_towerDefenseGoldEarnedTotal >= Mathf.Max(1, condition.targetAmount))
+                        TriggerTowerDefenseVictory($"EARNED {Mathf.Max(1, condition.targetAmount)} GOLD");
+                    break;
+                // Boss kills are event-gated by the individual Boss encounter's Victory On Defeat flag.
+                case RougeLevelVictoryConditionType.KillBoss:
+                    break;
+            }
+            if (_towerDefenseGameOver) return;
+        }
+    }
+
+    private bool AreAllLevelEnemiesDefeated()
+    {
+        if (HasPendingBossEncounter()) return false;
+        if (_towerDefenseSpawners.Count == 0 && !_towerDefenseAllSpawnersExhausted &&
+            _towerDefenseLevel != null && _towerDefenseLevel.EnemySpawns.Count > 0)
+            return false;
+        for (int i = 0; i < _towerDefenseSpawners.Count; i++)
+        {
+            RougeEnemySpawnPoint point = _towerDefenseSpawners[i];
+            if (point == null || !point.isActiveAndEnabled) continue;
+            if (!point.limitWaveCount || point.waveIndex < Mathf.Max(1, point.maximumWaves)) return false;
+        }
+        if (Time.unscaledTime < _nextKillAllVerificationTime) return false;
+        _nextKillAllVerificationTime = Time.unscaledTime + 0.5f;
+        if (_stateA.IsCreated)
+        {
+            int limit = Mathf.Min(_currentMaxEnemies, _stateA.Length);
+            for (int i = 0; i < limit; i++)
+            {
+                if (_stateA[i].x > 0f) return false;
+            }
+        }
+        _towerDefenseAliveEstimate = 0;
+        return true;
     }
 
     private void DisableBossTowerInterferenceMarkers()
@@ -1290,11 +1567,13 @@ public partial class RougeGameManager
     {
         if (_towerDefenseSpawners.Count == 0)
         {
+            if (_towerDefenseAllSpawnersExhausted) return;
             _towerDefenseSpawnerResolveRetryTimer -= dt;
             if (_towerDefenseSpawnerResolveRetryTimer <= 0f) ResolveEnemySpawnPoints();
             return;
         }
 
+        bool exhaustedSpawnPoint = false;
         for (int i = _towerDefenseSpawners.Count - 1; i >= 0; i--)
         {
             RougeEnemySpawnPoint point = _towerDefenseSpawners[i];
@@ -1309,7 +1588,16 @@ public partial class RougeGameManager
             int enemyLevel = GetTowerDefenseEnemyLevel();
             SpawnEnemyBatch(point, Mathf.Clamp(point.spawnCount, 1, 64));
             point.CompleteWave(enemyBalance.EvaluateSpawnSpeedMultiplier(enemyLevel));
+            if (point.HasReachedWaveLimit())
+            {
+                exhaustedSpawnPoint = true;
+                _towerDefenseSpawners.RemoveAt(i);
+                point.gameObject.SetActive(false);
+                Destroy(point.gameObject);
+            }
         }
+        if (exhaustedSpawnPoint && _towerDefenseSpawners.Count == 0)
+            _towerDefenseAllSpawnersExhausted = true;
     }
 
     private void SpawnEnemyBatch(RougeEnemySpawnPoint point, int count)
@@ -1514,7 +1802,26 @@ public partial class RougeGameManager
 
     private float GetTowerDefenseEnemyHealthMultiplier()
     {
-        return enemyBalance.EvaluateHealthMultiplier(GetTowerDefenseEnemyLevel());
+        float levelMultiplier = enemyBalance.EvaluateHealthMultiplier(GetTowerDefenseEnemyLevel());
+        float levelRuleMultiplier = _towerDefenseLevel != null
+            ? _towerDefenseLevel.EnemyHealthMultiplier
+            : 1f;
+        return levelMultiplier * Mathf.Max(0.01f, levelRuleMultiplier);
+    }
+
+    private float GetTowerDefenseEnemyMoveSpeedMultiplier()
+    {
+        return _towerDefenseLevel != null
+            ? Mathf.Max(0.01f, _towerDefenseLevel.EnemyMoveSpeedMultiplier)
+            : 1f;
+    }
+
+    private float GetCurrentBossMaxHealth()
+    {
+        float levelRuleMultiplier = _towerDefenseLevel != null
+            ? Mathf.Max(0.01f, _towerDefenseLevel.EnemyHealthMultiplier)
+            : 1f;
+        return Mathf.Max(1f, bossBalance.maxHealth) * levelRuleMultiplier;
     }
 
     private float GetTowerDefenseEnemyHealth()
@@ -1526,12 +1833,13 @@ public partial class RougeGameManager
     private float GetTowerDefenseEnemySpeed()
     {
         return Mathf.Max(0.1f, enemyBalance.enemyTypes[0].baseSpeed) *
-            enemyBalance.EvaluateSpeedMultiplier(GetTowerDefenseEnemyLevel());
+            enemyBalance.EvaluateSpeedMultiplier(GetTowerDefenseEnemyLevel()) *
+            GetTowerDefenseEnemyMoveSpeedMultiplier();
     }
 
     private float GetTowerDefenseEnemyHealth(byte kind)
     {
-        if ((kind & BossEnemyFlag) != 0) return Mathf.Max(1f, bossBalance.maxHealth);
+        if ((kind & BossEnemyFlag) != 0) return GetCurrentBossMaxHealth();
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(1f, enemyBalance.eliteHealthMultiplier) : 1f;
         float levelMultiplier = GetTowerDefenseEnemyHealthMultiplier();
@@ -1543,12 +1851,14 @@ public partial class RougeGameManager
         if ((kind & BossEnemyFlag) != 0)
         {
             float baseSpeed = _bossBaseMoveSpeed > 0f ? _bossBaseMoveSpeed : bossBalance.moveSpeed;
-            return Mathf.Max(0.1f, baseSpeed) * (_bossHasteActive ? bossBalance.hasteSpeedMultiplier : 1f);
+            return Mathf.Max(0.1f, baseSpeed) * GetTowerDefenseEnemyMoveSpeedMultiplier() *
+                   (_bossHasteActive ? bossBalance.hasteSpeedMultiplier : 1f);
         }
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(0.1f, enemyBalance.eliteSpeedMultiplier) : 1f;
         float levelMultiplier = enemyBalance.EvaluateSpeedMultiplier(GetTowerDefenseEnemyLevel());
-        return Mathf.Max(0.01f, archetype.baseSpeed) * levelMultiplier * eliteMultiplier;
+        return Mathf.Max(0.01f, archetype.baseSpeed) * levelMultiplier * eliteMultiplier *
+               GetTowerDefenseEnemyMoveSpeedMultiplier();
     }
 
     private RougeEnemyArchetypeConfig GetEnemyArchetype(byte kind)
@@ -1848,6 +2158,8 @@ public partial class RougeGameManager
         position = default;
         if (index < 0 || index >= _currentMaxEnemies || index >= _stateA.Length || _stateA[index].x <= 0f) return false;
         float4 p = _positionsA[index];
+        int visualFlags = (int)math.floor(math.max(_stateA[index].w, 0f) / 10f + 0.0001f);
+        if (p.y > renderHeight + 0.05f || (visualFlags & 4) != 0) return false;
         float dx = p.x - origin.x;
         float dz = p.z - origin.z;
         float squareRange = math.sqrt(math.max(0f, rangeSq));
@@ -2063,12 +2375,22 @@ public partial class RougeGameManager
                 for (int sphere = 0; sphere < sphereCount; sphere++)
                 {
                     Vector3 position = attack.Positions[sphere];
+                    Vector3 towerPosition = tower.transform.position;
+                    float2 lineStart = new float2(towerPosition.x, towerPosition.z);
+                    float2 lineEnd = new float2(position.x, position.z);
+                    float2 lineDelta = lineEnd - lineStart;
+                    float lineLength = math.max(math.length(lineDelta), 0.001f);
                     TryAddSkillArea(new RougeSkillArea
                     {
-                        Type = 13,
-                        Position = new float2(position.x, position.z),
+                        Type = 15,
+                        Position = lineStart,
+                        Direction = lineDelta / lineLength,
+                        Length = lineLength,
                         Radius = sphereRadius,
                         Damage = tower.Damage,
+                        // Positive angular speed moves counter-clockwise in X/Z, so the
+                        // corresponding beam tangent is (-direction.y, direction.x).
+                        AuxA = tower.OrbitAngularSpeed < 0f ? -1f : 1f,
                         SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1
                     });
                 }
@@ -2502,7 +2824,7 @@ public partial class RougeGameManager
         _towerTargetPriorityButton.onClick.AddListener(ToggleSelectedTowerTargetPriority);
         _towerTargetPriorityButton.gameObject.SetActive(false);
 
-        BuildTacticalSkillUi(canvasObject.transform);
+        if (CommanderSkillsEnabled) BuildTacticalSkillUi(canvasObject.transform);
 
         _bossPanel = CreateUiPanel("Boss Panel", canvasObject.transform, new Color(0.08f, 0.015f, 0.1f, 0.94f));
         RectTransform bossRect = _bossPanel.GetComponent<RectTransform>();
@@ -2576,6 +2898,20 @@ public partial class RougeGameManager
         return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n${cost}";
     }
 
+    private string GetBossScheduleStatus()
+    {
+        if (_bossDeathSequenceActive) return $"{bossBalance.displayName.ToUpperInvariant()} DEFEATED";
+        if (_bossSpawned) return $"{bossBalance.displayName.ToUpperInvariant()} ACTIVE";
+        if (_nextBossEncounterIndex >= _bossSchedule.Count) return "NO MORE BOSSES";
+        RougeTowerDefenseMap.BossEncounter next = _bossSchedule[_nextBossEncounterIndex];
+        RougeBossBalanceConfig nextBalance = FindBossBalance(next.bossId);
+        string bossName = nextBalance != null && !string.IsNullOrWhiteSpace(nextBalance.displayName)
+            ? nextBalance.displayName.ToUpperInvariant()
+            : $"BOSS ID {next.bossId}";
+        float countdown = Mathf.Max(0f, next.spawnMinute * 60f - _survivalTime);
+        return $"{bossName} IN {FormatGameTime(countdown)}";
+    }
+
     private void RefreshTowerDefenseUi(bool force = false)
     {
         if (_towerDefenseCanvas == null) return;
@@ -2591,14 +2927,14 @@ public partial class RougeGameManager
             {
                 if (_towerDefenseSpawners[i] != null && _towerDefenseSpawners[i].isActiveAndEnabled) activeSpawners++;
             }
-            float bossCountdown = Mathf.Max(0f, bossBalance.spawnTimeSeconds - _survivalTime);
-            string bossTime = _bossSpawned ? "BOSS ACTIVE" : _bossDefeated ? "BOSS DEFEATED" : $"BOSS IN {FormatGameTime(bossCountdown)}";
+            string bossTime = GetBossScheduleStatus();
             int enemyLevel = GetTowerDefenseEnemyLevel();
             float enemyHealthBonus = (GetTowerDefenseEnemyHealthMultiplier() - 1f) * 100f;
-            float enemySpeedBonus = (enemyBalance.EvaluateSpeedMultiplier(enemyLevel) - 1f) * 100f;
+            float enemySpeedBonus = (enemyBalance.EvaluateSpeedMultiplier(enemyLevel) *
+                                     GetTowerDefenseEnemyMoveSpeedMultiplier() - 1f) * 100f;
             _towerDefenseStatusText.text =
                 $"MAIN TOWER  {hp:0} / {maxHp:0}\n" +
-                $"GOLD {_towerDefenseGold}   NORMAL +{enemyBalance.normalKillGold}   ELITE +{enemyBalance.eliteKillGold}\n" +
+                $"GOLD {_towerDefenseGold}   EARNED {_towerDefenseGoldEarnedTotal}   NORMAL +{enemyBalance.normalKillGold}   ELITE +{enemyBalance.eliteKillGold}\n" +
                 $"KILLS {totalKills}   TIME {FormatGameTime(_survivalTime)}   {bossTime}\n" +
                 $"ENEMY LV {enemyLevel} (NEW)   HP +{enemyHealthBonus:0.#}%   SPEED +{enemySpeedBonus:0.#}%\n" +
                 $"ENEMIES ~ {_towerDefenseAliveEstimate} / {GetTowerDefenseAliveEnemyCap()}   HP {GetTowerDefenseEnemyHealth():0.#}   SPEED {GetTowerDefenseEnemySpeed():0.0}\n" +
@@ -2608,12 +2944,18 @@ public partial class RougeGameManager
             SetUiBarFill(_mainTowerHealthFill, mainTower != null ? mainTower.HealthNormalized : 0f);
         for (int typeIndex = 0; typeIndex < _towerBuildButtons.Length; typeIndex++)
         {
-            TowerDefenseVisuals.GetBaseStats((RougeTowerType)typeIndex, out _, out _, out _, out _, out int cost);
+            RougeTowerType type = (RougeTowerType)typeIndex;
+            TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
+            bool disabled = IsTowerTypeDisabled(type);
             SetPurchaseButtonAvailability(_towerBuildButtons[typeIndex], _towerBuildButtonTexts[typeIndex],
-                !_towerDefenseGameOver && _towerDefenseGold >= cost);
+                !disabled && !_towerDefenseGameOver && _towerDefenseGold >= cost);
+            if (_towerBuildButtonTexts[typeIndex] != null)
+                _towerBuildButtonTexts[typeIndex].text = disabled
+                    ? $"{TowerDefenseVisuals.GetTowerName(type)}\nDISABLED"
+                    : GetTowerBuildLabel(typeIndex + 1, type);
         }
         RefreshTowerDamageRanking();
-        RefreshTacticalSkillUi();
+        if (CommanderSkillsEnabled) RefreshTacticalSkillUi();
         if (_towerSellButton != null)
         {
             bool showSell = _towerPlacementMode && _selectedTower != null;
@@ -2637,9 +2979,10 @@ public partial class RougeGameManager
         }
         if (_bossPanel != null)
         {
-            _bossPanel.SetActive(_bossSpawned || _bossDefeated);
+            _bossPanel.SetActive(_bossSpawned || _bossDeathSequenceActive);
             float bossHealth = _bossSpawned ? Mathf.Max(0f, _bossCurrentHealth) : 0f;
-            float bossHealthRatio = Mathf.Clamp01(bossHealth / Mathf.Max(1f, bossBalance.maxHealth));
+            float bossMaximumHealth = GetCurrentBossMaxHealth();
+            float bossHealthRatio = Mathf.Clamp01(bossHealth / bossMaximumHealth);
             if (_bossHealthFill != null) SetUiBarFill(_bossHealthFill, bossHealthRatio);
             RefreshBossThresholdMarkers();
             if (_bossStatusText != null)
@@ -2647,9 +2990,7 @@ public partial class RougeGameManager
                 string phases = $"{(_bossInterferenceActive ? "INTERFERENCE " : "")}{(_bossShieldActive ? "SHIELD " : "")}{(_bossHasteActive ? "HASTE" : "")}";
                 _bossStatusText.text = _bossDeathSequenceActive
                     ? "BOSS CORE OVERLOAD"
-                    : _bossDefeated
-                    ? "BOSS DEFEATED"
-                    : $"BOSS  {bossHealth:0} / {bossBalance.maxHealth:0}  ({bossHealthRatio * 100f:0.00}%)   {phases}";
+                    : $"{bossBalance.displayName.ToUpperInvariant()}  {bossHealth:0} / {bossMaximumHealth:0}  ({bossHealthRatio * 100f:0.00}%)   {phases}";
             }
         }
         if (_towerDefenseModeText != null)
@@ -2676,7 +3017,8 @@ public partial class RougeGameManager
             }
             else
             {
-                _towerDefenseModeText.text = "F1 FREE CAMERA  |  CLICK TOWER TO EDIT  |  CLICK BUILD BUTTON  |  LEFT-DRAG  |  WHEEL ZOOM";
+                string speed = _towerDefenseDoubleSpeed ? "SPEED ×2" : "SPEED ×1";
+                _towerDefenseModeText.text = $"{speed}  |  F10 TOGGLE SPEED  |  F1 FREE CAMERA  |  CLICK TOWER TO EDIT  |  CLICK BUILD BUTTON  |  LEFT-DRAG  |  WHEEL ZOOM";
             }
         }
         if (_towerUpgradeButton != null)

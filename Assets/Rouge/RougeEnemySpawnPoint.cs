@@ -14,6 +14,9 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
     [Range(1, 64)] public int spawnCount = 25;
     [Min(0.1f)] public float spawnInterval = 5f;
     [Min(0f)] public float startDelay = 1f;
+    [Tooltip("Remove this spawn point after it has produced the configured number of waves.")]
+    public bool limitWaveCount;
+    [Min(1)] public int maximumWaves = 1;
 
     [Header("Enemy")]
     public RougeEnemyType enemyType = RougeEnemyType.Standard;
@@ -31,13 +34,15 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
     }
 
     public void ConfigureFromMap(int count, float interval, float delay, float cellSize,
-        RougeEnemyType type)
+        RougeEnemyType type, bool limitWaves, int maxWaves)
     {
         spawnCount = Mathf.Clamp(count, 1, 64);
         spawnInterval = Mathf.Max(0.1f, interval);
         startDelay = Mathf.Max(0f, delay);
         spawnCellSize = Mathf.Max(0.1f, cellSize);
         enemyType = type;
+        limitWaveCount = limitWaves;
+        maximumWaves = Mathf.Max(1, maxWaves);
         timer = startDelay;
         waveIndex = 0;
     }
@@ -60,10 +65,17 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
         waveIndex++;
     }
 
+    internal bool HasReachedWaveLimit()
+    {
+        return limitWaveCount && waveIndex >= Mathf.Max(1, maximumWaves);
+    }
+
     private void OnValidate()
     {
         spawnCount = Mathf.Clamp(spawnCount, 1, 64);
         spawnInterval = Mathf.Max(0.1f, spawnInterval);
+        startDelay = Mathf.Max(0f, startDelay);
+        maximumWaves = Mathf.Max(1, maximumWaves);
         enemyTypeIndex = Mathf.Max(0, enemyTypeIndex);
         spawnCellSize = Mathf.Max(0.1f, spawnCellSize);
     }
@@ -81,6 +93,7 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
         UnityEditor.Handles.Label(center + Vector3.up * 3f,
             $"Enemy Spawn / {enemyType}\n" +
             $"Fixed {spawnCount} every {spawnInterval:0.##}s (before JSON speed curve)\n" +
+            (limitWaveCount ? $"Maximum {maximumWaves} waves\n" : "Unlimited waves\n") +
             $"Cell {spawnCellSize:0.#} × {spawnCellSize:0.#}");
 #endif
     }
