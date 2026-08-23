@@ -11,7 +11,9 @@ public enum RougeTowerType
     [InspectorName("激光塔")] Laser,
     [InspectorName("穿透激光塔")] PiercingLaser,
     [InspectorName("水晶塔")] OrbitSphere,
-    [InspectorName("火箭齐射塔")] RocketBarrage
+    [InspectorName("火箭齐射塔")] RocketBarrage,
+    [InspectorName("充能塔")] ChargeTower = 8,
+    [InspectorName("强化塔")] ReinforcementTower = 9
 }
 
 public enum RougeTowerTargetPriority
@@ -72,7 +74,8 @@ public readonly struct RougeTowerStats
 internal static class TowerDefenseVisuals
 {
     public const int MaxTowerLevel = 5;
-    public const int TowerTypeCount = 8;
+    public const int StandardTowerTypeCount = 8;
+    public const int TowerTypeCount = 10;
     private static Material s_lineMaterial;
     private static Material s_laserConnectionMaterial;
     private static Material s_crystalLaserMaterial;
@@ -108,8 +111,17 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Laser: return "激光塔";
             case RougeTowerType.PiercingLaser: return "穿透激光";
             case RougeTowerType.OrbitSphere: return "水晶塔";
-            default: return "火箭齐射";
+            case RougeTowerType.RocketBarrage: return "火箭齐射";
+            case RougeTowerType.ChargeTower: return "充能塔";
+            case RougeTowerType.ReinforcementTower: return "强化塔";
+            default: return "未知塔楼";
         }
+    }
+
+    public static bool IsSpecialTowerType(RougeTowerType type)
+    {
+        return type == RougeTowerType.ChargeTower ||
+               type == RougeTowerType.ReinforcementTower;
     }
 
     public static Color GetTowerColor(RougeTowerType type)
@@ -123,7 +135,10 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Laser: return new Color(0.15f, 1f, 0.58f);
             case RougeTowerType.PiercingLaser: return new Color(0.95f, 0.12f, 1f);
             case RougeTowerType.OrbitSphere: return new Color(0.35f, 0.62f, 1f);
-            default: return new Color(0.42f, 0.5f, 0.16f);
+            case RougeTowerType.RocketBarrage: return new Color(0.42f, 0.5f, 0.16f);
+            case RougeTowerType.ChargeTower: return new Color(0.18f, 0.9f, 1f);
+            case RougeTowerType.ReinforcementTower: return new Color(0.9f, 0.24f, 1f);
+            default: return Color.white;
         }
     }
 
@@ -150,7 +165,10 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Laser: radius = 2.3f; cost = 750; break;
             case RougeTowerType.PiercingLaser: radius = 2.8f; cost = 1000; break;
             case RougeTowerType.OrbitSphere: radius = 2.5f; cost = 900; break;
-            default: radius = 2.8f; cost = 1400; break;
+            case RougeTowerType.RocketBarrage: radius = 2.8f; cost = 1400; break;
+            case RougeTowerType.ChargeTower: radius = 2.8f; cost = 4000; break;
+            case RougeTowerType.ReinforcementTower: radius = 3.1f; cost = 6000; break;
+            default: radius = 2f; cost = 0; break;
         }
         cost = ScaleGoldCost(cost);
     }
@@ -175,7 +193,10 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Laser: baseCost = 750; break;
             case RougeTowerType.PiercingLaser: baseCost = 1000; break;
             case RougeTowerType.OrbitSphere: baseCost = 900; break;
-            default: baseCost = 1400; break;
+            case RougeTowerType.RocketBarrage: baseCost = 1400; break;
+            case RougeTowerType.ChargeTower: baseCost = 4000; break;
+            case RougeTowerType.ReinforcementTower: baseCost = 6000; break;
+            default: baseCost = 0; break;
         }
         return ScaleGoldCost(baseCost * (1 << levelIndex));
     }
@@ -187,6 +208,13 @@ internal static class TowerDefenseVisuals
             ? new Vector2Int(Mathf.Clamp(configured.footprintWidth, 1, 16),
                 Mathf.Clamp(configured.footprintHeight, 1, 16))
             : new Vector2Int(4, 4);
+    }
+
+    public static int GetReinforcementAuraBuffLevel()
+    {
+        RougeTowerTypeConfig configured = s_runtimeBalance?.Find(
+            RougeTowerType.ReinforcementTower);
+        return Mathf.Max(1, configured?.reinforcementAuraBuffLevel ?? 1);
     }
 
     public static RougeTowerStats GetStats(RougeTowerType type, int requestedLevel)
@@ -267,7 +295,7 @@ internal static class TowerDefenseVisuals
                     orbitRadialSpeed: Pick(i, 8f, 9f, 10f, 11f, 12f),
                     orbitAngularSpeed: Pick(i, 180f, 210f, 240f, 270f, 320f),
                     orbitOuterHoldDuration: Pick(i, 1.5f, 2f, 2.5f, 3f, 4f));
-            default:
+            case RougeTowerType.RocketBarrage:
                 return new RougeTowerStats(Pick(i, 18f, 28f, 42f, 62f, 90f),
                     Pick(i, 3.2f, 3f, 2.8f, 2.6f, 2.4f), Pick(i, 18f, 21f, 24f, 27f, 30f),
                     projectileCount: Pick(i, 6, 8, 10, 12, 16),
@@ -275,6 +303,10 @@ internal static class TowerDefenseVisuals
                     projectileInterval: Pick(i, 0.09f, 0.08f, 0.075f, 0.07f, 0.06f),
                     projectileFlightDuration: Pick(i, 1.05f, 1f, 0.95f, 0.9f, 0.85f),
                     brownianStrength: Pick(i, 3f, 3.2f, 3.4f, 3.6f, 3.8f));
+            case RougeTowerType.ChargeTower:
+            case RougeTowerType.ReinforcementTower:
+            default:
+                return new RougeTowerStats(0f, 1f, 0f);
         }
     }
 

@@ -66,6 +66,11 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             : map != null ? map.GetTowerPlaceEffect(cell) : RougeTowerPlaceEffect.None;
     }
 
+    public bool TryGetRuntimeTowerPlaceEffect(Vector2Int cell, out RougeTowerPlaceEffect effect)
+    {
+        return _runtimeTowerPlaceEffects.TryGetValue(cell, out effect);
+    }
+
     public float GetMinimumEffectiveTowerGoldCostMultiplier()
     {
         float minimum = map != null ? map.GetMinimumTowerGoldCostMultiplier() : 1f;

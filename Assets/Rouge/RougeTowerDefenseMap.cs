@@ -35,7 +35,15 @@ public enum RougeTowerPlaceEffect
     [InspectorName("7 - 全属性 Lv-1，金币消耗 -25%")]
     Discount = 7,
     [InspectorName("8 - 全属性 Lv-1，可花费累计投入的 33% 搬运")]
-    Relocation = 8
+    Relocation = 8,
+    [InspectorName("9 - 全属性 Lv-2，金币消耗 +50%，攻击回响")]
+    Echo = 9,
+    [InspectorName("10 - 全属性 Lv-1，占地 X/Y 各 -1，塔身缩放 0.8，金币消耗 -25%")]
+    Shrink = 10,
+    [InspectorName("11 - 全属性 Lv-1，同格同类同级塔自动合成")]
+    Fusion = 11,
+    [InspectorName("12 - 全属性 Lv-1，金币消耗 -25%，击杀金币每 30 秒按 150% 结算")]
+    AccumulatedWealth = 12
 }
 
 public static class RougeTowerPlaceEffectRules
@@ -52,6 +60,10 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.Bounty: return new RougeTowerBuffLevels(-2, -2, -2);
             case RougeTowerPlaceEffect.Discount: return new RougeTowerBuffLevels(-1, -1, -1);
             case RougeTowerPlaceEffect.Relocation: return new RougeTowerBuffLevels(-1, -1, -1);
+            case RougeTowerPlaceEffect.Echo: return new RougeTowerBuffLevels(-2, -2, -2);
+            case RougeTowerPlaceEffect.Shrink: return new RougeTowerBuffLevels(-1, -1, -1);
+            case RougeTowerPlaceEffect.Fusion: return new RougeTowerBuffLevels(-1, -1, -1);
+            case RougeTowerPlaceEffect.AccumulatedWealth: return new RougeTowerBuffLevels(-1, -1, -1);
             default: return default;
         }
     }
@@ -65,8 +77,11 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.AttackSpeedAmplifier:
                 return 1.25f;
             case RougeTowerPlaceEffect.PremiumAmplifier:
+            case RougeTowerPlaceEffect.Echo:
                 return 1.5f;
             case RougeTowerPlaceEffect.Discount:
+            case RougeTowerPlaceEffect.Shrink:
+            case RougeTowerPlaceEffect.AccumulatedWealth:
                 return 0.75f;
             default:
                 return 1f;
@@ -76,6 +91,21 @@ public static class RougeTowerPlaceEffectRules
     public static int GetInitialLevelBonus(RougeTowerPlaceEffect effect)
     {
         return effect == RougeTowerPlaceEffect.FreeLevelNoRefund ? 1 : 0;
+    }
+
+    public static int GetFootprintReduction(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.Shrink ? 1 : 0;
+    }
+
+    public static float GetTowerVisualScaleMultiplier(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.Shrink ? 0.8f : 1f;
+    }
+
+    public static bool RequiresEmptyTileBeforeChargeTowerSell(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.Shrink;
     }
 
     public static bool AllowsSellRefund(RougeTowerPlaceEffect effect)
@@ -110,6 +140,10 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.Bounty: return "效果 6 - 击杀赏金";
             case RougeTowerPlaceEffect.Discount: return "效果 7 - 金币折扣";
             case RougeTowerPlaceEffect.Relocation: return "效果 8 - 搬运格";
+            case RougeTowerPlaceEffect.Echo: return "效果 9 - 回响地块";
+            case RougeTowerPlaceEffect.Shrink: return "效果 10 - 缩小地块";
+            case RougeTowerPlaceEffect.Fusion: return "效果 11 - 合成地块";
+            case RougeTowerPlaceEffect.AccumulatedWealth: return "效果 12 - 累计财富地块";
             default: return "无塔楼格特殊效果";
         }
     }
@@ -134,6 +168,14 @@ public static class RougeTowerPlaceEffectRules
                 return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   建造/升级金币消耗 -25%";
             case RougeTowerPlaceEffect.Relocation:
                 return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   可花费塔楼累计投入金币的 33% 搬运到其他合法地图格";
+            case RougeTowerPlaceEffect.Echo:
+                return "伤害 Lv-2   范围 Lv-2   攻速 Lv-2   建造/升级金币消耗 +50%   攻击完成 0.25 秒后回响 1 次再进入冷却（机枪塔/小激光塔/导弹塔改为弹幕 x1.5，向上取整）";
+            case RougeTowerPlaceEffect.Shrink:
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   建造/升级金币消耗 -25%   塔楼占地 X/Y 各 -1（最小 1x1）   塔身缩放 x0.8   由充能塔赋予时，须先清空本格其他塔楼才能出售充能塔";
+            case RougeTowerPlaceEffect.Fusion:
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   同格存在同类型同等级塔楼时，新塔会合并到旧塔并使旧塔 Lv+1，可连续合成且不超过等级上限";
+            case RougeTowerPlaceEffect.AccumulatedWealth:
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   建造/升级金币消耗 -25%   本格塔楼的击杀金币暂存在地块中，每 30 秒按累计值的 150% 结算；由充能塔赋予时，移除充能塔会立即结算";
             default:
                 return "此地图格没有特殊效果";
         }
@@ -151,6 +193,10 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.Bounty: return new Color(1f, 0.52f, 0.04f, 0.4f);
             case RougeTowerPlaceEffect.Discount: return new Color(0.12f, 0.9f, 0.34f, 0.38f);
             case RougeTowerPlaceEffect.Relocation: return new Color(0.68f, 0.2f, 1f, 0.4f);
+            case RougeTowerPlaceEffect.Echo: return new Color(0.32f, 0.4f, 1f, 0.42f);
+            case RougeTowerPlaceEffect.Shrink: return new Color(0.18f, 0.92f, 0.72f, 0.4f);
+            case RougeTowerPlaceEffect.Fusion: return new Color(1f, 0.34f, 0.72f, 0.42f);
+            case RougeTowerPlaceEffect.AccumulatedWealth: return new Color(1f, 0.72f, 0.08f, 0.44f);
             default: return Color.clear;
         }
     }

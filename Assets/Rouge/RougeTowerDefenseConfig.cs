@@ -50,6 +50,10 @@ public sealed class RougeTowerTypeConfig
     [Range(1, 16), Tooltip("Tower footprint height in map micro cells.")]
     public int footprintHeight;
     [Min(0)] public int purchaseCost = 400;
+    [Min(0f), Tooltip("Additional base-cost multiplier for every existing tower of this type. Used by special support towers.")]
+    public float specialTowerCountCostMultiplier;
+    [Min(1), Tooltip("All-stat buff levels granted by each reinforcement tower to towers in the same map tile.")]
+    public int reinforcementAuraBuffLevel = 1;
     public List<RougeTowerLevelConfig> levels = new List<RougeTowerLevelConfig>();
 }
 
@@ -72,6 +76,10 @@ public sealed class RougeTowerBalanceConfig
             int legacySize = Mathf.Clamp(config.footprintSize <= 0 ? 4 : config.footprintSize, 1, 16);
             config.footprintWidth = Mathf.Clamp(config.footprintWidth <= 0 ? legacySize : config.footprintWidth, 1, 16);
             config.footprintHeight = Mathf.Clamp(config.footprintHeight <= 0 ? legacySize : config.footprintHeight, 1, 16);
+            config.specialTowerCountCostMultiplier = Mathf.Max(0f,
+                config.specialTowerCountCostMultiplier);
+            config.reinforcementAuraBuffLevel = Mathf.Max(1,
+                config.reinforcementAuraBuffLevel);
             while (config.levels.Count < TowerDefenseVisuals.MaxTowerLevel)
             {
                 config.levels.Add(CreateDefaultLevel(type, config.levels.Count));
@@ -118,6 +126,21 @@ public sealed class RougeTowerBalanceConfig
             case RougeTowerType.Laser: config.placementRadius = 2.3f; config.purchaseCost = 750; break;
             case RougeTowerType.PiercingLaser: config.placementRadius = 2.8f; config.purchaseCost = 1000; break;
             case RougeTowerType.OrbitSphere: config.placementRadius = 2.5f; config.purchaseCost = 900; break;
+            case RougeTowerType.ChargeTower:
+                config.placementRadius = 2.8f;
+                config.footprintWidth = 4;
+                config.footprintHeight = 4;
+                config.purchaseCost = 4000;
+                config.specialTowerCountCostMultiplier = 0.25f;
+                break;
+            case RougeTowerType.ReinforcementTower:
+                config.placementRadius = 3.1f;
+                config.footprintWidth = 5;
+                config.footprintHeight = 5;
+                config.purchaseCost = 6000;
+                config.specialTowerCountCostMultiplier = 0.5f;
+                config.reinforcementAuraBuffLevel = 1;
+                break;
             default: config.placementRadius = 2.8f; config.purchaseCost = 1400; break;
         }
         for (int i = 0; i < TowerDefenseVisuals.MaxTowerLevel; i++)

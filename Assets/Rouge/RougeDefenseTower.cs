@@ -108,15 +108,15 @@ internal enum RougeTowerBuffSource
     BossSkill,
     FocusedMode,
     Overclock,
+    ReinforcementAura,
     Count
 }
 
 [DisallowMultipleComponent]
 public sealed class RougeDefenseTower : MonoBehaviour
 {
-  
-
-
+    private const int DefaultChargeTowerPlacementCost = 4000;
+    private const int DefaultReinforcementTowerPlacementCost = 6000;
 
     [SerializeField] private RougeTowerType towerType;
     [SerializeField, Range(1, TowerDefenseVisuals.MaxTowerLevel)] private int level = 1;
@@ -124,6 +124,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [SerializeField] private int purchaseCost;
     [SerializeField] private bool chargeTower;
     [SerializeField] private int chargeTowerPlacementCost;
+    [SerializeField] private bool reinforcementTower;
+    [SerializeField] private int reinforcementTowerPlacementCost;
     [SerializeField] private int investedGold;
     [SerializeField] private bool isTargetedDamage = true;
     [SerializeField] private RougeTowerTargetPriority targetPriority = RougeTowerTargetPriority.NearestToGoal;
@@ -135,16 +137,23 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal float projectileBurstTimer;
     [System.NonSerialized] internal int projectileBurstPrimaryTargetIndex = -1;
     [System.NonSerialized] internal Vector3 projectileBurstPrimaryTarget;
+    [System.NonSerialized] private bool echoAttackCycleActive;
+    [System.NonSerialized] private int echoAttackRepeatsRemaining;
+    [System.NonSerialized] private Vector3 echoAttackTarget;
+    [System.NonSerialized] private float echoAttackRepeatDelayRemaining = -1f;
     [System.NonSerialized] internal RougeBillboard billboard;
     [System.NonSerialized] internal LineRenderer collisionRing;
     [System.NonSerialized] internal LineRenderer attackRing;
     [System.NonSerialized] private GameObject selectedHintEffect;
     [System.NonSerialized] private GameObject upgradeHintEffect;
+    [System.NonSerialized] private GameObject fusionPreviewHintEffect;
+    [System.NonSerialized] private GameObject fusionPreviewLabelObject;
+    [System.NonSerialized] private TextMesh fusionPreviewLabel;
     [System.NonSerialized] private float selectedHintRadius;
     [System.NonSerialized] private float upgradeHintRadius;
     private const float SelectedHintRadiusPadding = 0.2f;
     private const float UpgradeHintRadiusPadding = 2.2f;
-    private const int MaxLaserConnections = 30;
+    private const int MaxLaserConnections = 45;
     private const float OrbitLaserBeamWidth = 0.86f;
     private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 4];
     private readonly Vector2[] laserRibbonUvs = new Vector2[MaxLaserConnections * 4];
@@ -160,20 +169,39 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private bool towerPlaceLevelBonusReceived;
     private ParticleSystem overclockParticles;
     private Material overclockParticleMaterial;
+    private bool towerVisualBaseScaleCached;
+    private Vector3 towerVisualBaseScale;
 
     private RougeTowerStats Stats => TowerDefenseVisuals.GetStats(towerType, level);
     public RougeTowerType TowerType => towerType;
     public int Level => level;
     public int MaxLevel => TowerDefenseVisuals.MaxTowerLevel;
-    public bool CanUpgrade => !chargeTower && level < MaxLevel;
+    public bool CanUpgrade => !IsSpecialTower && level < MaxLevel;
     public float Damage => Stats.Damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
     public float AttackInterval => Stats.AttackInterval;
     public float EffectiveAttackInterval => Stats.AttackInterval /
         Mathf.Max(0.01f, GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed));
     public float AttackRange => Stats.AttackRadius * GetBuffMultiplier(RougeTowerBuffStat.Range);
-    public Vector2Int FootprintCells => TowerDefenseVisuals.GetFootprintSize(towerType);
+    public Vector2Int FootprintCells
+    {
+        get
+        {
+            Vector2Int size = TowerDefenseVisuals.GetFootprintSize(towerType);
+            int reduction = RougeTowerPlaceEffectRules.GetFootprintReduction(towerPlaceEffect);
+            return new Vector2Int(Mathf.Max(1, size.x - reduction),
+                Mathf.Max(1, size.y - reduction));
+        }
+    }
     public int TargetCount => Stats.TargetCount;
     public int ProjectileCount => Stats.ProjectileCount;
+    public int AttackTargetCount => UsesEchoBarrageMultiplier &&
+        (towerType == RougeTowerType.MachineGun || towerType == RougeTowerType.Laser)
+            ? Mathf.CeilToInt(TargetCount * 1.5f)
+            : TargetCount;
+    public int AttackProjectileCount => UsesEchoBarrageMultiplier &&
+        towerType == RougeTowerType.RocketBarrage
+            ? Mathf.CeilToInt(ProjectileCount * 1.5f)
+            : ProjectileCount;
     public float AoeRadius => Stats.AoeRadius;
     public float EffectPercent => Stats.EffectPercent;
     public float EffectDuration => Stats.EffectDuration;
@@ -187,16 +215,26 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public float BrownianStrength => Stats.BrownianStrength;
     public float PlacementRadius => placementRadius;
     public int PurchaseCost => purchaseCost;
-    public int PlacementCost => chargeTower
+    public int PlacementCost => IsChargeTower
         ? Mathf.Max(0, chargeTowerPlacementCost)
-        : ScaleGoldCost(purchaseCost);
+        : IsReinforcementTower
+            ? ScaleGoldCost(reinforcementTowerPlacementCost)
+            : ScaleGoldCost(purchaseCost);
     public int InvestedGold => investedGold;
-    public bool IsChargeTower => chargeTower;
+    public bool IsChargeTower => chargeTower || towerType == RougeTowerType.ChargeTower;
+    public bool IsReinforcementTower => reinforcementTower ||
+                                        towerType == RougeTowerType.ReinforcementTower;
+    public bool IsSpecialTower => IsChargeTower || IsReinforcementTower;
     public bool IsTargetedDamage => isTargetedDamage;
     public RougeTowerTargetPriority TargetPriority => targetPriority;
     public float AttackSpeedMultiplier => GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed);
     public bool IsOverclocked => overclockRemaining > 0f;
+    public int ReinforcementAuraBuffLevel => IsReinforcementTower
+        ? TowerDefenseVisuals.GetReinforcementAuraBuffLevel()
+        : 0;
     public RougeTowerPlaceEffect TowerPlaceEffect => towerPlaceEffect;
+    public bool RepeatsAttackFromEcho => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
+        !UsesEchoBarrageMultiplier;
     public bool AllowsSellRefund => RougeTowerPlaceEffectRules.AllowsSellRefund(towerPlaceEffect);
     public int KillGoldBonus => RougeTowerPlaceEffectRules.GetKillGoldBonus(towerPlaceEffect);
     public bool CanRelocate => RougeTowerPlaceEffectRules.EnablesRelocation(towerPlaceEffect);
@@ -204,27 +242,96 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public int UpgradeCost => CanUpgrade
         ? ScaleGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
         : 0;
-    public string DisplayName => chargeTower ? "充能塔" : TowerDefenseVisuals.GetTowerName(towerType);
+    public string DisplayName => IsChargeTower
+        ? "充能塔"
+        : IsReinforcementTower
+            ? "强化塔"
+            : TowerDefenseVisuals.GetTowerName(towerType);
+
+    private bool UsesEchoBarrageMultiplier => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
+        (towerType == RougeTowerType.MachineGun || towerType == RougeTowerType.Laser ||
+         towerType == RougeTowerType.RocketBarrage);
+
+    internal bool EchoAttackCycleActive => echoAttackCycleActive;
+    internal bool EchoAttackRepeatPending => echoAttackCycleActive &&
+        echoAttackRepeatDelayRemaining >= 0f;
+
+    internal void BeginEchoAttackCycle(Vector3 target)
+    {
+        echoAttackCycleActive = true;
+        echoAttackRepeatsRemaining = 1;
+        echoAttackTarget = target;
+        echoAttackRepeatDelayRemaining = -1f;
+        attackTimer = float.PositiveInfinity;
+    }
+
+    internal bool TryScheduleEchoAttackRepeat(float delay)
+    {
+        if (!echoAttackCycleActive || echoAttackRepeatsRemaining <= 0) return false;
+        echoAttackRepeatsRemaining--;
+        echoAttackRepeatDelayRemaining = Mathf.Max(0f, delay);
+        return true;
+    }
+
+    internal bool TickEchoAttackRepeatDelay(float dt, out Vector3 target)
+    {
+        target = echoAttackTarget;
+        if (!EchoAttackRepeatPending) return false;
+        echoAttackRepeatDelayRemaining -= Mathf.Max(0f, dt);
+        if (echoAttackRepeatDelayRemaining > 0f) return false;
+        echoAttackRepeatDelayRemaining = -1f;
+        return true;
+    }
+
+    internal void FinishEchoAttackCycle()
+    {
+        echoAttackCycleActive = false;
+        echoAttackRepeatsRemaining = 0;
+        echoAttackRepeatDelayRemaining = -1f;
+        attackTimer = AttackInterval;
+        targetIndex = -1;
+    }
+
+    private void ResetEchoAttackCycle()
+    {
+        bool hadDeferredCooldown = echoAttackCycleActive && float.IsPositiveInfinity(attackTimer);
+        echoAttackCycleActive = false;
+        echoAttackRepeatsRemaining = 0;
+        echoAttackTarget = default;
+        echoAttackRepeatDelayRemaining = -1f;
+        if (hadDeferredCooldown) attackTimer = AttackInterval;
+    }
 
     internal void Configure(RougeTowerType type, bool preview)
     {
-        chargeTower = false;
-        chargeTowerPlacementCost = 0;
         towerType = type;
+        chargeTower = type == RougeTowerType.ChargeTower;
+        chargeTowerPlacementCost = chargeTower ? DefaultChargeTowerPlacementCost : 0;
+        reinforcementTower = type == RougeTowerType.ReinforcementTower;
+        reinforcementTowerPlacementCost = reinforcementTower
+            ? DefaultReinforcementTowerPlacementCost
+            : 0;
         level = 1;
         towerPlaceEffect = RougeTowerPlaceEffect.None;
-        towerPlaceInitialLevelApplied = false;
+        towerPlaceInitialLevelApplied = IsSpecialTower;
         towerPlaceLevelBonusReceived = false;
         SetBuffSource(RougeTowerBuffSource.TowerPlace, default);
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out placementRadius, out purchaseCost);
-        isTargetedDamage = GetDefaultTargetedDamage(type);
+        if (chargeTower) chargeTowerPlacementCost = purchaseCost;
+        if (reinforcementTower) reinforcementTowerPlacementCost = purchaseCost;
+        isTargetedDamage = !IsSpecialTower && GetDefaultTargetedDamage(type);
         investedGold = preview ? 0 : purchaseCost;
-        attackTimer = type == RougeTowerType.Laser ? 0f : AttackInterval * 0.25f;
+        attackTimer = IsSpecialTower
+            ? float.MaxValue
+            : type == RougeTowerType.Laser
+                ? 0f
+                : AttackInterval * 0.25f;
         targetIndex = -1;
         projectileBurstShotsRemaining = 0;
         projectileBurstShotIndex = 0;
         projectileBurstTimer = 0f;
         projectileBurstPrimaryTargetIndex = -1;
+        ResetEchoAttackCycle();
         RefreshFocusedModeBuff();
         CacheEditHintRadii();
         InitializePrefabVisuals(preview);
@@ -232,19 +339,22 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void ConfigureAsChargeTower(bool preview)
     {
-        Configure(RougeTowerType.OrbitSphere, preview);
-        chargeTower = true;
-        chargeTowerPlacementCost = 3000;
-        towerPlaceEffect = RougeTowerPlaceEffect.None;
-        towerPlaceInitialLevelApplied = true;
-        SetBuffSource(RougeTowerBuffSource.TowerPlace, default);
-        isTargetedDamage = false;
-        attackTimer = float.MaxValue;
+        Configure(RougeTowerType.ChargeTower, preview);
+    }
+
+    internal void ConfigureAsReinforcementTower(bool preview)
+    {
+        Configure(RougeTowerType.ReinforcementTower, preview);
     }
 
     internal void SetChargeTowerPlacementCost(int cost)
     {
-        if (chargeTower) chargeTowerPlacementCost = Mathf.Max(0, cost);
+        if (IsChargeTower) chargeTowerPlacementCost = Mathf.Max(0, cost);
+    }
+
+    internal void SetReinforcementTowerPlacementCost(int cost)
+    {
+        if (IsReinforcementTower) reinforcementTowerPlacementCost = Mathf.Max(0, cost);
     }
 
     internal void FinalizePlacement()
@@ -253,15 +363,17 @@ public sealed class RougeDefenseTower : MonoBehaviour
         investedGold = PlacementCost;
         Collider collider = GetComponent<Collider>();
         if (collider != null) collider.enabled = false;
-        TowerDefenseVisuals.SetRenderersTransparent(gameObject, false,
-            chargeTower ? new Color(0.28f, 1f, 0.82f, 1f) : Color.white);
+        TowerDefenseVisuals.SetRenderersTransparent(gameObject, false, Color.white);
     }
 
     internal void Ensure2DVisual()
     {
+        SyncSpecialTowerType();
         TowerDefenseVisuals.GetBaseStats(towerType, out _, out _, out _, out placementRadius, out purchaseCost);
-        isTargetedDamage = GetDefaultTargetedDamage(towerType);
-        investedGold = Mathf.Max(investedGold, purchaseCost);
+        if (IsChargeTower) chargeTowerPlacementCost = purchaseCost;
+        if (IsReinforcementTower) reinforcementTowerPlacementCost = purchaseCost;
+        isTargetedDamage = !IsSpecialTower && GetDefaultTargetedDamage(towerType);
+        investedGold = Mathf.Max(investedGold, PlacementCost);
         RefreshFocusedModeBuff();
         CacheEditHintRadii();
         InitializePrefabVisuals(false);
@@ -269,10 +381,11 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void ApplyTowerPlaceEffect(RougeTowerPlaceEffect effect, bool existingTower = false)
     {
-        if (chargeTower) effect = RougeTowerPlaceEffect.None;
+        if (IsChargeTower) effect = RougeTowerPlaceEffect.None;
         towerPlaceEffect = effect;
         SetBuffSource(RougeTowerBuffSource.TowerPlace,
             RougeTowerPlaceEffectRules.GetBuffLevels(effect));
+        RefreshTowerPlacePresentation();
         if (!existingTower) return;
         ApplyTowerPlaceInitialLevelBonus();
         investedGold = Mathf.Max(investedGold, PlacementCost);
@@ -280,11 +393,14 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void ApplyActivatedTowerPlaceEffect(RougeTowerPlaceEffect effect)
     {
-        if (chargeTower) return;
+        if (IsChargeTower) return;
         RougeTowerPlaceEffect previousEffect = towerPlaceEffect;
+        if (previousEffect == RougeTowerPlaceEffect.Echo && effect != RougeTowerPlaceEffect.Echo)
+            ResetEchoAttackCycle();
         towerPlaceEffect = effect;
         SetBuffSource(RougeTowerBuffSource.TowerPlace,
             RougeTowerPlaceEffectRules.GetBuffLevels(effect));
+        RefreshTowerPlacePresentation();
         if (previousEffect == effect || towerPlaceLevelBonusReceived ||
             RougeTowerPlaceEffectRules.GetInitialLevelBonus(effect) <= 0) return;
         level = Mathf.Clamp(level + RougeTowerPlaceEffectRules.GetInitialLevelBonus(effect), 1, MaxLevel);
@@ -298,19 +414,23 @@ public sealed class RougeDefenseTower : MonoBehaviour
         towerPlaceEffect = destinationEffect;
         SetBuffSource(RougeTowerBuffSource.TowerPlace,
             RougeTowerPlaceEffectRules.GetBuffLevels(destinationEffect));
+        RefreshTowerPlacePresentation();
         attackTimer = towerType == RougeTowerType.Laser ? 0f : EffectiveAttackInterval * 0.25f;
         targetIndex = -1;
         projectileBurstShotsRemaining = 0;
         projectileBurstShotIndex = 0;
         projectileBurstTimer = 0f;
         projectileBurstPrimaryTargetIndex = -1;
+        ResetEchoAttackCycle();
         HideLaserBeams();
     }
 
     internal void SetPreviewState(bool valid, bool[] cellValidity = null)
     {
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, true,
-            valid
+            IsSpecialTower
+                ? Color.white
+                : valid
                 ? new Color(0.12f, 1f, 0.3f, 0.68f)
                 : new Color(1f, 0.13f, 0.09f, 0.76f));
         SetRangeVisibility(true, valid);
@@ -322,12 +442,43 @@ public sealed class RougeDefenseTower : MonoBehaviour
         int cost = UpgradeCost;
         level++;
         investedGold += cost;
+        ResetCombatAfterLevelChange();
+        return true;
+    }
+
+    internal bool CanFuseWith(RougeDefenseTower other)
+    {
+        return other != null && other != this && !IsSpecialTower && !other.IsSpecialTower &&
+               towerType == other.towerType && level == other.level && level < MaxLevel;
+    }
+
+    internal bool TryMergeSameLevelFrom(RougeDefenseTower consumedTower)
+    {
+        if (!CanFuseWith(consumedTower)) return false;
+        level++;
+        long combinedGold = (long)Mathf.Max(0, investedGold) +
+                            Mathf.Max(0, consumedTower.investedGold);
+        investedGold = combinedGold > int.MaxValue ? int.MaxValue : (int)combinedGold;
+        ResetCombatAfterLevelChange();
+        return true;
+    }
+
+    internal void SetReinforcementAuraLevel(int auraLevel)
+    {
+        int levelBonus = Mathf.Max(0, auraLevel);
+        SetBuffSource(RougeTowerBuffSource.ReinforcementAura,
+            new RougeTowerBuffLevels(levelBonus, levelBonus, levelBonus));
+    }
+
+    private void ResetCombatAfterLevelChange()
+    {
         targetIndex = -1;
         projectileBurstShotsRemaining = 0;
         projectileBurstShotIndex = 0;
         projectileBurstTimer = 0f;
         projectileBurstPrimaryTargetIndex = -1;
-        return true;
+        ResetEchoAttackCycle();
+        if (attackRing != null && attackRing.enabled) SetRangeVisibility(true);
     }
 
     internal void ToggleTargetPriority()
@@ -342,7 +493,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void SetRangeVisibility(bool visible, bool valid = true)
     {
         if (collisionRing != null) collisionRing.enabled = false;
-        if (chargeTower)
+        if (IsSpecialTower)
         {
             if (attackRing != null) attackRing.enabled = false;
             return;
@@ -379,6 +530,31 @@ public sealed class RougeDefenseTower : MonoBehaviour
             upgradeHintEffect.transform.localScale = new Vector3(
                 upgradeHintRadius * 2.05f, upgradeHintRadius * 2.05f, 1f);
         }
+    }
+
+    internal void SetFusionPreviewHint(bool visible, int resultLevel, int mergeCount, Font font)
+    {
+        if (!visible)
+        {
+            if (fusionPreviewHintEffect != null) fusionPreviewHintEffect.SetActive(false);
+            if (fusionPreviewLabelObject != null) fusionPreviewLabelObject.SetActive(false);
+            return;
+        }
+
+        EnsureFusionPreviewHint(font);
+        fusionPreviewHintEffect.SetActive(true);
+        fusionPreviewHintEffect.transform.localPosition = new Vector3(0f, 0.3f, 0f);
+        fusionPreviewHintEffect.transform.localScale = new Vector3(
+            selectedHintRadius * 2.9f, selectedHintRadius * 2.9f, 1f);
+        fusionPreviewLabelObject.SetActive(true);
+        fusionPreviewLabel.text = mergeCount > 1
+            ? $"最终合成到这里  Lv.{level} → Lv.{resultLevel}\n连锁合成 ×{mergeCount}"
+            : $"合成到这里  Lv.{level} → Lv.{resultLevel}";
+
+        Camera camera = RougeCameraFollow.ResolveCamera();
+        if (camera != null)
+            fusionPreviewLabelObject.transform.rotation = Quaternion.LookRotation(
+                camera.transform.forward, camera.transform.up);
     }
 
     private void CacheEditHintRadii()
@@ -552,9 +728,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public string GetBuffDisplayText()
     {
         string text = string.Empty;
-        AppendBuffDisplay(ref text, "DMG", RougeTowerBuffStat.Damage);
-        AppendBuffDisplay(ref text, "RANGE", RougeTowerBuffStat.Range);
-        AppendBuffDisplay(ref text, "ASPD", RougeTowerBuffStat.AttackSpeed);
+        AppendBuffDisplay(ref text, "伤害", RougeTowerBuffStat.Damage);
+        AppendBuffDisplay(ref text, "范围", RougeTowerBuffStat.Range);
+        AppendBuffDisplay(ref text, "攻速", RougeTowerBuffStat.AttackSpeed);
         return text;
     }
 
@@ -656,9 +832,27 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     private void OnValidate()
     {
+        SyncSpecialTowerType();
         level = Mathf.Clamp(level, 1, TowerDefenseVisuals.MaxTowerLevel);
-        isTargetedDamage = GetDefaultTargetedDamage(towerType);
+        isTargetedDamage = !IsSpecialTower && GetDefaultTargetedDamage(towerType);
         RefreshFocusedModeBuff();
+    }
+
+    private void SyncSpecialTowerType()
+    {
+        // Migrate any scene/prefab saved by the earlier flag-only implementation.
+        if (towerType == RougeTowerType.OrbitSphere)
+        {
+            if (chargeTower) towerType = RougeTowerType.ChargeTower;
+            else if (reinforcementTower) towerType = RougeTowerType.ReinforcementTower;
+        }
+
+        chargeTower = towerType == RougeTowerType.ChargeTower;
+        reinforcementTower = towerType == RougeTowerType.ReinforcementTower;
+        if (chargeTower && chargeTowerPlacementCost <= 0)
+            chargeTowerPlacementCost = DefaultChargeTowerPlacementCost;
+        if (reinforcementTower && reinforcementTowerPlacementCost <= 0)
+            reinforcementTowerPlacementCost = DefaultReinforcementTowerPlacementCost;
     }
 
     private void RefreshFocusedModeBuff()
@@ -688,7 +882,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         int level = GetEffectiveBuffLevel(stat);
         if (level == 0) return;
         if (text.Length > 0) text += "  ";
-        text += $"{label} {(level > 0 ? "+" : string.Empty)}{level}";
+        text += $"{label} Lv{(level > 0 ? "+" : string.Empty)}{level}";
     }
 
     private void ApplyTowerPlaceInitialLevelBonus()
@@ -723,7 +917,14 @@ public sealed class RougeDefenseTower : MonoBehaviour
         else
         {
             billboard.SetRotatingContentAngleOffset(180f);
+            if (!towerVisualBaseScaleCached)
+            {
+                towerVisualBaseScale = billboard.transform.localScale;
+                towerVisualBaseScaleCached = true;
+            }
         }
+
+        RefreshTowerPlacePresentation();
 
         Collider towerCollider = GetComponent<Collider>();
         if (towerCollider != null) towerCollider.enabled = false;
@@ -731,6 +932,19 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (collisionRing == null) collisionRing = TowerDefenseVisuals.CreateCircleRenderer("Placement Range", transform);
         if (attackRing == null) attackRing = TowerDefenseVisuals.CreateCircleRenderer("Attack Range", transform);
         SetRangeVisibility(preview);
+    }
+
+    private void RefreshTowerPlacePresentation()
+    {
+        CacheEditHintRadii();
+        if (billboard == null) return;
+        if (!towerVisualBaseScaleCached)
+        {
+            towerVisualBaseScale = billboard.transform.localScale;
+            towerVisualBaseScaleCached = true;
+        }
+        billboard.transform.localScale = towerVisualBaseScale *
+            RougeTowerPlaceEffectRules.GetTowerVisualScaleMultiplier(towerPlaceEffect);
     }
 
     private void EnsureEditHintVisuals()
@@ -741,6 +955,32 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (upgradeHintEffect == null)
             upgradeHintEffect = TowerDefenseVisuals.CreateTowerEditIndicator(
                 "Tower Upgrade Ready Shader Effect", transform, false);
+    }
+
+    private void EnsureFusionPreviewHint(Font font)
+    {
+        if (fusionPreviewHintEffect == null)
+            fusionPreviewHintEffect = TowerDefenseVisuals.CreateTowerEditIndicator(
+                "Fusion Preview Target Shader Effect", transform, true);
+        if (fusionPreviewLabelObject != null) return;
+
+        fusionPreviewLabelObject = new GameObject("Fusion Preview Target Label");
+        fusionPreviewLabelObject.transform.SetParent(transform, false);
+        fusionPreviewLabelObject.transform.localPosition = new Vector3(0f, 5.5f, 0f);
+        fusionPreviewLabel = fusionPreviewLabelObject.AddComponent<TextMesh>();
+        fusionPreviewLabel.anchor = TextAnchor.MiddleCenter;
+        fusionPreviewLabel.alignment = TextAlignment.Center;
+        fusionPreviewLabel.fontSize = 64;
+        fusionPreviewLabel.characterSize = 0.13f;
+        fusionPreviewLabel.color = new Color(1f, 0.48f, 0.92f, 1f);
+        MeshRenderer renderer = fusionPreviewLabel.GetComponent<MeshRenderer>();
+        if (font != null)
+        {
+            fusionPreviewLabel.font = font;
+            if (renderer != null) renderer.sharedMaterial = font.material;
+        }
+        if (renderer != null) renderer.sortingOrder = 250;
+        fusionPreviewLabelObject.SetActive(false);
     }
 
     private void EnsureLaserBeamMesh()
@@ -808,6 +1048,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private static bool GetDefaultTargetedDamage(RougeTowerType type)
     {
         return type != RougeTowerType.Ice && type != RougeTowerType.OrbitSphere &&
-               type != RougeTowerType.RocketBarrage;
+               type != RougeTowerType.RocketBarrage &&
+               !TowerDefenseVisuals.IsSpecialTowerType(type);
     }
 }

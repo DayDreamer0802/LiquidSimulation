@@ -496,7 +496,8 @@ public unsafe struct CopyProjectedPositionsJob : IJobParallelForBatch
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
 public unsafe struct FindTowerTargetsJob : IJobParallelFor
 {
-    public const int MaxTargetsPerTower = 30;
+    // The Lv.5 laser reaches 30 beams; an echo tile raises that by 1.5x to 45.
+    public const int MaxTargetsPerTower = 45;
 
     [ReadOnly] public NativeArray<RougeTowerTargetRequest> Requests;
     [ReadOnly] public NativeArray<float4> EnemyPositions;
@@ -1532,9 +1533,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [NativeDisableParallelForRestriction] public NativeArray<int> EnemyKillCount;
     [ReadOnly] public NativeArray<byte> EnemyKinds;
     [NativeDisableParallelForRestriction] public NativeArray<int> TowerDefenseGoldEarned;
+    [NativeDisableParallelForRestriction] public NativeArray<int> TowerDefenseWealthGoldEarned;
     [ReadOnly] public NativeArray<float> TowerLaserDamage;
     [ReadOnly] public NativeArray<int> TowerLaserDamageFrames;
     [ReadOnly] public NativeArray<int> TowerKillGoldBonus;
+    [ReadOnly] public NativeArray<int> TowerWealthCellIndexPlusOne;
     [ReadOnly] public NativeArray<float> TowerDamageByType;
     [ReadOnly] public NativeArray<int> TowerDamageByTypeFrames;
     [NativeDisableParallelForRestriction] public NativeArray<long> TowerDamageTotalsFixed;
@@ -1652,6 +1655,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float4 state4 = stateInPtr[sourceIndex];
             RougeEnemyEffectState effects = effectInPtr[sourceIndex];
             int towerKillGoldBonus = math.max(0, effects.TowerKillGoldBonus);
+            int towerWealthCellIndexPlusOne = math.max(0, effects.TowerWealthCellIndexPlusOne);
 
             float3 pos = pos4.xyz;
             float3 vel = vel4.xyz;
@@ -1764,7 +1768,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 health -= TowerLaserDamage[sourceIndex];
                 flashTimer = math.max(flashTimer, 0.2f);
                 if (healthBeforeTowerDamage > 0f && health <= 0f)
+                {
                     towerKillGoldBonus = math.max(towerKillGoldBonus, TowerKillGoldBonus[sourceIndex]);
+                    towerWealthCellIndexPlusOne = math.max(0,
+                        TowerWealthCellIndexPlusOne[sourceIndex]);
+                }
             }
 
             if (effects.LaunchMotionTimer > 0f)
@@ -1956,6 +1964,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     {
                         towerKillGoldBonus = math.max(towerKillGoldBonus,
                             skill.SourceTowerKillGoldBonus);
+                        towerWealthCellIndexPlusOne = math.max(0,
+                            skill.SourceTowerWealthCellIndexPlusOne);
                         ApplyTowerKillLaunch(ref vel, ref flashTimer, ref tornadoMark, ref effects,
                             pos, skill, sourceTowerType, sourceIndex);
                     }
@@ -2311,7 +2321,16 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                         : math.max(0, effects.BaseKillGold);
                     reward += math.max(0, towerKillGoldBonus);
                     if (reward > 0)
-                        System.Threading.Interlocked.Add(ref ((int*)TowerDefenseGoldEarned.GetUnsafePtr())[0], reward);
+                    {
+                        int wealthCellIndex = towerWealthCellIndexPlusOne - 1;
+                        if ((uint)wealthCellIndex < (uint)TowerDefenseWealthGoldEarned.Length)
+                            System.Threading.Interlocked.Add(
+                                ref ((int*)TowerDefenseWealthGoldEarned.GetUnsafePtr())[wealthCellIndex],
+                                reward);
+                        else
+                            System.Threading.Interlocked.Add(
+                                ref ((int*)TowerDefenseGoldEarned.GetUnsafePtr())[0], reward);
+                    }
                 }
                 flashTimer = math.max(flashTimer, 0.99f);
                 float facingDirectionAtDeath = effects.FacingDirection;
@@ -2946,6 +2965,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         effects.LaunchLandingRadius = 0f;
         effects.TowerKillGoldBonus = math.max(effects.TowerKillGoldBonus,
             skill.SourceTowerKillGoldBonus);
+        effects.TowerWealthCellIndexPlusOne = math.max(0,
+            skill.SourceTowerWealthCellIndexPlusOne);
         flashTimer = math.max(flashTimer, 0.9f);
     }
 

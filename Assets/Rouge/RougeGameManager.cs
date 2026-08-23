@@ -248,9 +248,11 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<float> _towerLaserDamage;
     private NativeArray<int> _towerLaserDamageFrames;
     private NativeArray<int> _towerKillGoldBonus;
+    private NativeArray<int> _towerWealthCellIndexPlusOne;
     private NativeArray<byte> _towerDefenseEnemyKinds;
     private NativeArray<int> _enemyRenderKinds;
     private NativeArray<int> _towerDefenseGoldEarned;
+    private NativeArray<int> _towerDefenseWealthGoldEarned;
     private NativeArray<float> _towerDamageByType;
     private NativeArray<int> _towerDamageByTypeFrames;
     private NativeArray<long> _towerDamageTotalsFixed;
@@ -1042,9 +1044,13 @@ public partial class RougeGameManager : MonoBehaviour
         _towerLaserDamage = new NativeArray<float>(enemyCount, Allocator.Persistent);
         _towerLaserDamageFrames = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerKillGoldBonus = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerWealthCellIndexPlusOne = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseEnemyKinds = new NativeArray<byte>(enemyCount, Allocator.Persistent);
         _enemyRenderKinds = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseGoldEarned = new NativeArray<int>(1, Allocator.Persistent);
+        _towerDefenseWealthGoldEarned = new NativeArray<int>(
+            RougeTowerDefenseMap.MaxMapCells * RougeTowerDefenseMap.MaxMapCells,
+            Allocator.Persistent);
         _towerDamageByType = new NativeArray<float>(enemyCount * TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
         _towerDamageByTypeFrames = new NativeArray<int>(enemyCount * TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
         _towerDamageTotalsFixed = new NativeArray<long>(TowerDefenseVisuals.TowerTypeCount, Allocator.Persistent);
@@ -2651,10 +2657,12 @@ public partial class RougeGameManager : MonoBehaviour
             EnemyKillCount = _enemyKillCount,
             EnemyKinds = _towerDefenseEnemyKinds,
             TowerDefenseGoldEarned = _towerDefenseGoldEarned,
+            TowerDefenseWealthGoldEarned = _towerDefenseWealthGoldEarned,
             TowerDefenseRewardsEnabled = UsesTowerDefenseSpawners(),
             TowerLaserDamage = _towerLaserDamage,
             TowerLaserDamageFrames = _towerLaserDamageFrames,
             TowerKillGoldBonus = _towerKillGoldBonus,
+            TowerWealthCellIndexPlusOne = _towerWealthCellIndexPlusOne,
             TowerLaserDamageFrame = _towerLaserDamageFrame,
             TowerDamageByType = _towerDamageByType,
             TowerDamageByTypeFrames = _towerDamageByTypeFrames,
@@ -3315,9 +3323,11 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _towerLaserDamage);
         ReleaseNative(ref _towerLaserDamageFrames);
         ReleaseNative(ref _towerKillGoldBonus);
+        ReleaseNative(ref _towerWealthCellIndexPlusOne);
         ReleaseNative(ref _towerDefenseEnemyKinds);
         ReleaseNative(ref _enemyRenderKinds);
         ReleaseNative(ref _towerDefenseGoldEarned);
+        ReleaseNative(ref _towerDefenseWealthGoldEarned);
         ReleaseNative(ref _towerDamageByType);
         ReleaseNative(ref _towerDamageByTypeFrames);
         ReleaseNative(ref _towerDamageTotalsFixed);
@@ -3892,6 +3902,7 @@ public struct RougeSkillArea
     public float EffectBurnDuration;
     public int SourceTowerTypePlusOne;
     public int SourceTowerKillGoldBonus;
+    public int SourceTowerWealthCellIndexPlusOne;
 }
 
 public struct RougeEnemyEffectState
@@ -3915,6 +3926,7 @@ public struct RougeEnemyEffectState
     public float LaunchStackTimer;
     public float BurnDuration;
     public int TowerKillGoldBonus;
+    public int TowerWealthCellIndexPlusOne;
     public int BaseKillGold;
     public float NavigationDirectionX;
     public float NavigationDirectionY;

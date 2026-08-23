@@ -329,11 +329,30 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 new GUIContent("Footprint Width (Micro Cells)"));
             EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
                 new GUIContent("Footprint Height (Micro Cells)"));
+            if (IsSpecialTowerType(type))
+            {
+                EditorGUILayout.PropertyField(
+                    tower.FindPropertyRelative("specialTowerCountCostMultiplier"),
+                    new GUIContent("Extra Cost / Existing Tower",
+                        "0.25 means every existing tower adds 25% of the configured base cost."));
+            }
+            if (type == RougeTowerType.ReinforcementTower)
+            {
+                EditorGUILayout.PropertyField(
+                    tower.FindPropertyRelative("reinforcementAuraBuffLevel"),
+                    new GUIContent("Same-Tile Buff Level"));
+            }
         }
 
         EditorGUILayout.Space(5f);
         EditorGUILayout.LabelField("Level Parameters", EditorStyles.boldLabel);
         SerializedProperty levels = tower.FindPropertyRelative("levels");
+        if (IsSpecialTowerType(type))
+        {
+            EditorGUILayout.HelpBox(
+                "Special towers cannot be upgraded. The Lv 1 Gold Cost is the configurable base construction cost; later columns are retained for a consistent data grid.",
+                MessageType.Info);
+        }
         DrawLevelTableHeader(levels.arraySize);
         DrawTowerLevelRows(levels, type);
         EditorGUILayout.Space(10f);
@@ -355,7 +374,10 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
     private static void DrawTowerLevelRows(SerializedProperty levels, RougeTowerType type)
     {
-        DrawLevelRow(levels, "goldCost", "Gold Cost");
+        DrawLevelRow(levels, "goldCost", IsSpecialTowerType(type)
+            ? "Base Gold Cost (Lv 1 used)"
+            : "Gold Cost");
+        if (IsSpecialTowerType(type)) return;
         DrawLevelRow(levels, "damage", type == RougeTowerType.OrbitSphere ? "Damage / Tick" : "Damage");
         DrawLevelRow(levels, "attackInterval", type == RougeTowerType.OrbitSphere
             ? "Cooldown After Return" : "Attack Interval");
@@ -416,6 +438,12 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                     GUILayout.Space(100f);
             }
         }
+    }
+
+    private static bool IsSpecialTowerType(RougeTowerType type)
+    {
+        return type == RougeTowerType.ChargeTower ||
+               type == RougeTowerType.ReinforcementTower;
     }
 
     private void DrawEnemyBalance(SerializedProperty balance)
