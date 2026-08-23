@@ -1905,14 +1905,18 @@ public partial class RougeGameManager
         _positionsA[index] = new float4(spawnPosition.x, renderHeight, spawnPosition.y, crowdRadius);
         _velocitiesA[index] = float4.zero;
         _stateA[index] = new float4(health, navigationRadius, speed, 0f);
-        _effectStateA[index] = default;
+        RougeEnemyEffectState initialEffects = new RougeEnemyEffectState
+        {
+            BaseKillGold = Mathf.Max(0, elite ? archetype.eliteKillGold : archetype.killGold)
+        };
+        _effectStateA[index] = initialEffects;
         // A reused slot may still contain an old airborne/death effect in the back buffer.
         // Initialise both sides while the previous job is complete so the next swap can
         // never expose that stale state as a one-frame white flash.
         _positionsB[index] = _positionsA[index];
         _velocitiesB[index] = float4.zero;
         _stateB[index] = _stateA[index];
-        _effectStateB[index] = default;
+        _effectStateB[index] = initialEffects;
         _towerDefenseEnemyKinds[index] = kind;
         if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = kind;
         return true;

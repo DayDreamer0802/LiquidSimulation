@@ -329,8 +329,6 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 new GUIContent("Footprint Width (Micro Cells)"));
             EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
                 new GUIContent("Footprint Height (Micro Cells)"));
-            EditorGUILayout.PropertyField(tower.FindPropertyRelative("purchaseCost"),
-                new GUIContent("Purchase Cost"));
         }
 
         EditorGUILayout.Space(5f);
@@ -357,6 +355,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
     private static void DrawTowerLevelRows(SerializedProperty levels, RougeTowerType type)
     {
+        DrawLevelRow(levels, "goldCost", "Gold Cost");
         DrawLevelRow(levels, "damage", type == RougeTowerType.OrbitSphere ? "Damage / Tick" : "Damage");
         DrawLevelRow(levels, "attackInterval", type == RougeTowerType.OrbitSphere
             ? "Cooldown After Return" : "Attack Interval");
@@ -421,13 +420,6 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
 
     private void DrawEnemyBalance(SerializedProperty balance)
     {
-        string[] commonFields =
-        {
-            "normalKillGold", "eliteKillGold"
-        };
-        for (int i = 0; i < commonFields.Length; i++)
-            EditorGUILayout.PropertyField(balance.FindPropertyRelative(commonFields[i]));
-
         EditorGUILayout.PropertyField(balance.FindPropertyRelative("growthInterval"),
             new GUIContent("Enemy Level Interval (seconds)"));
         SerializedProperty healthCurve = balance.FindPropertyRelative("healthMultiplierByLevel");
@@ -459,6 +451,10 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             using (new EditorGUI.IndentLevelScope())
             {
                 EditorGUILayout.PropertyField(name);
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("killGold"),
+                    new GUIContent("Kill Gold"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("eliteKillGold"),
+                    new GUIContent("Elite Kill Gold"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("baseHealth"), new GUIContent("Health"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("healthGrowthMultiplier"),
                     new GUIContent("HP Growth Multiplier",

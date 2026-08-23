@@ -2652,8 +2652,6 @@ public partial class RougeGameManager : MonoBehaviour
             EnemyKinds = _towerDefenseEnemyKinds,
             TowerDefenseGoldEarned = _towerDefenseGoldEarned,
             TowerDefenseRewardsEnabled = UsesTowerDefenseSpawners(),
-            NormalKillGold = Mathf.Max(0, enemyBalance.normalKillGold),
-            EliteKillGold = Mathf.Max(0, enemyBalance.eliteKillGold),
             TowerLaserDamage = _towerLaserDamage,
             TowerLaserDamageFrames = _towerLaserDamageFrames,
             TowerKillGoldBonus = _towerKillGoldBonus,
@@ -3917,6 +3915,7 @@ public struct RougeEnemyEffectState
     public float LaunchStackTimer;
     public float BurnDuration;
     public int TowerKillGoldBonus;
+    public int BaseKillGold;
     public float NavigationDirectionX;
     public float NavigationDirectionY;
     public float NavigationReverseCooldown;

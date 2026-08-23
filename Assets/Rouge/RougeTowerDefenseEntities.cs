@@ -138,7 +138,7 @@ internal static class TowerDefenseVisuals
         if (configured != null)
         {
             radius = Mathf.Max(0.1f, configured.placementRadius);
-            cost = ScaleGoldCost(configured.purchaseCost);
+            cost = GetLevelGoldCost(type, 1);
             return;
         }
         switch (type)
@@ -153,6 +153,31 @@ internal static class TowerDefenseVisuals
             default: radius = 2.8f; cost = 1400; break;
         }
         cost = ScaleGoldCost(cost);
+    }
+
+    public static int GetLevelGoldCost(RougeTowerType type, int requestedLevel)
+    {
+        int levelIndex = Mathf.Clamp(requestedLevel, 1, MaxTowerLevel) - 1;
+        RougeTowerTypeConfig configured = s_runtimeBalance?.Find(type);
+        if (configured?.levels != null && levelIndex < configured.levels.Count &&
+            configured.levels[levelIndex] != null)
+        {
+            return ScaleGoldCost(configured.levels[levelIndex].goldCost);
+        }
+
+        int baseCost;
+        switch (type)
+        {
+            case RougeTowerType.MachineGun: baseCost = 400; break;
+            case RougeTowerType.Ice: baseCost = 625; break;
+            case RougeTowerType.Cannon: baseCost = 750; break;
+            case RougeTowerType.Flame: baseCost = 625; break;
+            case RougeTowerType.Laser: baseCost = 750; break;
+            case RougeTowerType.PiercingLaser: baseCost = 1000; break;
+            case RougeTowerType.OrbitSphere: baseCost = 900; break;
+            default: baseCost = 1400; break;
+        }
+        return ScaleGoldCost(baseCost * (1 << levelIndex));
     }
 
     public static Vector2Int GetFootprintSize(RougeTowerType type)

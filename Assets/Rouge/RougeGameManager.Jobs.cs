@@ -1587,8 +1587,6 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public float BossNavigationRadius;
     public float BossMaximumSlowPercent;
     public bool TowerDefenseRewardsEnabled;
-    public int NormalKillGold;
-    public int EliteKillGold;
     [ReadOnly] public NativeArray<RougeSkillArea> SkillAreas;
     public int SkillAreaCount;
     public float RenderHeight;
@@ -2310,7 +2308,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     byte enemyKind = EnemyKinds[sourceIndex];
                     int reward = (enemyKind & 0x80) != 0
                         ? 0
-                        : (enemyKind & 0x40) != 0 ? EliteKillGold : NormalKillGold;
+                        : math.max(0, effects.BaseKillGold);
                     reward += math.max(0, towerKillGoldBonus);
                     if (reward > 0)
                         System.Threading.Interlocked.Add(ref ((int*)TowerDefenseGoldEarned.GetUnsafePtr())[0], reward);

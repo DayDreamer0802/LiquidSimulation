@@ -195,8 +195,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public int KillGoldBonus => RougeTowerPlaceEffectRules.GetKillGoldBonus(towerPlaceEffect);
     public bool CanRelocate => RougeTowerPlaceEffectRules.EnablesRelocation(towerPlaceEffect);
     public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
-    // Lv1 purchase is 1x. Upgrades to Lv2..Lv5 cost 2x, 4x, 8x and 16x.
-    public int UpgradeCost => CanUpgrade ? ScaleGoldCost(purchaseCost * (1 << level)) : 0;
+    public int UpgradeCost => CanUpgrade
+        ? ScaleGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
+        : 0;
     public string DisplayName => TowerDefenseVisuals.GetTowerName(towerType);
 
     internal void Configure(RougeTowerType type, bool preview)

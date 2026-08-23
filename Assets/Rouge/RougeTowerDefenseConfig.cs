@@ -5,6 +5,8 @@ using UnityEngine;
 [Serializable]
 public sealed class RougeTowerLevelConfig
 {
+    [Min(0), Tooltip("Gold paid to build or upgrade the tower to this level, before map and tile modifiers.")]
+    public int goldCost;
     [Min(0f)] public float damage;
     [Min(0.001f)] public float attackInterval = 1f;
     [Min(0f)] public float attackRange = 10f;
@@ -79,6 +81,19 @@ public sealed class RougeTowerBalanceConfig
                 config.levels.RemoveRange(TowerDefenseVisuals.MaxTowerLevel,
                     config.levels.Count - TowerDefenseVisuals.MaxTowerLevel);
             }
+            if (HasNoConfiguredLevelGoldCosts(config)) ApplyLegacyLevelGoldCosts(config);
+            config.purchaseCost = Mathf.Max(0, config.levels[0].goldCost);
+        }
+    }
+
+    public void MigrateLegacyLevelGoldCosts()
+    {
+        if (towers == null) return;
+        for (int i = 0; i < towers.Count; i++)
+        {
+            RougeTowerTypeConfig config = towers[i];
+            if (config == null || !HasNoConfiguredLevelGoldCosts(config)) continue;
+            ApplyLegacyLevelGoldCosts(config);
         }
     }
 
@@ -109,7 +124,29 @@ public sealed class RougeTowerBalanceConfig
         {
             config.levels.Add(CreateDefaultLevel(type, i));
         }
+        ApplyLegacyLevelGoldCosts(config);
         return config;
+    }
+
+    private static bool HasNoConfiguredLevelGoldCosts(RougeTowerTypeConfig config)
+    {
+        if (config?.levels == null || config.levels.Count == 0) return true;
+        for (int i = 0; i < config.levels.Count; i++)
+        {
+            if (config.levels[i] != null && config.levels[i].goldCost != 0) return false;
+        }
+        return true;
+    }
+
+    private static void ApplyLegacyLevelGoldCosts(RougeTowerTypeConfig config)
+    {
+        if (config?.levels == null) return;
+        int baseCost = Mathf.Max(0, config.purchaseCost);
+        for (int i = 0; i < config.levels.Count; i++)
+        {
+            if (config.levels[i] == null) continue;
+            config.levels[i].goldCost = baseCost * (1 << Mathf.Min(i, 30));
+        }
     }
 
     private static RougeTowerLevelConfig CreateDefaultLevel(RougeTowerType type, int i)
@@ -141,6 +178,8 @@ public sealed class RougeTowerBalanceConfig
 public sealed class RougeEnemyArchetypeConfig
 {
     public string displayName = "Normal";
+    [Min(0)] public int killGold = 1;
+    [Min(0)] public int eliteKillGold = 20;
     [Min(0.01f)] public float baseHealth = 10f;
     [Min(0.01f), Tooltip("Scales only the health gained from the global enemy-level curve. 1 keeps the global curve unchanged; values above 1 grow faster without changing level-1 base health.")]
     public float healthGrowthMultiplier = 1f;
@@ -172,8 +211,8 @@ public sealed class RougeEnemyBalanceConfig
 {
     public const int MaximumEnemyLevel = 100;
 
-    [Min(0)] public int normalKillGold = 1;
-    [Min(0)] public int eliteKillGold = 20;
+    [HideInInspector, Min(0)] public int normalKillGold = 1;
+    [HideInInspector, Min(0)] public int eliteKillGold = 20;
     [Min(1f)] public float growthInterval = 15f;
     [HideInInspector] public float healthGrowthMultiplier = 1.10f; // Legacy scene data; HP now follows milestones.
     [Tooltip("Enemy health multiplier by level. X is enemy level (1-100); Y is the multiplier.")]
@@ -225,6 +264,17 @@ public sealed class RougeEnemyBalanceConfig
         {
             enemyTypes[i] ??= new RougeEnemyArchetypeConfig();
             enemyTypes[i].EnsureDefaults();
+        }
+    }
+
+    public void MigrateLegacyKillGold()
+    {
+        if (enemyTypes == null) return;
+        for (int i = 0; i < enemyTypes.Count; i++)
+        {
+            if (enemyTypes[i] == null) continue;
+            enemyTypes[i].killGold = Mathf.Max(0, normalKillGold);
+            enemyTypes[i].eliteKillGold = Mathf.Max(0, eliteKillGold);
         }
     }
 
@@ -489,7 +539,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 4;
+    public int version = 5;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -499,6 +549,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
 
     public void EnsureDefaults()
     {
+        int loadedVersion = version;
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalance ??= new RougeBossBalanceConfig();
@@ -516,11 +567,16 @@ public sealed class RougeTowerDefenseBalanceJsonData
         if (bossBalances.Count == 0) bossBalances.Add(new RougeBossBalanceConfig());
         bossBalance = bossBalances[0];
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
+        if (loadedVersion < 5)
+        {
+            towerBalance.MigrateLegacyLevelGoldCosts();
+            enemyBalance.MigrateLegacyKillGold();
+        }
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 4);
+        version = Mathf.Max(version, 5);
     }
 }
 
@@ -563,7 +619,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 4,
+            version = 5,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,
