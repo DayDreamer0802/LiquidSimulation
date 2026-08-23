@@ -273,7 +273,7 @@ MonoBehaviour:
   enemySpawns:
   - cell: {x: 8, y: 15}
     spawnCount: 32
-    spawnInterval: 15
+    spawnInterval: 10
     startDelay: 3
     enemyType: 0
     limitWaveCount: 0
@@ -281,105 +281,105 @@ MonoBehaviour:
   - cell: {x: 5, y: 15}
     spawnCount: 32
     spawnInterval: 15
-    startDelay: 10
+    startDelay: 15
     enemyType: 0
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 11, y: 15}
     spawnCount: 32
     spawnInterval: 15
-    startDelay: 20
+    startDelay: 30
     enemyType: 0
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 8, y: 1}
     spawnCount: 32
-    spawnInterval: 15
-    startDelay: 45
+    spawnInterval: 10
+    startDelay: 90
     enemyType: 0
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 5, y: 1}
     spawnCount: 32
-    spawnInterval: 14
-    startDelay: 45
+    spawnInterval: 10
+    startDelay: 105
     enemyType: 0
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 11, y: 1}
-    spawnCount: 16
-    spawnInterval: 13
-    startDelay: 60
+    spawnCount: 32
+    spawnInterval: 10
+    startDelay: 120
     enemyType: 0
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 0, y: 16}
     spawnCount: 32
-    spawnInterval: 14
-    startDelay: 75
+    spawnInterval: 15
+    startDelay: 150
     enemyType: 1
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 16, y: 0}
     spawnCount: 32
-    spawnInterval: 13
-    startDelay: 90
+    spawnInterval: 15
+    startDelay: 180
     enemyType: 1
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 14, y: 15}
     spawnCount: 32
-    spawnInterval: 12
-    startDelay: 105
+    spawnInterval: 15
+    startDelay: 240
     enemyType: 1
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 2, y: 1}
-    spawnCount: 35
-    spawnInterval: 11
-    startDelay: 120
+    spawnCount: 32
+    spawnInterval: 15
+    startDelay: 270
     enemyType: 1
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 1, y: 14}
     spawnCount: 16
-    spawnInterval: 12
-    startDelay: 135
+    spawnInterval: 20
+    startDelay: 300
     enemyType: 2
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 15, y: 2}
     spawnCount: 16
-    spawnInterval: 11
-    startDelay: 150
+    spawnInterval: 20
+    startDelay: 310
     enemyType: 2
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 15, y: 14}
     spawnCount: 16
     spawnInterval: 10
-    startDelay: 165
+    startDelay: 320
     enemyType: 2
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 1, y: 2}
     spawnCount: 16
     spawnInterval: 10
-    startDelay: 180
+    startDelay: 330
     enemyType: 2
     limitWaveCount: 0
     maximumWaves: 1
   - cell: {x: 2, y: 15}
     spawnCount: 64
     spawnInterval: 0.1
-    startDelay: 360
+    startDelay: 480
     enemyType: 0
     limitWaveCount: 1
     maximumWaves: 100
   - cell: {x: 14, y: 1}
     spawnCount: 64
     spawnInterval: 0.1
-    startDelay: 360
+    startDelay: 480
     enemyType: 0
     limitWaveCount: 1
     maximumWaves: 100

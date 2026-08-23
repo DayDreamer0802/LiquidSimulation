@@ -255,6 +255,8 @@ public unsafe struct BuildEnemyTargetGridJob : IJobParallelForBatch
 public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
 {
     private const int MaxStoredNeighbors = 32;
+    private const int NeighborCellDiameter = 5;
+    private const int NeighborCellCount = NeighborCellDiameter * NeighborCellDiameter;
 
     [ReadOnly] public NativeArray<float4> Positions;
     [ReadOnly] public NativeArray<float4> Velocities;
@@ -265,7 +267,8 @@ public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<byte> BlockedCells;
     [NativeDisableParallelForRestriction] public NativeArray<float4> ProjectedPositions;
     public float2 GridOrigin;
-    public float InvCellSize;
+    public float CrowdInvCellSize;
+    public float BlockedInvCellSize;
     public int GridDim;
     public int CurrentMaxEnemies;
     public int BossEnemyIndex;
@@ -311,14 +314,17 @@ public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
             int overlappingSeen = 0;
             int candidatesScanned = 0;
             int2 centerCell = RougeMortonGridUtility.WorldToGrid(
-                sourcePosition.xz, GridOrigin, InvCellSize, GridDim);
-            int firstNeighborCell = (int)(Hash((uint)sourceIndex, FrameSeed, 0x85EBCA6Bu) % 9u);
+                sourcePosition.xz, GridOrigin, CrowdInvCellSize, GridDim);
+            int firstNeighborCell = (int)(Hash((uint)sourceIndex, FrameSeed, 0x85EBCA6Bu) %
+                NeighborCellCount);
 
-            for (int cellStep = 0; cellStep < 9 && candidatesScanned < candidateLimit; cellStep++)
+            for (int cellStep = 0;
+                 cellStep < NeighborCellCount && candidatesScanned < candidateLimit;
+                 cellStep++)
             {
-                int packedOffset = (firstNeighborCell + cellStep) % 9;
-                int offsetX = packedOffset % 3 - 1;
-                int offsetY = packedOffset / 3 - 1;
+                int packedOffset = (firstNeighborCell + cellStep) % NeighborCellCount;
+                int offsetX = packedOffset % NeighborCellDiameter - NeighborCellDiameter / 2;
+                int offsetY = packedOffset / NeighborCellDiameter - NeighborCellDiameter / 2;
                 int cellY = centerCell.y + offsetY;
                 if (cellY < 0 || cellY >= GridDim) continue;
                 int cellX = centerCell.x + offsetX;
@@ -436,7 +442,7 @@ public unsafe struct CrowdPbdProjectionJob : IJobParallelForBatch
     private bool IsBlocked(float2 worldPosition, byte* blockedPtr)
     {
         int2 cell = RougeMortonGridUtility.WorldToGrid(
-            worldPosition, GridOrigin, InvCellSize, GridDim);
+            worldPosition, GridOrigin, BlockedInvCellSize, GridDim);
         return blockedPtr[RougeMortonGridUtility.EncodeMorton(cell.x, cell.y)] != 0;
     }
 
@@ -1654,6 +1660,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float tornadoMark = vel4.w;
             float health = state4.x;
             float radius = state4.y;
+            float crowdRadius = math.max(radius, pos4.w);
             float maxSpeed = state4.z;
             bool isBoss = sourceIndex == BossEnemyIndex;
             if (isBoss)
@@ -1732,7 +1739,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
                 pos.y = math.max(pos.y, RenderHeight);
                 vel = float3.zero;
-                posOutPtr[sourceIndex] = new float4(pos, radius);
+                posOutPtr[sourceIndex] = new float4(pos, crowdRadius);
                 velOutPtr[sourceIndex] = new float4(vel, 0f);
                 stateOutPtr[sourceIndex] = new float4(
                     health,
@@ -2180,11 +2187,19 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     vel.xz *= effectiveMaxSpeed * math.rsqrt(speedSq);
                 }
 
-                vel.xz *= towerAreaRepelled ? 0.99f : VelocityDamping;
+                // VelocityDamping is a retained fraction per second. Applying it directly
+                // every frame made configured move speed irrelevant and changed movement
+                // with frame rate (0.9/frame capped ordinary motion near 2.4 units/second).
+                float locomotionDamping = math.pow(
+                    math.clamp(VelocityDamping, 0.0001f, 1f),
+                    math.max(DeltaTime, 0f));
+                float impulseDamping = math.pow(0.99f,
+                    math.max(DeltaTime, 0f) * 60f);
+                vel.xz *= towerAreaRepelled ? impulseDamping : locomotionDamping;
             }
             else
             {
-                vel.xz *= 0.99f;
+                vel.xz *= math.pow(0.99f, math.max(DeltaTime, 0f) * 60f);
             }
 
             pos += vel * DeltaTime;
@@ -2315,7 +2330,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             pos.z = math.clamp(pos.z, -arenaLimit.y, arenaLimit.y);
 
             flashTimer = math.max(0f, flashTimer - DeltaTime * 5f);
-            posOutPtr[sourceIndex] = new float4(pos, radius);
+            posOutPtr[sourceIndex] = new float4(pos, crowdRadius);
             velOutPtr[sourceIndex] = new float4(vel, tornadoMark);
             stateOutPtr[sourceIndex] = new float4(
                 health,
@@ -3711,11 +3726,13 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     vel.xz *= effectiveMaxSpeed * math.rsqrt(speedSq);
                 }
 
-                vel.xz *= VelocityDamping;
+                vel.xz *= math.pow(
+                    math.clamp(VelocityDamping, 0.0001f, 1f),
+                    math.max(DeltaTime, 0f));
             }
             else
             {
-                vel.xz *= 0.99f;
+                vel.xz *= math.pow(0.99f, math.max(DeltaTime, 0f) * 60f);
             }
 
             pos += vel * DeltaTime;

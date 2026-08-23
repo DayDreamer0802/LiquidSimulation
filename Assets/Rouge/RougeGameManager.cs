@@ -1885,6 +1885,9 @@ public partial class RougeGameManager : MonoBehaviour
             ? math.max(float2.zero, _mapArenaHalfExtents - boundaryPadding)
             : new float2(math.max(0f, arenaHalfExtent - boundaryPadding));
         RougeTowerDefenseMap activeMap = RougeTowerDefenseMapLoader.ActiveMap;
+        float mapNavigationClearance = activeMap != null
+            ? Mathf.Max(0.1f, activeMap.MicroCellSize)
+            : 0f;
 
         // The Morton grid is rounded up to a power of two and is usually larger than the
         // playable arena. Treat that padding as blocked; otherwise the flow solver can find
@@ -1900,9 +1903,8 @@ public partial class RougeGameManager : MonoBehaviour
                                math.abs(cellCenter.y) > walkableHalfExtents.y;
                 if (!blocked && activeMap != null)
                 {
-                    Vector3 world = new Vector3(cellCenter.x, 0f, cellCenter.y);
-                    blocked = !activeMap.WorldToCell(world, out Vector2Int mapCell) ||
-                              activeMap.IsNavigationBlocked(mapCell);
+                    blocked = IsMapNavigationBlocked(activeMap, cellCenter,
+                        mapNavigationClearance);
                 }
                 if (blocked)
                 {
@@ -1925,6 +1927,29 @@ public partial class RougeGameManager : MonoBehaviour
             GridDim = _flowGridDim,
             ExtraPadding = flowFieldObstaclePadding
         }.Run();
+    }
+
+    private static bool IsMapNavigationBlocked(RougeTowerDefenseMap map, float2 position,
+        float clearance)
+    {
+        if (IsMapNavigationBlockedAt(map, position)) return true;
+
+        float diagonal = clearance * 0.70710678f;
+        return IsMapNavigationBlockedAt(map, position + new float2(clearance, 0f)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(-clearance, 0f)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(0f, clearance)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(0f, -clearance)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(diagonal, diagonal)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(-diagonal, diagonal)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(diagonal, -diagonal)) ||
+               IsMapNavigationBlockedAt(map, position + new float2(-diagonal, -diagonal));
+    }
+
+    private static bool IsMapNavigationBlockedAt(RougeTowerDefenseMap map, float2 position)
+    {
+        Vector3 world = new Vector3(position.x, 0f, position.y);
+        return !map.WorldToCell(world, out Vector2Int mapCell) ||
+               map.IsNavigationBlocked(mapCell);
     }
 
     /// <summary>每帧把已注册的动态障碍刷新到 _obstacles 的动态后缀段。</summary>
@@ -2704,6 +2729,11 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (enableCrowdPbd)
         {
+            RougeTowerDefenseMap crowdMap = RougeTowerDefenseMapLoader.ActiveMap;
+            float crowdGridCellSize = UsesTowerDefenseSpawners() && crowdMap != null
+                ? math.max(_flowFieldRuntimeCellSize, crowdMap.MicroCellSize * 1.75f)
+                : _flowFieldRuntimeCellSize;
+            float crowdInvCellSize = 1f / math.max(crowdGridCellSize, 0.001f);
             JobHandle clearCrowdPbdGridHandle = new ClearBulletGridHeadsJob
             {
                 CellHeads = _crowdPbdCellHeads
@@ -2716,7 +2746,7 @@ public partial class RougeGameManager : MonoBehaviour
                 CellHeads = _crowdPbdCellHeads,
                 CellNext = _crowdPbdCellNext,
                 GridOrigin = _flowGridOrigin,
-                InvCellSize = invCellSize,
+                InvCellSize = crowdInvCellSize,
                 GridDim = _flowGridDim,
                 RenderHeight = renderHeight,
                 ExcludeAirborne = true
@@ -2736,7 +2766,8 @@ public partial class RougeGameManager : MonoBehaviour
                 BlockedCells = _flowBlockedCells,
                 ProjectedPositions = _crowdPbdPositions,
                 GridOrigin = _flowGridOrigin,
-                InvCellSize = invCellSize,
+                CrowdInvCellSize = crowdInvCellSize,
+                BlockedInvCellSize = invCellSize,
                 GridDim = _flowGridDim,
                 CurrentMaxEnemies = activeEnemyCount,
                 BossEnemyIndex = _bossSpawned ? _bossEnemyIndex : -1,

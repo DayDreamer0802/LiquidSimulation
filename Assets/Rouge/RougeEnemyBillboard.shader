@@ -112,12 +112,16 @@ Shader "Rouge/EnemyBillboard"
                 // lower/closer on screen then consistently covers the one above it.
                 float feetW = abs(feetHCS.w) > 0.00001 ? feetHCS.w : 0.00001;
                 float feetDepth = feetHCS.z / feetW;
+                uint depthHash = input.instanceID * 747796405u + 2891336453u;
+                depthHash ^= depthHash >> 16;
+                float stableDepthBias = (depthHash & 0x0000FFFFu) * (1.0e-6 / 65535.0);
                 // Keep the feet just in front of the floor while applying the same
-                // bias to every enemy, so their relative bottom-to-top order is intact.
+                // base bias to every enemy. The tiny stable per-instance component breaks
+                // exact depth ties in piles without visibly changing bottom-to-top order.
                 #if UNITY_REVERSED_Z
-                    feetDepth += 0.00002;
+                    feetDepth += 0.00002 + stableDepthBias;
                 #else
-                    feetDepth -= 0.00002;
+                    feetDepth -= 0.00002 + stableDepthBias;
                 #endif
                 positionHCS.z = saturate(feetDepth) * positionHCS.w;
                 output.positionHCS = positionHCS;

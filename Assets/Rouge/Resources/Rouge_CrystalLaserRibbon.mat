@@ -25,18 +25,18 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _Alpha: 0.9
-    - _BeamWidth: 0.42
-    - _CoreWidth: 0.07
-    - _EdgeSoftness: 0.5
-    - _EndFade: 0.018
-    - _FlowScale: 34
-    - _FlowSpeed: 20
-    - _PulseSpeed: 7.5
-    - _SparkIntensity: 1.45
+    - _Alpha: 0.18
+    - _BeamWidth: 0.364
+    - _CoreWidth: 0.142
+    - _EdgeSoftness: 0.231
+    - _EndFade: 0.022
+    - _FlowScale: 3.6
+    - _FlowSpeed: -5.5
+    - _PulseSpeed: 6.8
+    - _SparkIntensity: 1.63
     m_Colors:
-    - _BeamColor: {r: 0.025, g: 0.46, b: 2, a: 1}
-    - _CoreColor: {r: 1.25, g: 1.5, b: 1.85, a: 1}
-    - _GlowColor: {r: 0.2, g: 0.018, b: 1.2, a: 1}
+    - _BeamColor: {r: 0.10593583, g: 0.5149953, b: 1.9816257, a: 1}
+    - _CoreColor: {r: 1.1136054, g: 1.4034965, b: 1.8160336, a: 1}
+    - _GlowColor: {r: 1.0915989, g: 0.9993934, b: 1.5970209, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

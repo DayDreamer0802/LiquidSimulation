@@ -28,6 +28,7 @@ public partial class RougeGameManager
     private const float PiercingLaserFireDuration = 0.75f;
     private const float PiercingLaserDamageTime = 0.25f;
     private const float PiercingLaserBeamRadius = 2.8f;
+    private const float PiercingLaserMaxVisualWidthMultiplier = 1.25f;
     private static readonly int LaserAlphaId = Shader.PropertyToID("_Alpha");
     private static readonly int LaserVisualPhaseId = Shader.PropertyToID("_VisualPhase");
     private static readonly int LaserImpactFlashId = Shader.PropertyToID("_ImpactFlash");
@@ -84,6 +85,7 @@ public partial class RougeGameManager
     private bool _towerDefenseDoubleSpeed;
     private bool _towerBuildSelectionActive = true;
     private bool _towerDefenseGameOver;
+    private bool _towerDefenseSceneReloadRequested;
     private string _towerDefenseGameOverReason;
     private int _towerDefenseGold;
     private int _towerDefenseGoldEarnedTotal;
@@ -697,11 +699,8 @@ public partial class RougeGameManager
         Mouse mouse = Mouse.current;
         if (_towerDefenseGameOver)
         {
-            if (!_towerDefenseVictory && keyboard != null && keyboard.rKey.wasPressedThisFrame)
-            {
-                Time.timeScale = 1f;
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-            }
+            if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+                ReloadTowerDefenseScene();
             return;
         }
 
@@ -1489,8 +1488,7 @@ public partial class RougeGameManager
         }
 
         float travelSeconds = Mathf.Max(30f, bossBalance.targetTravelTimeSeconds);
-        float dampingCompensation = Mathf.Clamp(velocityDamping, 0.1f, 1f);
-        float calculatedSpeed = routeDistance / travelSeconds / dampingCompensation;
+        float calculatedSpeed = routeDistance / travelSeconds;
         if (!float.IsFinite(calculatedSpeed) || calculatedSpeed <= 0f)
             return Mathf.Max(0.1f, bossBalance.moveSpeed);
         return Mathf.Max(0.1f, calculatedSpeed);
@@ -1891,16 +1889,22 @@ public partial class RougeGameManager
         float health = GetTowerDefenseEnemyHealth(kind);
         float microCellSize = RougeTowerDefenseMapLoader.ActiveMap != null
             ? RougeTowerDefenseMapLoader.ActiveMap.MicroCellSize : 1f;
-        // A standard enemy occupies roughly a 2x2 micro-cell footprint.
-        float baseRadius = microCellSize * 0.95f;
-        float radiusValue = baseRadius * Mathf.Max(0.1f, archetype.size) *
+        // Visual scale is supplied to the billboard shader separately. Keep navigation
+        // footprints small enough to turn through a one-tile-wide lane; allowing elite
+        // visual scale to double this radius used to make them wider than the road itself.
+        float baseRadius = microCellSize * 0.5f;
+        float scaledRadius = baseRadius * Mathf.Max(0.1f, archetype.size) *
             (elite ? Mathf.Max(1f, enemyBalance.eliteSizeMultiplier) : 1f);
-        if (!TryGetReachableEnemySpawnPosition(point, radiusValue, spawnOrdinal, formationCount,
+        float navigationRadius = Mathf.Min(scaledRadius, microCellSize);
+        // Crowd separation follows the visible billboard more closely, but remains below
+        // one road tile so even elite enemies cannot recreate the old corner deadlock.
+        float crowdRadius = Mathf.Min(scaledRadius * 1.35f, microCellSize * 1.75f);
+        if (!TryGetReachableEnemySpawnPosition(point, navigationRadius, spawnOrdinal, formationCount,
                 out float2 spawnPosition)) return false;
         float speed = GetTowerDefenseEnemySpeed(kind);
-        _positionsA[index] = new float4(spawnPosition.x, renderHeight, spawnPosition.y, radiusValue);
+        _positionsA[index] = new float4(spawnPosition.x, renderHeight, spawnPosition.y, crowdRadius);
         _velocitiesA[index] = float4.zero;
-        _stateA[index] = new float4(health, radiusValue, speed, 0f);
+        _stateA[index] = new float4(health, navigationRadius, speed, 0f);
         _effectStateA[index] = default;
         // A reused slot may still contain an old airborne/death effect in the back buffer.
         // Initialise both sides while the previous job is complete so the next swap can
@@ -2954,7 +2958,8 @@ public partial class RougeGameManager
             Direction = currentAimDirection,
             TurnStartDirection = currentAimDirection,
             Length = tower.AttackRange * 2f,
-            MaxWidth = PiercingLaserBeamRadius,
+            // The hit radius stays unchanged; this multiplier affects only the peak visual.
+            MaxWidth = PiercingLaserBeamRadius * PiercingLaserMaxVisualWidthMultiplier,
             Damage = tower.Damage,
             KillGoldBonus = tower.KillGoldBonus,
             TargetIndex = tower.targetIndex,
@@ -3331,8 +3336,7 @@ public partial class RougeGameManager
     {
         if (!_towerDefenseInitialized)
         {
-            Dispose();
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            ReloadTowerDefenseScene();
             return;
         }
         if (_towerDefenseGameOver) return;
@@ -3349,6 +3353,27 @@ public partial class RougeGameManager
         if (player != null) player.SuppressMovement = true;
         if (_towerPreview != null) _towerPreview.gameObject.SetActive(false);
         RefreshTowerDefenseUi();
+    }
+
+    private void ReloadTowerDefenseScene()
+    {
+        if (_towerDefenseSceneReloadRequested) return;
+        _towerDefenseSceneReloadRequested = true;
+        Time.timeScale = 1f;
+
+        Scene currentScene = gameObject.scene.IsValid()
+            ? gameObject.scene
+            : SceneManager.GetActiveScene();
+        int buildIndex = currentScene.buildIndex;
+        string sceneName = currentScene.name;
+
+        // Finish scheduled jobs and release this run before loading the next copy.
+        // OnDisable sees _initialized == false afterwards, so cleanup cannot run twice.
+        Dispose();
+        if (buildIndex >= 0)
+            SceneManager.LoadScene(buildIndex, LoadSceneMode.Single);
+        else
+            SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
     }
 
     private void BuildTowerDefenseUi()
@@ -3786,13 +3811,7 @@ public partial class RougeGameManager
                     ? $"搬运中：{_relocatingTower.DisplayName}  |  左键选择其他绿色合法地图格  |  成功后扣 {_relocatingTower.RelocationCost} 金币  |  右键/Esc 取消"
                     : _selectedTower != null
                     ? $"已选：{_selectedTower.DisplayName}  Lv.{_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
-                      $"{GetTowerUiStats(_selectedTower)}" +
-                      (string.IsNullOrEmpty(_selectedTower.GetBuffDisplayText())
-                          ? string.Empty
-                          : $"  |  增益 {_selectedTower.GetBuffDisplayText()}") +
-                      (_selectedTower.IsTargetedDamage
-                          ? $"  |  {GetTowerTargetModeDescription(_selectedTower)}  |  中键切换"
-                          : string.Empty)
+                      GetTowerUiStats(_selectedTower)
                     : _towerBuildSelectionActive
                         ? GetTowerBuildModeText()
                         : "建造已取消  |  请从下方选择塔楼";
@@ -3831,7 +3850,7 @@ public partial class RougeGameManager
             if (_towerDefenseGameOver)
             {
                 _towerDefenseGameOverText.text = _towerDefenseVictory
-                    ? $"任务完成\n{_towerDefenseGameOverReason}"
+                    ? $"任务完成\n{_towerDefenseGameOverReason}\n\n按 R 重新开始"
                     : $"任务失败\n{_towerDefenseGameOverReason}\n\n按 R 重新开始";
                 _towerDefenseGameOverText.color = _towerDefenseVictory
                     ? new Color(0.3f, 1f, 0.7f, 1f)
@@ -3916,49 +3935,30 @@ public partial class RougeGameManager
 
     private static string GetTowerUiStats(RougeDefenseTower tower)
     {
+        int barrageCount = tower.TowerType == RougeTowerType.MachineGun ||
+                           tower.TowerType == RougeTowerType.Laser
+            ? tower.TargetCount
+            : tower.ProjectileCount;
+        string damage = tower.TowerType == RougeTowerType.Laser
+            ? $"{tower.Damage:0.#}/秒"
+            : tower.Damage.ToString("0.##");
+        string core = $"伤害 {damage}  攻击间隔 {tower.EffectiveAttackInterval:0.###}秒  " +
+                      $"攻击范围 {tower.AttackRange:0.#}  弹幕 {Mathf.Max(1, barrageCount)}";
+
         switch (tower.TowerType)
         {
             case RougeTowerType.Ice:
-                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  减速 {tower.EffectPercent:0}%/{tower.EffectDuration:0.#}秒";
-            case RougeTowerType.MachineGun:
-                bool focusedMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
-                float halfSpread = MachineGunScatterHalfAngleDegrees *
-                    (focusedMode ? MachineGunFocusedSpreadMultiplier : 1f);
-                return $"伤害 {tower.Damage:0.##}  间隔 {tower.EffectiveAttackInterval:0.###}秒  范围 {tower.AttackRange:0.#}  弹丸 {tower.TargetCount}  散布 ±{halfSpread:0.#}°";
+                return $"{core}  减速 {tower.EffectPercent:0}% / {tower.EffectDuration:0.#}秒";
             case RougeTowerType.Cannon:
-                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  爆炸 {tower.AoeRadius:0.#}  连发 {tower.ProjectileCount} / {TowerProjectileBurstInterval:0.##}秒";
+            case RougeTowerType.RocketBarrage:
+                return $"{core}  爆炸范围 {tower.AoeRadius:0.#}";
             case RougeTowerType.Flame:
-                return $"每跳 {tower.Damage:0.##}/{tower.TickInterval:0.##}秒  范围 {tower.AttackRange:0.#}  爆炸 {tower.AoeRadius:0.#}  持续 {tower.EffectDuration:0.#}秒  火球 {tower.ProjectileCount} / {TowerProjectileBurstInterval:0.##}秒  偏移 ≤{tower.AoeRadius * FlameLandingOffsetRadiusMultiplier:0.#}";
-            case RougeTowerType.Laser:
-                return $"每帧伤害 {tower.Damage / 60f:0.#}  范围 {tower.AttackRange:0.#}  目标 {tower.TargetCount}";
+                return $"{core}  灼烧 {tower.EffectDuration:0.#}秒  爆炸范围 {tower.AoeRadius:0.#}";
             case RougeTowerType.PiercingLaser:
-                float chargeStageDuration = PiercingLaserChargeStageDuration /
-                    Mathf.Max(0.01f, tower.AttackSpeedMultiplier);
-                return $"伤害 {tower.Damage:0.#}  转向 {PiercingLaserTurnDuration:0.00}秒  蓄力 3段 × {chargeStageDuration:0.00}秒（受攻速）  发射 {PiercingLaserFireDuration:0.00}秒（固定）  峰值判定 {PiercingLaserDamageTime:0.00}秒  冷却 {tower.EffectiveAttackInterval:0.##}秒  光束长度 {tower.AttackRange * 2f:0.#}";
-            case RougeTowerType.OrbitSphere:
-                return $"水晶伤害 {tower.Damage:0.#}/{tower.TickInterval:0.##}秒  数量 {tower.ProjectileCount}  轨道 {tower.OrbitSphereRadius:0.#}  最大范围 {tower.AttackRange:0.#}  停留 {tower.OrbitOuterHoldDuration:0.##}秒  径向 {tower.OrbitRadialSpeed:0.#}  旋转 {tower.OrbitAngularSpeed:0.#}°/秒";
+                return $"{core}  穿透";
             default:
-                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  导弹 {tower.ProjectileCount} / {tower.ProjectileInterval:0.##}秒  爆炸 {tower.AoeRadius:0.#}  滞空 {tower.ProjectileFlightDuration:0.##}秒  漂移 {tower.BrownianStrength:0.#}";
+                return core;
         }
-    }
-
-    private static string GetTowerTargetModeDescription(RougeDefenseTower tower)
-    {
-        bool bossFirst = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
-        if (tower.TowerType == RougeTowerType.MachineGun)
-        {
-            return bossFirst
-                ? "集火模式（首领优先，伤害 -2/-30%，散布 -50%）"
-                : "散射模式（离终点最近）";
-        }
-        if (tower.TowerType == RougeTowerType.Flame)
-        {
-            return bossFirst
-                ? "集火模式（首领优先，伤害 -2/-30%）"
-                : "轮换模式（离终点最近，分散目标）";
-        }
-
-        return $"索敌：{(bossFirst ? "首领优先" : "离终点最近")}";
     }
 
     private string GetTowerBuildModeText()
