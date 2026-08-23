@@ -460,6 +460,9 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             {
                 EditorGUILayout.PropertyField(name);
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("baseHealth"), new GUIContent("Health"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("healthGrowthMultiplier"),
+                    new GUIContent("HP Growth Multiplier",
+                        "1 uses the global HP curve unchanged. Values above 1 grow faster; level-1 base health stays unchanged."));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("baseSpeed"), new GUIContent("Move Speed"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("size"), new GUIContent("Size"));
                 DrawResourceTextureField(enemy.FindPropertyRelative("spriteResourcePath"), "Enemy Sprite Sheet");

@@ -9,6 +9,7 @@ Shader "Rouge/Tower Place Grid"
         _InnerRailDistance("Inner Rail Distance", Range(0.02, 0.2)) = 0.085
         _FlowSpeed("Flow Speed", Range(0, 5)) = 1.2
         [HideInInspector] _UseVertexColor("Use Vertex Color", Float) = 0
+        [HideInInspector] _OwnershipHighlight("Ownership Highlight", Float) = 0
     }
     SubShader
     {
@@ -46,6 +47,7 @@ Shader "Rouge/Tower Place Grid"
                 float _InnerRailDistance;
                 float _FlowSpeed;
                 float _UseVertexColor;
+                float _OwnershipHighlight;
             CBUFFER_END
 
             Varyings Vert(Attributes input)
@@ -91,9 +93,16 @@ Shader "Rouge/Tower Place Grid"
                     invalidState);
                 half3 stateRgb = input.color.rgb * statePulse;
                 stateRgb = lerp(stateRgb, half3(1.0, 0.12, 0.085), invalidState);
-                half stateAlpha = saturate(input.color.a * lerp(0.56, 0.68, invalidState));
+                half stateAlpha = saturate(input.color.a * lerp(0.68, 0.74, invalidState));
                 half4 footprintGrid = half4(stateRgb, stateAlpha);
-                return lerp(freeGrid, footprintGrid, step(0.5, _UseVertexColor));
+                half4 gridResult = lerp(freeGrid, footprintGrid, step(0.5, _UseVertexColor));
+
+                float ownershipWave = 0.5 + 0.5 * sin(
+                    _Time.y * max(0.1, _FlowSpeed) * 3.0);
+                half3 ownershipRgb = input.color.rgb * (1.03 + ownershipWave * 0.2);
+                half ownershipAlpha = saturate(input.color.a * (0.7 + ownershipWave * 0.22));
+                half4 ownershipGrid = half4(ownershipRgb, ownershipAlpha);
+                return lerp(gridResult, ownershipGrid, step(0.5, _OwnershipHighlight));
             }
             ENDHLSL
         }

@@ -142,6 +142,8 @@ public sealed class RougeEnemyArchetypeConfig
 {
     public string displayName = "Normal";
     [Min(0.01f)] public float baseHealth = 10f;
+    [Min(0.01f), Tooltip("Scales only the health gained from the global enemy-level curve. 1 keeps the global curve unchanged; values above 1 grow faster without changing level-1 base health.")]
+    public float healthGrowthMultiplier = 1f;
     [Min(0.01f)] public float baseSpeed = 6f;
     [Min(0.1f)] public float size = 1f;
     [Tooltip("Texture under an Assets/.../Resources folder, without extension.")]
@@ -153,6 +155,7 @@ public sealed class RougeEnemyArchetypeConfig
 
     public void EnsureDefaults()
     {
+        if (healthGrowthMultiplier <= 0f) healthGrowthMultiplier = 1f;
         bool isStandardSheet = !string.IsNullOrEmpty(spriteResourcePath) &&
             spriteResourcePath.EndsWith("enemy_standard_sheet", StringComparison.OrdinalIgnoreCase);
         if (spriteSheetColumns < 1) spriteSheetColumns = 3;
@@ -231,6 +234,13 @@ public sealed class RougeEnemyBalanceConfig
             healthMultiplierByLevel = CreateDefaultHealthMultiplierCurve();
         return Mathf.Max(0.01f, healthMultiplierByLevel.Evaluate(
             Mathf.Clamp(enemyLevel, 1, MaximumEnemyLevel)));
+    }
+
+    public float EvaluateHealthMultiplier(int enemyLevel, float archetypeGrowthMultiplier)
+    {
+        float globalMultiplier = EvaluateHealthMultiplier(enemyLevel);
+        float growthMultiplier = Mathf.Max(0.01f, archetypeGrowthMultiplier);
+        return Mathf.Max(0.01f, 1f + (globalMultiplier - 1f) * growthMultiplier);
     }
 
     public float EvaluateSpeedMultiplier(int enemyLevel)
@@ -479,7 +489,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 3;
+    public int version = 4;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -510,7 +520,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 3);
+        version = Mathf.Max(version, 4);
     }
 }
 
@@ -553,7 +563,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 3,
+            version = 4,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,

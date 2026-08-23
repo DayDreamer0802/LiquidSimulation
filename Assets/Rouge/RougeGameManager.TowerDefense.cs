@@ -2041,9 +2041,10 @@ public partial class RougeGameManager
             RougeEnemyBalanceConfig.MaximumEnemyLevel);
     }
 
-    private float GetTowerDefenseEnemyHealthMultiplier()
+    private float GetTowerDefenseEnemyHealthMultiplier(float archetypeGrowthMultiplier = 1f)
     {
-        float levelMultiplier = enemyBalance.EvaluateHealthMultiplier(GetTowerDefenseEnemyLevel());
+        float levelMultiplier = enemyBalance.EvaluateHealthMultiplier(
+            GetTowerDefenseEnemyLevel(), archetypeGrowthMultiplier);
         float levelRuleMultiplier = _towerDefenseLevel != null
             ? _towerDefenseLevel.EnemyHealthMultiplier
             : 1f;
@@ -2067,8 +2068,9 @@ public partial class RougeGameManager
 
     private float GetTowerDefenseEnemyHealth()
     {
-        return Mathf.Max(1f, enemyBalance.enemyTypes[0].baseHealth) *
-            GetTowerDefenseEnemyHealthMultiplier();
+        RougeEnemyArchetypeConfig archetype = enemyBalance.enemyTypes[0];
+        return Mathf.Max(1f, archetype.baseHealth) *
+            GetTowerDefenseEnemyHealthMultiplier(archetype.healthGrowthMultiplier);
     }
 
     private float GetTowerDefenseEnemySpeed()
@@ -2083,7 +2085,7 @@ public partial class RougeGameManager
         if ((kind & BossEnemyFlag) != 0) return GetCurrentBossMaxHealth();
         RougeEnemyArchetypeConfig archetype = GetEnemyArchetype(kind);
         float eliteMultiplier = (kind & EliteEnemyFlag) != 0 ? Mathf.Max(1f, enemyBalance.eliteHealthMultiplier) : 1f;
-        float levelMultiplier = GetTowerDefenseEnemyHealthMultiplier();
+        float levelMultiplier = GetTowerDefenseEnemyHealthMultiplier(archetype.healthGrowthMultiplier);
         return Mathf.Max(0.01f, archetype.baseHealth) * levelMultiplier * eliteMultiplier;
     }
 

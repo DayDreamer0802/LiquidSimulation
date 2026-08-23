@@ -572,6 +572,14 @@ MonoBehaviour:
   map: {fileID: 11400000, guid: 04dd93d95e5618a48bb11f8984112d3d, type: 2}
   loadOnEnable: 1
   clearOnDisable: 1
+  placedTowerGridColor: {r: 0.12, g: 0.74, b: 1, a: 0.98}
+  validTowerGridColor: {r: 0.12, g: 1, b: 0.34, a: 0.98}
+  invalidTowerGridColor: {r: 1, g: 0.23, b: 0.18, a: 0.9}
+  ownedCellCornerColor: {r: 1, g: 0.76, b: 0.08, a: 1}
+  ownedCellCornerLength: 0.23
+  ownedCellCornerWidth: 0.024
+  ownedCellCornerInset: 0.045
+  ownedCellPulseSpeed: 1.6
 --- !u!4 &613537617
 Transform:
   m_ObjectHideFlags: 0
@@ -3464,6 +3472,7 @@ MonoBehaviour:
     enemyTypes:
     - displayName: Standard
       baseHealth: 10
+      healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
       spriteResourcePath: Sprites/enemy_standard_sheet
@@ -3473,6 +3482,7 @@ MonoBehaviour:
       spriteDeathFrameCount: 2
     - displayName: Swift
       baseHealth: 10
+      healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
       spriteResourcePath: Sprites/enemy_standard_sheet
@@ -3482,6 +3492,7 @@ MonoBehaviour:
       spriteDeathFrameCount: 2
     - displayName: Heavy
       baseHealth: 10
+      healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
       spriteResourcePath: Sprites/enemy_standard_sheet

@@ -458,8 +458,12 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     {
         float gridX = (worldPosition.x - origin.x) / MicroCellSize;
         float gridY = (worldPosition.z - origin.y) / MicroCellSize;
-        return new Vector2Int(Mathf.RoundToInt(gridX) - footprintSize.x / 2,
-            Mathf.RoundToInt(gridY) - footprintSize.y / 2);
+        // Subtract the exact half-size before rounding so this is the true inverse
+        // of MicroFootprintCenter for both even and odd footprints. Rounding the
+        // center first shifts odd sizes such as the 5x5 laser tower by one micro cell.
+        return new Vector2Int(
+            Mathf.RoundToInt(gridX - footprintSize.x * 0.5f),
+            Mathf.RoundToInt(gridY - footprintSize.y * 0.5f));
     }
 
     public bool WorldToMicroCell(Vector3 worldPosition, out Vector2Int microCell)

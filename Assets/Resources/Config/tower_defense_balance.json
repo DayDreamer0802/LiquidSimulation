@@ -1,5 +1,5 @@
 {
-    "version": 3,
+    "version": 4,
     "towerBalance": {
         "sellRefundMultiplier": 0.33000001311302187,
         "towers": [
@@ -9,7 +9,7 @@
                 "footprintSize": 6,
                 "footprintWidth": 8,
                 "footprintHeight": 8,
-                "purchaseCost": 800,
+                "purchaseCost": 700,
                 "levels": [
                     {
                         "damage": 10.0,
@@ -130,9 +130,27 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "damage": 15.0,
+                        "damage": 18.0,
                         "attackInterval": 0.05000000074505806,
                         "attackRange": 25.0,
+                        "targetCount": 2,
+                        "projectileCount": 1,
+                        "aoeRadius": 0.0,
+                        "effectPercent": 0.0,
+                        "effectDuration": 0.0,
+                        "tickInterval": 0.0,
+                        "orbitSphereRadius": 1.2000000476837159,
+                        "orbitRadialSpeed": 8.0,
+                        "orbitAngularSpeed": 180.0,
+                        "orbitOuterHoldDuration": 1.5,
+                        "projectileInterval": 0.09000000357627869,
+                        "projectileFlightDuration": 1.0499999523162842,
+                        "brownianStrength": 3.0
+                    },
+                    {
+                        "damage": 25.0,
+                        "attackInterval": 0.05000000074505806,
+                        "attackRange": 30.0,
                         "targetCount": 3,
                         "projectileCount": 1,
                         "aoeRadius": 0.0,
@@ -148,28 +166,10 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "damage": 23.0,
-                        "attackInterval": 0.05000000074505806,
-                        "attackRange": 30.0,
-                        "targetCount": 5,
-                        "projectileCount": 1,
-                        "aoeRadius": 0.0,
-                        "effectPercent": 0.0,
-                        "effectDuration": 0.0,
-                        "tickInterval": 0.0,
-                        "orbitSphereRadius": 1.2000000476837159,
-                        "orbitRadialSpeed": 8.0,
-                        "orbitAngularSpeed": 180.0,
-                        "orbitOuterHoldDuration": 1.5,
-                        "projectileInterval": 0.09000000357627869,
-                        "projectileFlightDuration": 1.0499999523162842,
-                        "brownianStrength": 3.0
-                    },
-                    {
-                        "damage": 35.0,
+                        "damage": 40.0,
                         "attackInterval": 0.05000000074505806,
                         "attackRange": 35.0,
-                        "targetCount": 7,
+                        "targetCount": 4,
                         "projectileCount": 1,
                         "aoeRadius": 0.0,
                         "effectPercent": 0.0,
@@ -184,10 +184,10 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "damage": 50.0,
+                        "damage": 60.0,
                         "attackInterval": 0.05000000074505806,
                         "attackRange": 40.0,
-                        "targetCount": 9,
+                        "targetCount": 5,
                         "projectileCount": 1,
                         "aoeRadius": 0.0,
                         "effectPercent": 0.0,
@@ -209,7 +209,7 @@
                 "footprintSize": 8,
                 "footprintWidth": 8,
                 "footprintHeight": 8,
-                "purchaseCost": 1200,
+                "purchaseCost": 1100,
                 "levels": [
                     {
                         "damage": 50.0,
@@ -309,7 +309,7 @@
                 "footprintSize": 8,
                 "footprintWidth": 8,
                 "footprintHeight": 8,
-                "purchaseCost": 1000,
+                "purchaseCost": 900,
                 "levels": [
                     {
                         "damage": 25.0,
@@ -409,7 +409,7 @@
                 "footprintSize": 5,
                 "footprintWidth": 5,
                 "footprintHeight": 5,
-                "purchaseCost": 800,
+                "purchaseCost": 750,
                 "levels": [
                     {
                         "damage": 8.0,
@@ -509,11 +509,11 @@
                 "footprintSize": 8,
                 "footprintWidth": 8,
                 "footprintHeight": 8,
-                "purchaseCost": 2000,
+                "purchaseCost": 1500,
                 "levels": [
                     {
                         "damage": 200.0,
-                        "attackInterval": 6.0,
+                        "attackInterval": 5.0,
                         "attackRange": 25.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -531,7 +531,7 @@
                     },
                     {
                         "damage": 400.0,
-                        "attackInterval": 5.5,
+                        "attackInterval": 4.5,
                         "attackRange": 30.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -549,7 +549,7 @@
                     },
                     {
                         "damage": 800.0,
-                        "attackInterval": 5.0,
+                        "attackInterval": 4.0,
                         "attackRange": 35.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -566,8 +566,8 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "damage": 1600.0,
-                        "attackInterval": 4.5,
+                        "damage": 1200.0,
+                        "attackInterval": 3.5,
                         "attackRange": 40.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -584,8 +584,8 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "damage": 3200.0,
-                        "attackInterval": 4.0,
+                        "damage": 1600.0,
+                        "attackInterval": 3.0,
                         "attackRange": 50.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -609,7 +609,7 @@
                 "footprintSize": 8,
                 "footprintWidth": 8,
                 "footprintHeight": 8,
-                "purchaseCost": 1200,
+                "purchaseCost": 1100,
                 "levels": [
                     {
                         "damage": 15.0,
@@ -709,7 +709,7 @@
                 "footprintSize": 8,
                 "footprintWidth": 8,
                 "footprintHeight": 6,
-                "purchaseCost": 1200,
+                "purchaseCost": 1000,
                 "levels": [
                     {
                         "damage": 60.0,
@@ -827,7 +827,7 @@
                 {
                     "serializedVersion": "3",
                     "time": 100.0,
-                    "value": 20.0,
+                    "value": 10.0,
                     "inSlope": 0.0,
                     "outSlope": 0.0,
                     "tangentMode": 0,
@@ -888,7 +888,7 @@
                 {
                     "serializedVersion": "3",
                     "time": 100.0,
-                    "value": 2.0,
+                    "value": 3.0,
                     "inSlope": 0.0,
                     "outSlope": 0.0,
                     "tangentMode": 0,
@@ -937,7 +937,8 @@
         "enemyTypes": [
             {
                 "displayName": "Standard",
-                "baseHealth": 30.0,
+                "baseHealth": 35.0,
+                "healthGrowthMultiplier": 1.0,
                 "baseSpeed": 4.0,
                 "size": 1.600000023841858,
                 "spriteResourcePath": "Sprites/enemy_standard_sheet",
@@ -948,7 +949,8 @@
             },
             {
                 "displayName": "Swift",
-                "baseHealth": 20.0,
+                "baseHealth": 25.0,
+                "healthGrowthMultiplier": 0.800000011920929,
                 "baseSpeed": 6.0,
                 "size": 1.399999976158142,
                 "spriteResourcePath": "Sprites/enemy_sheet_swift",
@@ -960,6 +962,7 @@
             {
                 "displayName": "Heavy",
                 "baseHealth": 60.0,
+                "healthGrowthMultiplier": 2.0,
                 "baseSpeed": 2.5,
                 "size": 2.0,
                 "spriteResourcePath": "Sprites/enemy_heavy_sheet",
