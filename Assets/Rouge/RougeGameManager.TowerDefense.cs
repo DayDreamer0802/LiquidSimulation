@@ -100,6 +100,7 @@ public partial class RougeGameManager
     private readonly List<RougeDefenseTower> _defenseTowers = new List<RougeDefenseTower>();
     private readonly List<TowerProjectile> _towerProjectiles = new List<TowerProjectile>();
     private readonly List<TowerFireZone> _towerFireZones = new List<TowerFireZone>();
+    private Material _towerFireZoneMaterial;
     private readonly List<TowerBeamVisual> _towerBeamVisuals = new List<TowerBeamVisual>();
     private readonly List<ActiveOrbitSphereAttack> _activeOrbitSphereAttacks = new List<ActiveOrbitSphereAttack>();
     private readonly Stack<GameObject> _towerProjectileVisualPool = new Stack<GameObject>();
@@ -243,12 +244,16 @@ public partial class RougeGameManager
         public Vector3 Position;
         public float Radius;
         public float Remaining;
+        public float Duration;
         public float DamagePerTick;
         public float TickInterval;
         public float TickTimer;
+        public float VisualPhase;
         public int KillGoldBonus;
         public int WealthCellIndexPlusOne;
         public GameObject Visual;
+        public Renderer Renderer;
+        public MaterialPropertyBlock Properties;
     }
 
     private struct TowerBeamVisual
@@ -468,6 +473,8 @@ public partial class RougeGameManager
             if (_towerFireZones[i].Visual != null) Destroy(_towerFireZones[i].Visual);
         }
         _towerFireZones.Clear();
+        if (_towerFireZoneMaterial != null) Destroy(_towerFireZoneMaterial);
+        _towerFireZoneMaterial = null;
         for (int i = 0; i < _towerBeamVisuals.Count; i++)
         {
             DestroyTowerBeamVisual(_towerBeamVisuals[i]);
@@ -3189,7 +3196,7 @@ public partial class RougeGameManager
                 renderHeight + 0.12f, start.z + direction.y * distance);
             SpawnTowerProjectile(RougeTowerType.MachineGun, start, spreadTarget, pelletDamage,
                 pelletHitRadius, Mathf.Max(0.04f, distance / 70f), 0f, -1,
-                killGoldBonus: tower.KillGoldBonus,
+                killGoldBonus: tower.KillGoldPercentBonus,
                 wealthCellIndexPlusOne: GetTowerWealthCellIndexPlusOne(tower));
         }
         return true;
@@ -3220,7 +3227,7 @@ public partial class RougeGameManager
                 FindTowerTargetsJob.MaxTargetsPerTower);
             tower.ShowFocusedLaserBeams(start, _towerTargetPositions[0], beamCount);
             float perBeamDamage = Mathf.Max(1f, tower.Damage * 0.33f);
-            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldBonus,
+            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldPercentBonus,
                 GetTowerWealthCellIndexPlusOne(tower), _towerTargetIndices[0],
                 perBeamDamage * beamCount * tickScale * tower.AttackSpeedMultiplier);
             return;
@@ -3229,7 +3236,7 @@ public partial class RougeGameManager
         tower.ShowLaserBeams(start, _towerTargetPositions, count);
         for (int i = 0; i < count; i++)
         {
-            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldBonus,
+            AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldPercentBonus,
                 GetTowerWealthCellIndexPlusOne(tower), _towerTargetIndices[i],
                 tower.Damage * tickScale * tower.AttackSpeedMultiplier);
         }
@@ -3368,17 +3375,27 @@ public partial class RougeGameManager
                         new Vector2(target.x, target.z));
                     SpawnTowerProjectile(RougeTowerType.Cannon, start, target, tower.Damage,
                         tower.AoeRadius, Mathf.Clamp(distance / 38f, 0.12f, 0.65f), 0f, -1,
-                        killGoldBonus: tower.KillGoldBonus,
+                        killGoldBonus: tower.KillGoldPercentBonus,
                         wealthCellIndexPlusOne: GetTowerWealthCellIndexPlusOne(tower));
                 }
                 else
                 {
+                    // The release frame happens after the authored firing animation. The
+                    // original target may have died and its array slot may already belong
+                    // to an enemy at a distant spawn point, so resolve it again now.
+                    Vector3 flameLandingTarget = target;
+                    float rangeSq = tower.AttackRange * tower.AttackRange;
+                    if (IsEnemyTargetValid(targetIndex, tower.transform.position, rangeSq,
+                        out Vector3 currentFlameTarget))
+                        flameLandingTarget = currentFlameTarget;
                     Vector2 landingOffset = UnityEngine.Random.insideUnitCircle *
                         (tower.AoeRadius * FlameLandingOffsetRadiusMultiplier);
-                    SpawnTowerProjectile(RougeTowerType.Flame, start, target, tower.Damage,
-                        tower.AoeRadius, 0.85f, 8f, targetIndex,
+                    // Fireballs target a ground location rather than homing on an enemy
+                    // index. This prevents later slot reuse from teleporting the AOE.
+                    SpawnTowerProjectile(RougeTowerType.Flame, start, flameLandingTarget,
+                        tower.Damage, tower.AoeRadius, 0.85f, 8f, -1,
                         tower.EffectDuration, tower.TickInterval,
-                        targetOffset: landingOffset, killGoldBonus: tower.KillGoldBonus,
+                        targetOffset: landingOffset, killGoldBonus: tower.KillGoldPercentBonus,
                         wealthCellIndexPlusOne: GetTowerWealthCellIndexPlusOne(tower));
                 }
             });
@@ -3412,7 +3429,7 @@ public partial class RougeGameManager
                         EffectSlowPercent = tower.EffectPercent,
                         EffectSlowDuration = tower.EffectDuration,
                         SourceTowerTypePlusOne = (int)tower.TowerType + 1,
-                        SourceTowerKillGoldBonus = tower.KillGoldBonus,
+                        SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                         SourceTowerWealthCellIndexPlusOne =
                             GetTowerWealthCellIndexPlusOne(tower)
                     });
@@ -3568,7 +3585,7 @@ public partial class RougeGameManager
                         // corresponding beam tangent is (-direction.y, direction.x).
                         AuxA = tower.OrbitAngularSpeed < 0f ? -1f : 1f,
                         SourceTowerTypePlusOne = (int)RougeTowerType.OrbitSphere + 1,
-                        SourceTowerKillGoldBonus = tower.KillGoldBonus,
+                        SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                         SourceTowerWealthCellIndexPlusOne =
                             GetTowerWealthCellIndexPlusOne(tower)
                     });
@@ -3773,24 +3790,72 @@ public partial class RougeGameManager
     {
         GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         visual.name = "Tower Fire Zone";
-        visual.transform.position = new Vector3(position.x, renderHeight + 0.06f, position.z);
-        visual.transform.localScale = new Vector3(radius * 2f, 0.06f, radius * 2f);
+        float visualPhase = Mathf.Repeat(position.x * 0.173f + position.z * 0.319f, 1f);
+        // The route tile top is normally renderHeight + 0.08. Keep the thin
+        // cylinder's top at roughly +0.12 (the old visual's visible height)
+        // instead of burying it inside the map mesh.
+        visual.transform.position = new Vector3(position.x,
+            renderHeight + 0.095f + visualPhase * 0.004f, position.z);
+        visual.transform.rotation = Quaternion.Euler(0f, visualPhase * 360f, 0f);
+        visual.transform.localScale = new Vector3(radius * 2f, 0.025f, radius * 2f);
         Collider collider = visual.GetComponent<Collider>();
         if (collider != null) Destroy(collider);
         Renderer renderer = visual.GetComponent<Renderer>();
-        if (renderer != null) renderer.material = TowerDefenseVisuals.CreateMaterial(new Color(1f, 0.12f, 0.02f, 0.5f));
+        MaterialPropertyBlock properties = new MaterialPropertyBlock();
+        if (renderer != null)
+        {
+            renderer.sharedMaterial = GetTowerFireZoneMaterial();
+            ConfigureGroundAoEVisual(renderer, _towerFireZoneMaterial);
+            // GroundZone is transparent. The shared ground helper uses an early
+            // queue for the older opaque-looking zones, which lets map tiles
+            // cover this effect on some URP/camera configurations.
+            _towerFireZoneMaterial.renderQueue = 3020;
+            properties.SetFloat("_TimeOffset", visualPhase * 8f);
+            // The zone is created after UpdateTowerFireZones for this frame, so
+            // starting at zero made the freshly spawned AOE entirely invisible.
+            properties.SetFloat("_LifeAlpha", 1f);
+            renderer.SetPropertyBlock(properties);
+        }
+        float safeDuration = Mathf.Max(0.01f, duration);
         _towerFireZones.Add(new TowerFireZone
         {
             Position = position,
             Radius = radius,
-            Remaining = duration,
+            Remaining = safeDuration,
+            Duration = safeDuration,
             DamagePerTick = damagePerTick,
             TickInterval = Mathf.Max(0.01f, tickInterval),
             TickTimer = 0f,
+            VisualPhase = visualPhase,
             KillGoldBonus = killGoldBonus,
             WealthCellIndexPlusOne = Mathf.Max(0, wealthCellIndexPlusOne),
-            Visual = visual
+            Visual = visual,
+            Renderer = renderer,
+            Properties = properties
         });
+    }
+
+    private Material GetTowerFireZoneMaterial()
+    {
+        if (_towerFireZoneMaterial != null) return _towerFireZoneMaterial;
+        _towerFireZoneMaterial = CreateRuntimeMaterial(
+            "Rouge/GroundZone", "Tower Fire Zone", false);
+        ConfigureGroundZoneMaterial(
+            _towerFireZoneMaterial,
+            new Color(1f, 0.32f, 0.025f, 0.78f),
+            new Color(0.22f, 0.012f, 0.002f, 0.28f),
+            3f,
+            2.8f,
+            0.14f,
+            4.1f,
+            1.65f,
+            1.7f,
+            1.25f,
+            1.1f);
+        if (_towerFireZoneMaterial.HasProperty("_HotColor"))
+            _towerFireZoneMaterial.SetColor("_HotColor", new Color(1.6f, 0.72f, 0.06f, 1f));
+        _towerFireZoneMaterial.enableInstancing = true;
+        return _towerFireZoneMaterial;
     }
 
     private void UpdateTowerFireZones(float dt)
@@ -3822,10 +3887,13 @@ public partial class RougeGameManager
                 zone.TickTimer += zone.TickInterval;
                 ticksThisFrame++;
             }
-            if (zone.Visual != null)
+            if (zone.Visual != null && zone.Renderer != null && zone.Properties != null)
             {
-                float pulse = 0.92f + Mathf.Sin(Time.time * 8f) * 0.08f;
-                zone.Visual.transform.localScale = new Vector3(zone.Radius * 2f * pulse, 0.06f, zone.Radius * 2f * pulse);
+                float fadeOut = Mathf.SmoothStep(0f, 1f,
+                    Mathf.Clamp01(zone.Remaining / Mathf.Max(0.01f, zone.Duration * 0.18f)));
+                zone.Properties.SetFloat("_TimeOffset", zone.VisualPhase * 8f);
+                zone.Properties.SetFloat("_LifeAlpha", fadeOut);
+                zone.Renderer.SetPropertyBlock(zone.Properties);
             }
             _towerFireZones[i] = zone;
         }
@@ -3852,7 +3920,7 @@ public partial class RougeGameManager
             // The hit radius stays unchanged; this multiplier affects only the peak visual.
             MaxWidth = PiercingLaserBeamRadius * PiercingLaserMaxVisualWidthMultiplier,
             Damage = tower.Damage,
-            KillGoldBonus = tower.KillGoldBonus,
+            KillGoldBonus = tower.KillGoldPercentBonus,
             WealthCellIndexPlusOne = GetTowerWealthCellIndexPlusOne(tower),
             TargetIndex = tower.targetIndex,
             Properties = new MaterialPropertyBlock(),
@@ -5448,7 +5516,7 @@ public partial class RougeGameManager
             Damage = tower.Damage,
             Radius = Mathf.Max(0.1f, tower.AoeRadius),
             BrownianStrength = Mathf.Max(0f, tower.BrownianStrength),
-            KillGoldBonus = tower.KillGoldBonus,
+            KillGoldBonus = tower.KillGoldPercentBonus,
             WealthCellIndexPlusOne = GetTowerWealthCellIndexPlusOne(tower),
             RandomState = NextRocketRandom(ref randomState)
         });

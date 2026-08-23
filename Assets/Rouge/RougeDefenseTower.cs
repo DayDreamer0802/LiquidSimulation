@@ -236,7 +236,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public bool RepeatsAttackFromEcho => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
         !UsesEchoBarrageMultiplier;
     public bool AllowsSellRefund => RougeTowerPlaceEffectRules.AllowsSellRefund(towerPlaceEffect);
-    public int KillGoldBonus => RougeTowerPlaceEffectRules.GetKillGoldBonus(towerPlaceEffect);
+    public int KillGoldPercentBonus =>
+        RougeTowerPlaceEffectRules.GetKillGoldPercentBonus(towerPlaceEffect);
     public bool CanRelocate => RougeTowerPlaceEffectRules.EnablesRelocation(towerPlaceEffect);
     public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
     public int UpgradeCost => CanUpgrade

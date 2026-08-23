@@ -2319,7 +2319,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     int reward = (enemyKind & 0x80) != 0
                         ? 0
                         : math.max(0, effects.BaseKillGold);
-                    reward += math.max(0, towerKillGoldBonus);
+                    int killGoldPercentBonus = math.max(0, towerKillGoldBonus);
+                    reward = (int)math.ceil(reward * (1f + killGoldPercentBonus * 0.01f));
                     if (reward > 0)
                     {
                         int wealthCellIndex = towerWealthCellIndexPlusOne - 1;

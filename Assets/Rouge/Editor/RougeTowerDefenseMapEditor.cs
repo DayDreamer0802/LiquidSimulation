@@ -262,9 +262,24 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 selectedDefinition.towerPlaceEffect = selectedEffect;
                 SaveSharedTilePalette();
             }
+            EditorGUI.BeginChangeCheck();
+            Texture2D selectedIcon = (Texture2D)EditorGUILayout.ObjectField(
+                new GUIContent("所选地图格图标",
+                    "可选的纯白透明图标；未配置时继续显示原来的中心圆圈。"),
+                selectedDefinition.towerPlaceIcon, typeof(Texture2D), false);
+            if (EditorGUI.EndChangeCheck())
+            {
+                Undo.RegisterCompleteObjectUndo(_tilePalette,
+                    "Change Shared Tower Grid Icon");
+                selectedDefinition.towerPlaceIcon = selectedIcon;
+                SaveSharedTilePalette();
+            }
             EditorGUILayout.HelpBox(
                 RougeTowerPlaceEffectRules.GetDisplayName(selectedDefinition.towerPlaceEffect) + "\n" +
-                RougeTowerPlaceEffectRules.GetDescription(selectedDefinition.towerPlaceEffect),
+                RougeTowerPlaceEffectRules.GetDescription(selectedDefinition.towerPlaceEffect) + "\n" +
+                (selectedDefinition.towerPlaceIcon != null
+                    ? "中心图标：已配置（运行时使用地块效果颜色着色）"
+                    : "中心图标：未配置（使用原中心圆圈）"),
                 MessageType.None);
         }
 

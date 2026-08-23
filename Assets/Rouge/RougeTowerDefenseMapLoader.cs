@@ -184,6 +184,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     {
         if (!_tileVisuals.TryGetValue(cell, out TileVisualState visual) || visual == null) return;
         Color target = RougeTowerPlaceEffectRules.GetVisualColor(effect);
+        Texture2D placeIcon = FindTowerPlaceEffectIcon(effect);
         target.a = 1f;
         for (int rendererIndex = 0; rendererIndex < visual.renderers.Length; rendererIndex++)
         {
@@ -211,12 +212,32 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 if (material.HasProperty("_AccentColor"))
                     properties.SetColor("_AccentColor", RecolorTileMaterial(
                         material.GetColor("_AccentColor"), target, 1f, 1.05f, 0.72f));
+                if (material.HasProperty("_UsePlaceIcon"))
+                {
+                    properties.SetFloat("_UsePlaceIcon", placeIcon != null ? 1f : 0f);
+                    if (placeIcon != null && material.HasProperty("_PlaceIcon"))
+                        properties.SetTexture("_PlaceIcon", placeIcon);
+                }
                 if (material.HasProperty("_Color"))
                     properties.SetColor("_Color", RecolorTileMaterial(
                         material.GetColor("_Color"), target, 0.78f, 1f, 0.16f));
                 renderer.SetPropertyBlock(properties, materialIndex);
             }
         }
+    }
+
+    private Texture2D FindTowerPlaceEffectIcon(RougeTowerPlaceEffect effect)
+    {
+        if (map == null || effect == RougeTowerPlaceEffect.None) return null;
+        IReadOnlyList<RougeTowerDefenseMap.TileDefinition> definitions = map.TileDefinitions;
+        for (int i = 0; i < definitions.Count; i++)
+        {
+            RougeTowerDefenseMap.TileDefinition definition = definitions[i];
+            if (definition != null && definition.towerPlace &&
+                definition.towerPlaceEffect == effect && definition.towerPlaceIcon != null)
+                return definition.towerPlaceIcon;
+        }
+        return null;
     }
 
     private void RestoreTileColor(Vector2Int cell)
@@ -303,19 +324,25 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 {
                     name = $"Runtime Sci-Fi Placement Pad - {definition.name}"
                 };
-                Color.RGBToHSV(definition.editorColor, out float hue, out float saturation,
-                    out float value);
-                Color accent = Color.HSVToRGB(hue, Mathf.Max(0.62f, saturation),
-                    Mathf.Max(0.78f, value));
+                // The palette color is also the runtime pad accent color. Do not force
+                // saturation/value here: doing so turns pale or near-white configured
+                // colors into vivid cyan instead of preserving the editor selection.
+                Color accent = definition.editorColor;
                 accent.a = 1f;
                 padMaterial.SetColor("_AccentColor", accent);
                 padMaterial.SetColor("_BaseColor", new Color(0.07f, 0.135f, 0.19f, 1f));
+                bool usePlaceIcon = definition.towerPlaceIcon != null;
+                padMaterial.SetFloat("_UsePlaceIcon", usePlaceIcon ? 1f : 0f);
+                if (usePlaceIcon) padMaterial.SetTexture("_PlaceIcon", definition.towerPlaceIcon);
+                padMaterial.SetFloat("_PlaceIconScale", 0.58f);
+                padMaterial.SetFloat("_IconBreathStrength", 0.14f);
+                padMaterial.SetFloat("_IconBreathScale", 0.025f);
                 padMaterial.SetFloat("_CellSize", map.CellSize);
                 padMaterial.SetVector("_GridOrigin",
                     new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
                 padMaterial.SetFloat("_FrameWidth", 0.028f);
                 padMaterial.SetFloat("_GlowStrength", 1.05f);
-                padMaterial.SetFloat("_PulseSpeed", 0.7f);
+                padMaterial.SetFloat("_PulseSpeed", 0.35f);
                 padMaterial.enableInstancing = true;
                 return padMaterial;
             }

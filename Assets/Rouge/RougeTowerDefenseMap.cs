@@ -31,7 +31,7 @@ public enum RougeTowerPlaceEffect
     PremiumAmplifier = 4,
     [InspectorName("5 - 全属性 Lv-1，初始等级 Lv+1，出售无金币")]
     FreeLevelNoRefund = 5,
-    [InspectorName("6 - 全属性 Lv-2，击杀金币 +1")]
+    [InspectorName("6 - 全属性 Lv-2，击杀金币 +50%")]
     Bounty = 6,
     [InspectorName("7 - 全属性 Lv-1，金币消耗 -25%")]
     Discount = 7,
@@ -114,9 +114,9 @@ public static class RougeTowerPlaceEffectRules
         return effect != RougeTowerPlaceEffect.FreeLevelNoRefund;
     }
 
-    public static int GetKillGoldBonus(RougeTowerPlaceEffect effect)
+    public static int GetKillGoldPercentBonus(RougeTowerPlaceEffect effect)
     {
-        return effect == RougeTowerPlaceEffect.Bounty ? 1 : 0;
+        return effect == RougeTowerPlaceEffect.Bounty ? 50 : 0;
     }
 
     public static bool EnablesRelocation(RougeTowerPlaceEffect effect)
@@ -164,7 +164,7 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.FreeLevelNoRefund:
                 return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   初始等级 Lv+1   出售金币 0";
             case RougeTowerPlaceEffect.Bounty:
-                return "伤害 Lv-2   范围 Lv-2   攻速 Lv-2   击杀金币 +1";
+                return "伤害 Lv-2   范围 Lv-2   攻速 Lv-2   击杀金币 +50%";
             case RougeTowerPlaceEffect.Discount:
                 return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   建造/升级金币消耗 -25%";
             case RougeTowerPlaceEffect.Relocation:
@@ -224,6 +224,9 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         public bool towerPlace;
         [Tooltip("Special effect applied from the single terrain cell under the placed tower's center.")]
         public RougeTowerPlaceEffect towerPlaceEffect;
+        [Tooltip("Optional pure-white alpha icon shown at the center of a tower-place tile. " +
+                 "When empty, the placement-pad shader keeps its original center reactor circle.")]
+        public Texture2D towerPlaceIcon;
         [Min(0.02f)] public float fallbackHeight = 0.2f;
         public float yOffset;
         public Vector3 prefabEulerAngles;

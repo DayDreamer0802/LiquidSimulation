@@ -623,6 +623,14 @@ public partial class RougeGameManager : MonoBehaviour
         EnsureTowerDefenseInitialized();
         UpdateTowerDefenseInput(Time.unscaledDeltaTime);
 
+        // ReloadTowerDefenseScene can synchronously dispose every NativeArray
+        // from inside the input handler. Do not continue the old scene's Update
+        // after R has requested a reload.
+        if (!_initialized || _towerDefenseSceneReloadRequested)
+        {
+            return;
+        }
+
         if (_enemyKillCount.IsCreated)
         {
             int recentKills = _enemyKillCount[0];
@@ -671,6 +679,14 @@ public partial class RougeGameManager : MonoBehaviour
         if (_invincibilityTimer > 0f)
         {
             _invincibilityTimer -= Time.deltaTime;
+        }
+
+        // This buffer only exists for a live simulation. The initialization
+        // guard above is authoritative, while IsCreated also protects unusual
+        // teardown ordering during scene/domain reloads.
+        if (!_playerDamageCount.IsCreated)
+        {
+            return;
         }
 
         int damage = _playerDamageCount[0];

@@ -4,11 +4,16 @@ Shader "Rouge/Tower Placement Pad"
     {
         _BaseColor("Metal Base", Color) = (0.07, 0.13, 0.18, 1)
         _AccentColor("Energy Accent", Color) = (0.08, 0.82, 1, 1)
+        [NoScaleOffset] _PlaceIcon("Center Icon", 2D) = "white" {}
+        [Toggle] _UsePlaceIcon("Use Center Icon", Float) = 0
+        _PlaceIconScale("Center Icon Scale", Range(0.2, 0.9)) = 0.58
+        _IconBreathStrength("Icon Breath Strength", Range(0, 0.25)) = 0.14
+        _IconBreathScale("Icon Breath Scale", Range(0, 0.08)) = 0.025
         _CellSize("Terrain Cell Size", Float) = 8
         _GridOrigin("Grid Origin", Vector) = (0, 0, 0, 0)
         _FrameWidth("Frame Width", Range(0.005, 0.15)) = 0.035
         _GlowStrength("Glow Strength", Range(0, 4)) = 1.8
-        _PulseSpeed("Pulse Speed", Range(0, 4)) = 0.8
+        _PulseSpeed("Pulse Speed", Range(0, 4)) = 0.35
     }
 
     SubShader
@@ -23,6 +28,9 @@ Shader "Rouge/Tower Placement Pad"
             #pragma vertex Vert
             #pragma fragment Frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            TEXTURE2D(_PlaceIcon);
+            SAMPLER(sampler_PlaceIcon);
 
             struct Attributes
             {
@@ -41,6 +49,10 @@ Shader "Rouge/Tower Placement Pad"
                 float4 _BaseColor;
                 float4 _AccentColor;
                 float4 _GridOrigin;
+                float _UsePlaceIcon;
+                float _PlaceIconScale;
+                float _IconBreathStrength;
+                float _IconBreathScale;
                 float _CellSize;
                 float _FrameWidth;
                 float _GlowStrength;
@@ -96,14 +108,52 @@ Shader "Rouge/Tower Placement Pad"
                     sin((uv.x + uv.y) * 72.0) * 0.5 + 0.5) * saturate(traceMask);
 
                 float cellSeed = frac(sin(dot(floor(gridPosition), float2(12.9898, 78.233))) * 43758.5453);
-                float pulse = 0.76 + 0.24 * sin(_Time.y * _PulseSpeed * 6.28318 + cellSeed * 6.28318);
+                float breathWave = sin(_Time.y * _PulseSpeed * 6.28318 +
+                    cellSeed * 6.28318);
+                float pulse = 0.76 + 0.24 * breathWave;
                 float energy = saturate(outerFrame + insetFrame * 0.48 + cornerNode + traceDash * 0.55) * topFace;
                 half3 accent = _AccentColor.rgb * (0.82 + _GlowStrength * pulse);
                 half3 color = metal + accent * energy;
 
-                // A faint central reactor glow keeps large pads from looking empty.
+                // A configured white-alpha icon replaces the original center reactor.
+                // Keeping this as a material switch preserves the old appearance for
+                // every tile definition that has no texture assigned.
                 float reactor = 1.0 - smoothstep(0.0, 0.28, length(uv - 0.5));
-                color += _AccentColor.rgb * reactor * 0.11 * pulse * topFace;
+                float usePlaceIcon = step(0.5, _UsePlaceIcon);
+                float breathingIconScale = _PlaceIconScale *
+                    (1.0 + breathWave * _IconBreathScale);
+                float2 iconUv = (uv - 0.5) / max(breathingIconScale, 0.001) + 0.5;
+                float2 iconLowerBound = step(0.0, iconUv);
+                float2 iconUpperBound = step(iconUv, 1.0);
+                float iconInside = iconLowerBound.x * iconLowerBound.y *
+                                   iconUpperBound.x * iconUpperBound.y;
+                // Four small footprint-aware samples keep angled/minified icons as
+                // smooth as the shader-drawn shapes without producing a wide blur.
+                float2 iconSampleOffset = max(fwidth(iconUv) * 0.28,
+                    float2(0.0004, 0.0004));
+                half iconAlpha = (
+                    SAMPLE_TEXTURE2D(_PlaceIcon, sampler_PlaceIcon,
+                        saturate(iconUv + float2(-iconSampleOffset.x, -iconSampleOffset.y))).a +
+                    SAMPLE_TEXTURE2D(_PlaceIcon, sampler_PlaceIcon,
+                        saturate(iconUv + float2( iconSampleOffset.x, -iconSampleOffset.y))).a +
+                    SAMPLE_TEXTURE2D(_PlaceIcon, sampler_PlaceIcon,
+                        saturate(iconUv + float2(-iconSampleOffset.x,  iconSampleOffset.y))).a +
+                    SAMPLE_TEXTURE2D(_PlaceIcon, sampler_PlaceIcon,
+                        saturate(iconUv + float2( iconSampleOffset.x,  iconSampleOffset.y))).a
+                ) * 0.25 * iconInside;
+                float breath01 = breathWave * 0.5 + 0.5;
+                float iconBreath = 1.0 + breathWave * _IconBreathStrength;
+                float centerBreath = 0.76 + breathWave * 0.24;
+                // Shift gently between a slightly richer version of the configured
+                // accent and the accent itself. This reads as energy changing color
+                // without introducing white highlights or a blurred outer edge.
+                half3 richerIconColor = _AccentColor.rgb * _AccentColor.rgb;
+                half3 breathingIconColor = lerp(richerIconColor, _AccentColor.rgb,
+                    0.82 + breath01 * 0.18);
+                color += _AccentColor.rgb * reactor * 0.11 * centerBreath * topFace *
+                         (1.0 - usePlaceIcon);
+                color += breathingIconColor * iconAlpha * 0.88 * iconBreath *
+                         topFace * usePlaceIcon;
                 return half4(color, 1.0);
             }
             ENDHLSL

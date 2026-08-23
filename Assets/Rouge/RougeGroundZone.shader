@@ -4,6 +4,7 @@ Shader "Rouge/GroundZone"
     {
         _Color("Color", Color) = (0.3, 0.8, 1.0, 0.7)
         _SecondaryColor("Secondary Color", Color) = (1, 1, 1, 0.35)
+        [HDR] _HotColor("Fire Hot Color", Color) = (1.0, 0.75, 0.12, 1)
         _ZoneType("Zone Type", Float) = 0
         _NoiseScale("Noise Scale", Float) = 1
         _EdgeIrregularity("Edge Irregularity", Float) = 0.15
@@ -12,6 +13,8 @@ Shader "Rouge/GroundZone"
         _EmissionStrength("Emission Strength", Float) = 1
         _CoreStrength("Core Strength", Float) = 1
         _RimStrength("Rim Strength", Float) = 1
+        _TimeOffset("Instance Time Offset", Float) = 0
+        _LifeAlpha("Instance Life Alpha", Range(0, 1)) = 1
     }
 
     SubShader
@@ -35,6 +38,7 @@ Shader "Rouge/GroundZone"
             CBUFFER_START(UnityPerMaterial)
             float4 _Color;
             float4 _SecondaryColor;
+            float4 _HotColor;
             float _ZoneType;
             float _NoiseScale;
             float _EdgeIrregularity;
@@ -43,6 +47,8 @@ Shader "Rouge/GroundZone"
             float _EmissionStrength;
             float _CoreStrength;
             float _RimStrength;
+            float _TimeOffset;
+            float _LifeAlpha;
             CBUFFER_END
 
             struct Attributes
@@ -69,7 +75,7 @@ Shader "Rouge/GroundZone"
                 float2 uv = input.localPos.xz / 0.5;
                 float radial = length(uv);
                 float angle = atan2(uv.y, uv.x);
-                float time = _Time.y;
+                float time = _Time.y + _TimeOffset;
 
                 float flowNoise =
                     sin(uv.x * (6.0 + _NoiseScale * 3.0) + time * (_FlowSpeed * 1.15) + angle * 1.7) +
@@ -111,14 +117,36 @@ Shader "Rouge/GroundZone"
                 {
                     float embers = smoothstep(-0.18, 0.95, flowNoise + coreMask * 0.55);
                     float tongues = saturate(sin((uv.x - uv.y) * (7.0 + _NoiseScale * 4.0) - time * (_FlowSpeed * 2.2)) * 0.5 + 0.5);
-                    float heat = saturate(coreMask * _CoreStrength + embers * 0.55 + tongues * 0.22);
+                    float heat = saturate(coreMask * _CoreStrength + embers * 0.55 +
+                        tongues * 0.22);
                     color = lerp(_SecondaryColor.rgb, _Color.rgb, heat);
                     color += _Color.rgb * rimMask * _RimStrength * 0.22;
                     alpha = _Color.a * bodyMask * (0.72 + heat * 0.42) * pulse;
+
+                    // Zone type 3 is reserved for tower fire. Keep the established
+                    // type-2 tactical burn patch unchanged while giving persistent
+                    // tower AOE a hotter core and moving ember cells.
+                    if (_ZoneType >= 2.5)
+                    {
+                        float swirl = sin(angle * 7.0 - time * (_FlowSpeed * 2.4) +
+                            radial * 13.0 + flowNoise * 2.6) * 0.5 + 0.5;
+                        float emberCells = sin(uv.x * 31.0 + time * _FlowSpeed * 2.1) *
+                            cos(uv.y * 27.0 - time * _FlowSpeed * 1.7) * 0.5 + 0.5;
+                        emberCells = smoothstep(0.84, 0.98, emberCells) * bodyMask;
+                        heat = saturate(coreMask * _CoreStrength + embers * 0.48 +
+                            tongues * 0.18 + swirl * 0.16);
+                        color = lerp(_SecondaryColor.rgb, _Color.rgb, heat);
+                        float hotCore = saturate(coreMask * 0.72 + emberCells * 0.9) *
+                            (0.72 + pulse * 0.28);
+                        color = lerp(color, _HotColor.rgb, hotCore);
+                        color += _Color.rgb * rimMask * _RimStrength * 0.22;
+                        alpha = _Color.a * bodyMask *
+                            (0.68 + heat * 0.34 + emberCells * 0.18) * pulse;
+                    }
                 }
 
                 color *= (0.85 + _EmissionStrength * 0.35 + rimMask * _RimStrength * 0.2);
-                return half4(color, saturate(alpha));
+                return half4(color, saturate(alpha * _LifeAlpha));
             }
             ENDHLSL
         }
