@@ -20,20 +20,22 @@ public enum RougeTowerPlaceEffect
 {
     [InspectorName("0 - 无效果")]
     None = 0,
-    [InspectorName("1 - 伤害 +2，范围 -1，金币消耗 +25%")]
+    [InspectorName("1 - 伤害 Lv+2，范围 Lv-1，金币消耗 +25%")]
     DamageAmplifier = 1,
-    [InspectorName("2 - 范围 +2，攻速 -1，金币消耗 +25%")]
+    [InspectorName("2 - 范围 Lv+2，攻速 Lv-1，金币消耗 +25%")]
     RangeAmplifier = 2,
-    [InspectorName("3 - 攻速 +2，伤害 -1，金币消耗 +25%")]
+    [InspectorName("3 - 攻速 Lv+2，伤害 Lv-1，金币消耗 +25%")]
     AttackSpeedAmplifier = 3,
-    [InspectorName("4 - 全属性 +1，金币消耗 +50%")]
+    [InspectorName("4 - 全属性 Lv+1，金币消耗 +50%")]
     PremiumAmplifier = 4,
-    [InspectorName("5 - 全属性 -1，初始等级 +1，出售无金币")]
+    [InspectorName("5 - 全属性 Lv-1，初始等级 Lv+1，出售无金币")]
     FreeLevelNoRefund = 5,
-    [InspectorName("6 - 全属性 -2，击杀金币 +1")]
+    [InspectorName("6 - 全属性 Lv-2，击杀金币 +1")]
     Bounty = 6,
-    [InspectorName("7 - 全属性 -1，金币消耗 -25%")]
-    Discount = 7
+    [InspectorName("7 - 全属性 Lv-1，金币消耗 -25%")]
+    Discount = 7,
+    [InspectorName("8 - 全属性 Lv-1，可花费累计投入的 33% 搬运")]
+    Relocation = 8
 }
 
 public static class RougeTowerPlaceEffectRules
@@ -49,6 +51,7 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.FreeLevelNoRefund: return new RougeTowerBuffLevels(-1, -1, -1);
             case RougeTowerPlaceEffect.Bounty: return new RougeTowerBuffLevels(-2, -2, -2);
             case RougeTowerPlaceEffect.Discount: return new RougeTowerBuffLevels(-1, -1, -1);
+            case RougeTowerPlaceEffect.Relocation: return new RougeTowerBuffLevels(-1, -1, -1);
             default: return default;
         }
     }
@@ -85,6 +88,16 @@ public static class RougeTowerPlaceEffectRules
         return effect == RougeTowerPlaceEffect.Bounty ? 1 : 0;
     }
 
+    public static bool EnablesRelocation(RougeTowerPlaceEffect effect)
+    {
+        return effect == RougeTowerPlaceEffect.Relocation;
+    }
+
+    public static int GetRelocationGoldCost(int investedGold)
+    {
+        return Mathf.Max(0, Mathf.CeilToInt(Mathf.Max(0, investedGold) * 0.33f));
+    }
+
     public static string GetDisplayName(RougeTowerPlaceEffect effect)
     {
         switch (effect)
@@ -96,6 +109,7 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.FreeLevelNoRefund: return "效果 5 - 免费等级 / 禁止返还金币";
             case RougeTowerPlaceEffect.Bounty: return "效果 6 - 击杀赏金";
             case RougeTowerPlaceEffect.Discount: return "效果 7 - 金币折扣";
+            case RougeTowerPlaceEffect.Relocation: return "效果 8 - 搬运格";
             default: return "无塔楼格特殊效果";
         }
     }
@@ -105,19 +119,21 @@ public static class RougeTowerPlaceEffectRules
         switch (effect)
         {
             case RougeTowerPlaceEffect.DamageAmplifier:
-                return "伤害 +2   范围 -1   建造/升级金币消耗 +25%";
+                return "伤害 Lv+2   范围 Lv-1   建造/升级金币消耗 +25%";
             case RougeTowerPlaceEffect.RangeAmplifier:
-                return "范围 +2   攻速 -1   建造/升级金币消耗 +25%";
+                return "范围 Lv+2   攻速 Lv-1   建造/升级金币消耗 +25%";
             case RougeTowerPlaceEffect.AttackSpeedAmplifier:
-                return "攻速 +2   伤害 -1   建造/升级金币消耗 +25%";
+                return "攻速 Lv+2   伤害 Lv-1   建造/升级金币消耗 +25%";
             case RougeTowerPlaceEffect.PremiumAmplifier:
-                return "伤害 +1   范围 +1   攻速 +1   建造/升级金币消耗 +50%";
+                return "伤害 Lv+1   范围 Lv+1   攻速 Lv+1   建造/升级金币消耗 +50%";
             case RougeTowerPlaceEffect.FreeLevelNoRefund:
-                return "伤害 -1   范围 -1   攻速 -1   初始等级 +1   出售金币 0";
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   初始等级 Lv+1   出售金币 0";
             case RougeTowerPlaceEffect.Bounty:
-                return "伤害 -2   范围 -2   攻速 -2   击杀金币 +1";
+                return "伤害 Lv-2   范围 Lv-2   攻速 Lv-2   击杀金币 +1";
             case RougeTowerPlaceEffect.Discount:
-                return "伤害 -1   范围 -1   攻速 -1   建造/升级金币消耗 -25%";
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   建造/升级金币消耗 -25%";
+            case RougeTowerPlaceEffect.Relocation:
+                return "伤害 Lv-1   范围 Lv-1   攻速 Lv-1   可花费塔楼累计投入金币的 33% 搬运到其他合法地图格";
             default:
                 return "此地图格没有特殊效果";
         }

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.UI;
 
 public enum RougeEnemyType
@@ -40,6 +41,7 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
     private Canvas _warningCanvas;
     private RectTransform _warningVisual;
     private CanvasGroup _warningCanvasGroup;
+    private Material _warningOverlayMaterial;
 
     public int GetEnemyTypeIndex()
     {
@@ -177,6 +179,21 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
         outline.effectDistance = new Vector2(2f, -2f);
         outline.useGraphicAlpha = true;
 
+        Shader uiShader = Shader.Find("UI/Default");
+        if (uiShader != null)
+        {
+            _warningOverlayMaterial = new Material(uiShader)
+            {
+                name = "Enemy Spawn Warning Overlay Material",
+                renderQueue = 5000
+            };
+            // World-space UI normally participates in depth testing, so a dense enemy
+            // group can still cover it even with the maximum Canvas sorting order.
+            _warningOverlayMaterial.SetInt("unity_GUIZTestMode", (int)CompareFunction.Always);
+            Graphic[] graphics = root.GetComponentsInChildren<Graphic>(true);
+            for (int i = 0; i < graphics.Length; i++) graphics[i].material = _warningOverlayMaterial;
+        }
+
         root.SetActive(false);
     }
 
@@ -242,10 +259,12 @@ public sealed class RougeEnemySpawnPoint : MonoBehaviour
     private void OnDestroy()
     {
         if (_warningCanvasObject != null) Destroy(_warningCanvasObject);
+        if (_warningOverlayMaterial != null) Destroy(_warningOverlayMaterial);
         _warningCanvasObject = null;
         _warningCanvas = null;
         _warningVisual = null;
         _warningCanvasGroup = null;
+        _warningOverlayMaterial = null;
     }
 
     internal bool HasReachedWaveLimit()

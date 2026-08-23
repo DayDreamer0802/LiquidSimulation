@@ -196,6 +196,7 @@ public partial class RougeGameManager
 
     private void BeginTacticalSkillSelection(TacticalSkillSelectionState state)
     {
+        ClearTowerRelocationState();
         _towerBuildSelectionActive = false;
         _previewValid = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);

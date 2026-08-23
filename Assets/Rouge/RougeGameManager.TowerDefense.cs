@@ -95,6 +95,9 @@ public partial class RougeGameManager
     private RougeTowerType _selectedBuildType = RougeTowerType.Ice;
     private RougeDefenseTower _towerPreview;
     private RougeDefenseTower _selectedTower;
+    private RougeDefenseTower _relocatingTower;
+    private bool _towerRelocationActive;
+    private Vector2Int _relocationOriginalAnchor;
     private bool _previewValid;
     private Vector2Int _previewTowerAnchor;
     private bool[] _previewCellValidity;
@@ -109,6 +112,7 @@ public partial class RougeGameManager
     private Text _towerDefenseModeText;
     private Text _towerDefenseGameOverText;
     private Image _mainTowerHealthFill;
+    private Text _mainTowerHealthText;
     private Button _towerCancelBuildButton;
     private Text _towerCancelBuildButtonText;
     private Button _towerUpgradeButton;
@@ -117,6 +121,8 @@ public partial class RougeGameManager
     private Text _towerSellButtonText;
     private Button _towerTargetPriorityButton;
     private Text _towerTargetPriorityButtonText;
+    private Button _towerRelocateButton;
+    private Text _towerRelocateButtonText;
     private Text _towerDamageRankingText;
     private GameObject _towerPlaceEffectPanel;
     private Text _towerPlaceEffectText;
@@ -279,6 +285,9 @@ public partial class RougeGameManager
         _towerDefenseDoubleSpeed = false;
         TowerDefenseBuildModeActive = false;
         _towerBuildSelectionActive = false;
+        _towerRelocationActive = false;
+        _relocatingTower = null;
+        _relocationOriginalAnchor = default;
         _pendingMainTowerAoe = false;
         Time.timeScale = 1f;
         if (CommanderSkillsEnabled) InitializeTacticalSkills();
@@ -354,6 +363,7 @@ public partial class RougeGameManager
         TowerDefenseBuildModeActive = false;
         _towerPlacementMode = false;
         _towerDefenseDoubleSpeed = false;
+        ClearTowerRelocationState();
         RefreshTowerEditHints();
         if (player != null)
         {
@@ -735,7 +745,8 @@ public partial class RougeGameManager
 
         if (!_debugUnitViewMode && mouse != null && mouse.rightButton.wasPressedThisFrame)
         {
-            SetTowerPlacementMode(false);
+            if (_towerRelocationActive) CancelTowerRelocation();
+            else SetTowerPlacementMode(false);
             return;
         }
 
@@ -752,9 +763,11 @@ public partial class RougeGameManager
             if (keyboard.digit7Key.wasPressedThisFrame || keyboard.numpad7Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.OrbitSphere);
             if (keyboard.digit8Key.wasPressedThisFrame || keyboard.numpad8Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.RocketBarrage);
             if (keyboard.uKey.wasPressedThisFrame) TryUpgradeSelectedTower();
+            if (keyboard.rKey.wasPressedThisFrame) BeginSelectedTowerRelocation();
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
-                SetTowerPlacementMode(false);
+                if (_towerRelocationActive) CancelTowerRelocation();
+                else SetTowerPlacementMode(false);
                 return;
             }
         }
@@ -834,6 +847,7 @@ public partial class RougeGameManager
         else
         {
             ClearTacticalSkillSelection();
+            ClearTowerRelocationState();
             if (_towerPreview != null) Destroy(_towerPreview.gameObject);
             _towerPreview = null;
             SelectPlacedTower(null);
@@ -858,6 +872,7 @@ public partial class RougeGameManager
     private void EnterTowerEditMode(RougeDefenseTower tower)
     {
         if (tower == null) return;
+        ClearTowerRelocationState();
         _towerBuildSelectionActive = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
         _towerPreview = null;
@@ -867,6 +882,7 @@ public partial class RougeGameManager
 
     private void SelectTowerBuildType(RougeTowerType type)
     {
+        ClearTowerRelocationState();
         if (IsTowerTypeDisabled(type))
         {
             _towerBuildSelectionActive = false;
@@ -951,6 +967,11 @@ public partial class RougeGameManager
             CancelTacticalSkillSelection(false);
             return;
         }
+        if (_towerRelocationActive)
+        {
+            CancelTowerRelocation();
+            return;
+        }
         _towerBuildSelectionActive = false;
         _previewValid = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
@@ -958,6 +979,88 @@ public partial class RougeGameManager
         SetTowerPlaceVisualsVisible(_towerPlacementMode);
         SelectPlacedTower(null);
         RefreshTowerDefenseUi();
+    }
+
+    private void BeginSelectedTowerRelocation()
+    {
+        RougeDefenseTower tower = _selectedTower;
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (_towerRelocationActive || _towerDefenseGameOver || tower == null || !tower.CanRelocate || map == null ||
+            _towerDefenseGold < tower.RelocationCost) return;
+
+        if (!map.WorldToCell(tower.transform.position, out _)) return;
+        ClearTacticalSkillSelection();
+        ClearTowerRelocationState();
+        _towerBuildSelectionActive = false;
+        if (_towerPreview != null) Destroy(_towerPreview.gameObject);
+        _towerPreview = null;
+
+        GameObject go = InstantiateTowerPrefab(tower.TowerType);
+        if (go == null)
+        {
+            RefreshTowerDefenseUi(true);
+            return;
+        }
+
+        go.SetActive(false);
+        go.name = "Tower Relocation Preview - " + tower.DisplayName;
+        _towerPreview = go.GetComponent<RougeDefenseTower>();
+        _towerPreview.Configure(tower.TowerType, true);
+        _relocatingTower = tower;
+        _towerRelocationActive = true;
+        _relocationOriginalAnchor = map.WorldToMicroFootprintAnchor(
+            tower.transform.position, tower.FootprintCells);
+        tower.SetRangeVisibility(false);
+        _previewValid = false;
+        _previewCellValidity = null;
+        SetTowerPlaceVisualsVisible(true);
+        RefreshTowerDefenseUi(true);
+    }
+
+    private void CancelTowerRelocation()
+    {
+        RougeDefenseTower tower = _relocatingTower;
+        ClearTowerRelocationState();
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
+        SelectPlacedTower(tower);
+        RefreshTowerDefenseUi(true);
+    }
+
+    private void ClearTowerRelocationState()
+    {
+        if (!_towerRelocationActive && _relocatingTower == null) return;
+        RougeDefenseTower tower = _relocatingTower;
+        if (_towerPreview != null) Destroy(_towerPreview.gameObject);
+        _towerPreview = null;
+        _towerRelocationActive = false;
+        _relocatingTower = null;
+        _relocationOriginalAnchor = default;
+        _previewValid = false;
+        _previewCellValidity = null;
+        if (tower != null && tower == _selectedTower)
+            tower.SetRangeVisibility(_towerPlacementMode);
+    }
+
+    private void CompleteTowerRelocation()
+    {
+        RougeDefenseTower tower = _relocatingTower;
+        if (tower == null || _towerPreview == null) return;
+        int cost = tower.RelocationCost;
+        if (_towerDefenseGold < cost) return;
+
+        Vector3 destination = _towerPreview.transform.position;
+        RougeTowerPlaceEffect destinationEffect = _towerPreview.TowerPlaceEffect;
+        _towerDefenseGold -= cost;
+        StopPiercingLaserAttacksForTower(tower);
+        StopOrbitSphereAttacksForTower(tower);
+        tower.transform.position = destination;
+        tower.FinalizeRelocation(destinationEffect);
+        tower.name = tower.DisplayName + " Lv." + tower.Level;
+        _towerTargetScheduledCount = 0;
+        ClearTowerRelocationState();
+        SetTowerPlaceVisualsVisible(true);
+        SelectPlacedTower(tower);
+        RefreshTowerDefenseUi(true);
     }
 
     private void UpdateTowerPreview()
@@ -975,7 +1078,8 @@ public partial class RougeGameManager
         _previewTowerAnchor = anchor;
         _towerPreview.transform.position = position;
         _towerPreview.ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(position));
-        _previewCellValidity = GetTowerFootprintCellValidity(anchor, _towerPreview.FootprintCells, _towerPreview);
+        RougeDefenseTower ignoredTower = _towerRelocationActive ? _relocatingTower : _towerPreview;
+        _previewCellValidity = GetTowerFootprintCellValidity(anchor, _towerPreview.FootprintCells, ignoredTower);
         _previewValid = CanPlacePreviewTower();
         _towerPreview.SetPreviewState(_previewValid, _previewCellValidity);
         SetTowerPlaceVisualsVisible(true);
@@ -983,9 +1087,11 @@ public partial class RougeGameManager
 
     private bool CanPlacePreviewTower()
     {
-        return _towerPreview != null && _towerPreview.gameObject.activeInHierarchy &&
-            _towerDefenseGold >= _towerPreview.PlacementCost &&
-            AreAllFootprintCellsValid(_previewCellValidity);
+        if (_towerPreview == null || !_towerPreview.gameObject.activeInHierarchy ||
+            !AreAllFootprintCellsValid(_previewCellValidity)) return false;
+        if (!_towerRelocationActive) return _towerDefenseGold >= _towerPreview.PlacementCost;
+        return _relocatingTower != null && _previewTowerAnchor != _relocationOriginalAnchor &&
+            _towerDefenseGold >= _relocatingTower.RelocationCost;
     }
 
     private RougeTowerPlaceEffect GetTowerPlaceEffectAtWorld(Vector3 worldPosition)
@@ -1106,6 +1212,11 @@ public partial class RougeGameManager
             if (_towerPreview != null) _towerPreview.SetPreviewState(false, _previewCellValidity);
             return;
         }
+        if (_towerRelocationActive)
+        {
+            CompleteTowerRelocation();
+            return;
+        }
         int cost = _towerPreview.PlacementCost;
         _towerDefenseGold -= cost;
         _towerPreview.FinalizePlacement();
@@ -1150,6 +1261,7 @@ public partial class RougeGameManager
         _towerDefenseGold += refund;
         _defenseTowers.Remove(tower);
         StopPiercingLaserAttacksForTower(tower);
+        StopOrbitSphereAttacksForTower(tower);
         SetTowerPlaceVisualsVisible(_towerPlacementMode);
         _towerTargetScheduledCount = 0;
         if (_selectedTower == tower) _selectedTower = null;
@@ -1159,7 +1271,7 @@ public partial class RougeGameManager
 
     private void SellSelectedTower()
     {
-        if (_selectedTower == null) return;
+        if (_towerRelocationActive || _selectedTower == null) return;
         RougeDefenseTower tower = _selectedTower;
         DeleteTower(tower);
         SetTowerPlacementMode(false);
@@ -1167,7 +1279,7 @@ public partial class RougeGameManager
 
     private void TryUpgradeSelectedTower()
     {
-        if (_selectedTower == null || !_selectedTower.CanUpgrade) return;
+        if (_towerRelocationActive || _selectedTower == null || !_selectedTower.CanUpgrade) return;
         int cost = _selectedTower.UpgradeCost;
         if (_towerDefenseGold < cost) return;
         if (!_selectedTower.Upgrade()) return;
@@ -1194,8 +1306,11 @@ public partial class RougeGameManager
         {
             RougeDefenseTower tower = _defenseTowers[i];
             if (tower == null) continue;
-            bool upgradeAvailable = tower.CanUpgrade && _towerDefenseGold >= tower.UpgradeCost;
-            tower.SetEditHintState(_towerPlacementMode, tower == _selectedTower,
+            bool relocationSource = _towerRelocationActive && tower == _relocatingTower;
+            bool upgradeAvailable = !relocationSource && tower.CanUpgrade &&
+                _towerDefenseGold >= tower.UpgradeCost;
+            tower.SetEditHintState(_towerPlacementMode,
+                !relocationSource && tower == _selectedTower,
                 upgradeAvailable, _showAllTowerAttackRanges);
         }
     }
@@ -1395,6 +1510,7 @@ public partial class RougeGameManager
         _bossDefeated = _nextBossEncounterIndex >= _bossSchedule.Count;
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
+        ClearTowerRelocationState();
         SetTowerPlaceVisualsVisible(false);
         Time.timeScale = GetTowerDefensePlayTimeScale();
         RefreshTowerEditHints();
@@ -3181,6 +3297,17 @@ public partial class RougeGameManager
         }
     }
 
+    private void StopOrbitSphereAttacksForTower(RougeDefenseTower tower)
+    {
+        for (int i = _activeOrbitSphereAttacks.Count - 1; i >= 0; i--)
+        {
+            if (_activeOrbitSphereAttacks[i].Tower != tower) continue;
+            _activeOrbitSphereAttacks[i].Positions = null;
+            _activeOrbitSphereAttacks.RemoveAt(i);
+        }
+        if (tower != null) tower.HideLaserBeams();
+    }
+
     private static void DestroyTowerBeamVisual(TowerBeamVisual beam)
     {
         if (beam.Visual != null) Destroy(beam.Visual);
@@ -3215,6 +3342,7 @@ public partial class RougeGameManager
         HideTowerDefenseSpawnWarnings();
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
+        ClearTowerRelocationState();
         SetTowerPlaceVisualsVisible(false);
         RefreshTowerEditHints();
         Time.timeScale = 0f;
@@ -3242,7 +3370,7 @@ public partial class RougeGameManager
         statusRect.anchorMax = new Vector2(1f, 1f);
         statusRect.pivot = new Vector2(1f, 1f);
         statusRect.anchoredPosition = new Vector2(-20f, -20f);
-        statusRect.sizeDelta = new Vector2(456f, 228f);
+        statusRect.sizeDelta = new Vector2(456f, 184f);
         AddHudPanelChrome(statusPanel, new Color(0.08f, 0.72f, 0.94f, 1f));
 
         Text statusTitle = CreateUiText("Status Title", statusPanel.transform, 21, TextAnchor.MiddleLeft);
@@ -3264,12 +3392,15 @@ public partial class RougeGameManager
         hpRect.anchorMin = new Vector2(0f, 0f);
         hpRect.anchorMax = new Vector2(1f, 0f);
         hpRect.pivot = new Vector2(0.5f, 0f);
-        hpRect.anchoredPosition = new Vector2(0f, 15f);
-        hpRect.sizeDelta = new Vector2(-40f, 20f);
+        hpRect.anchoredPosition = new Vector2(0f, 14f);
+        hpRect.sizeDelta = new Vector2(-40f, 24f);
         _mainTowerHealthFill = CreateUiImage("HP Fill", hpBackground.transform, new Color(0.12f, 0.78f, 1f, 1f));
         StretchRect(_mainTowerHealthFill.rectTransform, 3f, 3f, 3f, 3f);
         _mainTowerHealthFill.type = Image.Type.Simple;
         _mainTowerHealthFill.rectTransform.pivot = new Vector2(0f, 0.5f);
+        _mainTowerHealthText = CreateUiText("HP Text", hpBackground.transform, 15, TextAnchor.MiddleCenter);
+        _mainTowerHealthText.fontStyle = FontStyle.Bold;
+        StretchRect(_mainTowerHealthText.rectTransform, 3f, 1f, 3f, 1f);
 
         GameObject damagePanel = CreateUiPanel("Tower Damage Ranking", canvasObject.transform,
             new Color(0.025f, 0.04f, 0.07f, 0.88f));
@@ -3333,7 +3464,7 @@ public partial class RougeGameManager
         buildGroupTitle.text = "建造塔楼";
         buildGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
         Text actionGroupTitle = CreateUiText("Tower Action Group Title", buildPanel.transform, 15, TextAnchor.MiddleCenter);
-        SetBottomRect(actionGroupTitle.rectTransform, 315f, 115f, 430f, 18f);
+        SetBottomRect(actionGroupTitle.rectTransform, 360f, 115f, 540f, 18f);
         actionGroupTitle.text = "塔楼操作";
         actionGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
         Image groupSeparator = CreateUiImage("Build Group Separator", buildPanel.transform,
@@ -3355,16 +3486,16 @@ public partial class RougeGameManager
         RectTransform cancelRect = _towerCancelBuildButton.GetComponent<RectTransform>();
         cancelRect.anchorMin = new Vector2(0.5f, 0f);
         cancelRect.anchorMax = new Vector2(0.5f, 0f);
-        cancelRect.anchoredPosition = new Vector2(420f, 32f);
-        cancelRect.sizeDelta = new Vector2(190f, 48f);
+        cancelRect.anchoredPosition = new Vector2(455f, 32f);
+        cancelRect.sizeDelta = new Vector2(170f, 48f);
         _towerCancelBuildButton.onClick.AddListener(CancelTowerBuildSelection);
 
         _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] 升级", new Color(0.15f, 0.58f, 0.28f, 1f));
         RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
         upgradeRect.anchorMin = new Vector2(0.5f, 0f);
         upgradeRect.anchorMax = new Vector2(0.5f, 0f);
-        upgradeRect.anchoredPosition = new Vector2(215f, 32f);
-        upgradeRect.sizeDelta = new Vector2(190f, 48f);
+        upgradeRect.anchoredPosition = new Vector2(275f, 32f);
+        upgradeRect.sizeDelta = new Vector2(170f, 48f);
         _towerUpgradeButton.onClick.AddListener(TryUpgradeSelectedTower);
         _towerUpgradeButtonText = _towerUpgradeButton.GetComponentInChildren<Text>();
 
@@ -3372,8 +3503,8 @@ public partial class RougeGameManager
         RectTransform sellRect = _towerSellButton.GetComponent<RectTransform>();
         sellRect.anchorMin = new Vector2(0.5f, 0f);
         sellRect.anchorMax = new Vector2(0.5f, 0f);
-        sellRect.anchoredPosition = new Vector2(215f, 86f);
-        sellRect.sizeDelta = new Vector2(190f, 48f);
+        sellRect.anchoredPosition = new Vector2(185f, 86f);
+        sellRect.sizeDelta = new Vector2(170f, 48f);
         _towerSellButtonText = _towerSellButton.GetComponentInChildren<Text>();
         _towerSellButton.onClick.AddListener(SellSelectedTower);
         _towerSellButton.gameObject.SetActive(false);
@@ -3383,11 +3514,22 @@ public partial class RougeGameManager
         RectTransform priorityRect = _towerTargetPriorityButton.GetComponent<RectTransform>();
         priorityRect.anchorMin = new Vector2(0.5f, 0f);
         priorityRect.anchorMax = new Vector2(0.5f, 0f);
-        priorityRect.anchoredPosition = new Vector2(420f, 86f);
-        priorityRect.sizeDelta = new Vector2(190f, 48f);
+        priorityRect.anchoredPosition = new Vector2(365f, 86f);
+        priorityRect.sizeDelta = new Vector2(170f, 48f);
         _towerTargetPriorityButtonText = _towerTargetPriorityButton.GetComponentInChildren<Text>();
         _towerTargetPriorityButton.onClick.AddListener(ToggleSelectedTowerTargetPriority);
         _towerTargetPriorityButton.gameObject.SetActive(false);
+
+        _towerRelocateButton = CreateUiButton("Relocate Tower", buildPanel.transform, "[R] 搬运",
+            new Color(0.55f, 0.22f, 0.72f, 1f));
+        RectTransform relocateRect = _towerRelocateButton.GetComponent<RectTransform>();
+        relocateRect.anchorMin = new Vector2(0.5f, 0f);
+        relocateRect.anchorMax = new Vector2(0.5f, 0f);
+        relocateRect.anchoredPosition = new Vector2(545f, 86f);
+        relocateRect.sizeDelta = new Vector2(170f, 48f);
+        _towerRelocateButtonText = _towerRelocateButton.GetComponentInChildren<Text>();
+        _towerRelocateButton.onClick.AddListener(BeginSelectedTowerRelocation);
+        _towerRelocateButton.gameObject.SetActive(false);
 
         if (CommanderSkillsEnabled) BuildTacticalSkillUi(canvasObject.transform);
 
@@ -3459,10 +3601,13 @@ public partial class RougeGameManager
         if (text != null) text.color = available ? Color.white : new Color(0.48f, 0.5f, 0.54f, 1f);
     }
 
-    private static string GetTowerBuildLabel(int hotkey, RougeTowerType type)
+    private static string GetTowerBuildLabel(int hotkey, RougeTowerType type,
+        RougeTowerPlaceEffect placeEffect = RougeTowerPlaceEffect.None)
     {
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{cost} 金币";
+        int actualCost = Mathf.Max(0, Mathf.RoundToInt(cost *
+            RougeTowerPlaceEffectRules.GetGoldCostMultiplier(placeEffect)));
+        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{actualCost} 金币";
     }
 
     private string GetBossScheduleStatus()
@@ -3495,10 +3640,10 @@ public partial class RougeGameManager
         if (!force && Time.unscaledTime < _nextTowerDefenseUiRefreshTime) return;
         _nextTowerDefenseUiRefreshTime = Time.unscaledTime + 0.1f;
         RefreshTowerEditHints();
+        float mainTowerHp = mainTower != null ? mainTower.CurrentHealth : 0f;
+        float mainTowerMaxHp = mainTower != null ? mainTower.maxHealth : 0f;
         if (_towerDefenseStatusText != null)
         {
-            float hp = mainTower != null ? mainTower.CurrentHealth : 0f;
-            float maxHp = mainTower != null ? mainTower.maxHealth : 0f;
             int activeSpawners = 0;
             for (int i = 0; i < _towerDefenseSpawners.Count; i++)
             {
@@ -3510,15 +3655,20 @@ public partial class RougeGameManager
             float enemySpeedBonus = (enemyBalance.EvaluateSpeedMultiplier(enemyLevel) *
                                      GetTowerDefenseEnemyMoveSpeedMultiplier() - 1f) * 100f;
             _towerDefenseStatusText.text =
-                $"主塔  {hp:0} / {maxHp:0}    金币 {_towerDefenseGold}    累计 {_towerDefenseGoldEarnedTotal}\n" +
-                $"击杀 {totalKills}    时间 {FormatGameTime(_survivalTime)}    {bossTime}\n" +
+                $"时间 {FormatGameTime(_survivalTime)}    当前金币 {_towerDefenseGold}    剩余敌人 {_towerDefenseAliveEstimate}\n" +
+                $"击杀 {totalKills}    累计金币 {_towerDefenseGoldEarnedTotal}    {bossTime}\n" +
                 $"敌人 Lv.{enemyLevel}    生命 +{enemyHealthBonus:0.#}%    移速 +{enemySpeedBonus:0.#}%\n" +
-                $"场上约 {_towerDefenseAliveEstimate} / {GetTowerDefenseAliveEnemyCap()}    单体生命 {GetTowerDefenseEnemyHealth():0.#}    速度 {GetTowerDefenseEnemySpeed():0.0}\n" +
-                $"击杀奖励  普通 +{enemyBalance.normalKillGold}    精英 +{enemyBalance.eliteKillGold}\n" +
                 $"出生点 {activeSpawners}/{_towerDefenseSpawners.Count}";
         }
         if (_mainTowerHealthFill != null)
             SetUiBarFill(_mainTowerHealthFill, mainTower != null ? mainTower.HealthNormalized : 0f);
+        if (_mainTowerHealthText != null)
+            _mainTowerHealthText.text = $"主塔  {mainTowerHp:0} / {mainTowerMaxHp:0}";
+        RougeTowerPlaceEffect buildPreviewEffect = !_towerRelocationActive &&
+            _towerBuildSelectionActive && _towerPreview != null &&
+            _towerPreview.gameObject.activeInHierarchy
+                ? _towerPreview.TowerPlaceEffect
+                : RougeTowerPlaceEffect.None;
         for (int typeIndex = 0; typeIndex < _towerBuildButtons.Length; typeIndex++)
         {
             RougeTowerType type = (RougeTowerType)typeIndex;
@@ -3529,7 +3679,7 @@ public partial class RougeGameManager
             if (_towerBuildButtonTexts[typeIndex] != null)
                 _towerBuildButtonTexts[typeIndex].text = disabled
                     ? $"{TowerDefenseVisuals.GetTowerName(type)}\n未解锁"
-                    : GetTowerBuildLabel(typeIndex + 1, type);
+                    : GetTowerBuildLabel(typeIndex + 1, type, buildPreviewEffect);
         }
         RefreshTowerDamageRanking();
         RefreshTowerPlaceEffectHud();
@@ -3537,12 +3687,14 @@ public partial class RougeGameManager
         if (_towerCancelBuildButton != null)
         {
             bool canCancel = _towerPlacementMode &&
-                (HasTacticalSkillSelection || _towerBuildSelectionActive || _selectedTower != null);
+                (HasTacticalSkillSelection || _towerBuildSelectionActive || _towerRelocationActive || _selectedTower != null);
             SetPurchaseButtonAvailability(_towerCancelBuildButton, _towerCancelBuildButtonText, canCancel);
+            if (_towerCancelBuildButtonText != null)
+                _towerCancelBuildButtonText.text = _towerRelocationActive ? "[Esc] 取消搬运" : "取消";
         }
         if (_towerSellButton != null)
         {
-            bool showSell = _towerPlacementMode && _selectedTower != null;
+            bool showSell = _towerPlacementMode && !_towerRelocationActive && _selectedTower != null;
             _towerSellButton.gameObject.SetActive(showSell);
             if (showSell)
             {
@@ -3554,7 +3706,8 @@ public partial class RougeGameManager
         }
         if (_towerTargetPriorityButton != null)
         {
-            bool showPriority = _towerPlacementMode && _selectedTower != null && _selectedTower.IsTargetedDamage;
+            bool showPriority = _towerPlacementMode && !_towerRelocationActive &&
+                _selectedTower != null && _selectedTower.IsTargetedDamage;
             _towerTargetPriorityButton.gameObject.SetActive(showPriority);
             if (showPriority && _towerTargetPriorityButtonText != null)
             {
@@ -3579,6 +3732,22 @@ public partial class RougeGameManager
                             ? "[中键] 索敌\n首领优先"
                             : "[中键] 索敌\n离终点最近";
                 }
+            }
+        }
+        if (_towerRelocateButton != null)
+        {
+            RougeDefenseTower relocationTower = _towerRelocationActive ? _relocatingTower : _selectedTower;
+            bool showRelocate = _towerPlacementMode && relocationTower != null && relocationTower.CanRelocate;
+            _towerRelocateButton.gameObject.SetActive(showRelocate);
+            if (showRelocate)
+            {
+                bool canBeginRelocation = !_towerRelocationActive &&
+                    _towerDefenseGold >= relocationTower.RelocationCost;
+                SetPurchaseButtonAvailability(_towerRelocateButton, _towerRelocateButtonText, canBeginRelocation);
+                if (_towerRelocateButtonText != null)
+                    _towerRelocateButtonText.text = _towerRelocationActive
+                        ? $"搬运中\n费用 {relocationTower.RelocationCost}"
+                        : $"[R] 搬运\n{relocationTower.RelocationCost} 金币";
             }
         }
         if (_bossPanel != null)
@@ -3613,6 +3782,8 @@ public partial class RougeGameManager
                 string rangeMode = _showAllTowerAttackRanges ? "全部" : "仅选中";
                 string selected = !string.IsNullOrEmpty(tactical)
                     ? tactical
+                    : _towerRelocationActive && _relocatingTower != null
+                    ? $"搬运中：{_relocatingTower.DisplayName}  |  左键选择其他绿色合法地图格  |  成功后扣 {_relocatingTower.RelocationCost} 金币  |  右键/Esc 取消"
                     : _selectedTower != null
                     ? $"已选：{_selectedTower.DisplayName}  Lv.{_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
                       $"{GetTowerUiStats(_selectedTower)}" +
@@ -3639,11 +3810,14 @@ public partial class RougeGameManager
         {
             bool hasSelection = _selectedTower != null;
             bool canUpgrade = hasSelection && _selectedTower.CanUpgrade;
-            bool upgradeAvailable = canUpgrade && _towerDefenseGold >= _selectedTower.UpgradeCost;
+            bool upgradeAvailable = !_towerRelocationActive && canUpgrade &&
+                _towerDefenseGold >= _selectedTower.UpgradeCost;
             SetPurchaseButtonAvailability(_towerUpgradeButton, _towerUpgradeButtonText, upgradeAvailable);
             if (_towerUpgradeButtonText != null)
             {
-                _towerUpgradeButtonText.text = !hasSelection
+                _towerUpgradeButtonText.text = _towerRelocationActive
+                    ? "搬运中\n不可升级"
+                    : !hasSelection
                     ? "选择塔楼\n进行升级"
                     : !canUpgrade
                         ? $"等级 {_selectedTower.Level}/{_selectedTower.MaxLevel}\n已满级"
@@ -3715,9 +3889,11 @@ public partial class RougeGameManager
         string center = map != null && map.WorldToCell(contextTower.transform.position, out Vector2Int cell)
             ? $"中心格  [{cell.x}, {cell.y}]"
             : "中心格  --";
-        string cost = contextTower == _towerPreview
-            ? $"建造花费  ${contextTower.PlacementCost}"
-            : $"下次升级  {(contextTower.CanUpgrade ? "$" + contextTower.UpgradeCost : "已满级")}";
+        string cost = _towerRelocationActive && _relocatingTower != null
+            ? $"搬运成功后扣  ${_relocatingTower.RelocationCost}"
+            : contextTower == _towerPreview
+                ? $"建造花费  ${contextTower.PlacementCost}"
+                : $"下次升级  {(contextTower.CanUpgrade ? "$" + contextTower.UpgradeCost : "已满级")}";
         _towerPlaceEffectText.text =
             "塔楼地图格效果\n" +
             RougeTowerPlaceEffectRules.GetDisplayName(effect) + "\n" +

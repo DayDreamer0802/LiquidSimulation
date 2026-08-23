@@ -193,6 +193,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public RougeTowerPlaceEffect TowerPlaceEffect => towerPlaceEffect;
     public bool AllowsSellRefund => RougeTowerPlaceEffectRules.AllowsSellRefund(towerPlaceEffect);
     public int KillGoldBonus => RougeTowerPlaceEffectRules.GetKillGoldBonus(towerPlaceEffect);
+    public bool CanRelocate => RougeTowerPlaceEffectRules.EnablesRelocation(towerPlaceEffect);
+    public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
     // Lv1 purchase is 1x. Upgrades to Lv2..Lv5 cost 2x, 4x, 8x and 16x.
     public int UpgradeCost => CanUpgrade ? ScaleGoldCost(purchaseCost * (1 << level)) : 0;
     public string DisplayName => TowerDefenseVisuals.GetTowerName(towerType);
@@ -245,6 +247,20 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (!existingTower) return;
         ApplyTowerPlaceInitialLevelBonus();
         investedGold = Mathf.Max(investedGold, PlacementCost);
+    }
+
+    internal void FinalizeRelocation(RougeTowerPlaceEffect destinationEffect)
+    {
+        towerPlaceEffect = destinationEffect;
+        SetBuffSource(RougeTowerBuffSource.TowerPlace,
+            RougeTowerPlaceEffectRules.GetBuffLevels(destinationEffect));
+        attackTimer = towerType == RougeTowerType.Laser ? 0f : EffectiveAttackInterval * 0.25f;
+        targetIndex = -1;
+        projectileBurstShotsRemaining = 0;
+        projectileBurstShotIndex = 0;
+        projectileBurstTimer = 0f;
+        projectileBurstPrimaryTargetIndex = -1;
+        HideLaserBeams();
     }
 
     internal void SetPreviewState(bool valid, bool[] cellValidity = null)
