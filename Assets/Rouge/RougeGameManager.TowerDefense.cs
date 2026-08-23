@@ -20,6 +20,29 @@ public partial class RougeGameManager
     private const float MachineGunFocusedSpreadMultiplier = 0.5f;
     private const float TowerProjectileBurstInterval = 0.25f;
     private const float FlameLandingOffsetRadiusMultiplier = 0.2f;
+    private const float PiercingLaserChargeStageDuration = 0.5f;
+    private const int PiercingLaserChargeStageCount = 3;
+    private const float PiercingLaserChargeDuration =
+        PiercingLaserChargeStageDuration * PiercingLaserChargeStageCount;
+    private const float PiercingLaserFireDuration = 0.75f;
+    private const float PiercingLaserDamageTime = 0.25f;
+    private const float PiercingLaserBeamRadius = 2.8f;
+    private static readonly int LaserAlphaId = Shader.PropertyToID("_Alpha");
+    private static readonly int LaserVisualPhaseId = Shader.PropertyToID("_VisualPhase");
+    private static readonly int LaserImpactFlashId = Shader.PropertyToID("_ImpactFlash");
+    private static readonly int LaserStartFadeId = Shader.PropertyToID("_StartFade");
+    private static readonly int LaserRootHemisphereId = Shader.PropertyToID("_RootHemisphere");
+    private static readonly int LaserCoreColorId = Shader.PropertyToID("_CoreColor");
+    private static readonly int LaserBeamColorId = Shader.PropertyToID("_BeamColor");
+    private static readonly int LaserGlowColorId = Shader.PropertyToID("_GlowColor");
+    private static readonly int LaserBaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly int LaserCoreRadiusId = Shader.PropertyToID("_CoreRadius");
+    private static readonly int LaserBeamRadiusId = Shader.PropertyToID("_BeamRadius");
+    private static readonly int LaserGlowSoftnessId = Shader.PropertyToID("_GlowSoftness");
+    private static readonly int LaserRibbonIntensityId = Shader.PropertyToID("_RibbonIntensity");
+    private static readonly int LaserNoiseStrengthId = Shader.PropertyToID("_NoiseStrength");
+    private static readonly int LaserFlowScaleId = Shader.PropertyToID("_FlowScale");
+    private static readonly int LaserFlowSpeedId = Shader.PropertyToID("_FlowSpeed");
     private static readonly string[] TowerPrefabResourcePaths =
     {
         "Prefab/tower/Ice",
@@ -105,6 +128,7 @@ public partial class RougeGameManager
     private GameObject _bossPanel;
     private readonly Image[] _bossThresholdMarkers = new Image[3];
     private readonly Text[] _bossThresholdLabels = new Text[3];
+    private static Font s_towerDefenseHudFont;
     private LineRenderer _bossInterferenceRing;
     private LineRenderer _bossShieldRing;
     private LineRenderer _bossHasteRing;
@@ -167,8 +191,31 @@ public partial class RougeGameManager
 
     private struct TowerBeamVisual
     {
+        public RougeDefenseTower SourceTower;
         public GameObject Visual;
-        public float Remaining;
+        public GameObject GlowVisual;
+        public GameObject RootCapVisual;
+        public GameObject RootGlowCapVisual;
+        public GameObject ChargeVisual;
+        public MeshRenderer Renderer;
+        public MeshRenderer GlowRenderer;
+        public MeshRenderer RootCapRenderer;
+        public MeshRenderer RootGlowCapRenderer;
+        public MeshRenderer ChargeRenderer;
+        public MaterialPropertyBlock Properties;
+        public MaterialPropertyBlock GlowProperties;
+        public MaterialPropertyBlock ChargeProperties;
+        public Vector3 Start;
+        public Vector3 Direction;
+        public float Length;
+        public float MaxWidth;
+        public float ChargeElapsed;
+        public float FireElapsed;
+        public float Damage;
+        public int KillGoldBonus;
+        public bool ChargeComplete;
+        public bool DamageApplied;
+        public bool FiringAnimationPlayed;
     }
 
     private sealed class ActiveOrbitSphereAttack
@@ -289,6 +336,7 @@ public partial class RougeGameManager
     {
         if (!_towerDefenseInitialized) return;
 
+        HideTowerDefenseSpawnWarnings();
         if (_debugUnitViewMode) ExitDebugUnitView();
 
         DisableBossTowerInterferenceMarkers();
@@ -333,7 +381,7 @@ public partial class RougeGameManager
         _towerFireZones.Clear();
         for (int i = 0; i < _towerBeamVisuals.Count; i++)
         {
-            if (_towerBeamVisuals[i].Visual != null) Destroy(_towerBeamVisuals[i].Visual);
+            DestroyTowerBeamVisual(_towerBeamVisuals[i]);
         }
         _towerBeamVisuals.Clear();
         for (int i = 0; i < _activeOrbitSphereAttacks.Count; i++)
@@ -479,7 +527,7 @@ public partial class RougeGameManager
         RougeDefenseTower gridPreview = visible && _towerPreview != null &&
             _towerPreview.gameObject.activeInHierarchy ? _towerPreview : null;
         RougeTowerDefenseMapLoader.Active?.SetTowerPlaceGridState(
-            visible, _defenseTowers, gridPreview, _previewCellValidity);
+            visible, _defenseTowers, gridPreview, _previewCellValidity, _previewValid);
     }
 
     private void ResolveMainTower()
@@ -609,7 +657,7 @@ public partial class RougeGameManager
             _bossReachedGoalCount[0] = 0;
             if (_mainTowerDamageCount.IsCreated) _mainTowerDamageCount[0] = 0;
             _towerDefenseAliveEstimate = Mathf.Max(0, _towerDefenseAliveEstimate - 1);
-            TriggerTowerDefenseGameOver("BOSS REACHED MAIN TOWER");
+            TriggerTowerDefenseGameOver("首领突破了主塔防线");
             return;
         }
         if (!_mainTowerDamageCount.IsCreated || mainTower == null) return;
@@ -1096,6 +1144,7 @@ public partial class RougeGameManager
             : 0;
         _towerDefenseGold += refund;
         _defenseTowers.Remove(tower);
+        StopPiercingLaserAttacksForTower(tower);
         SetTowerPlaceVisualsVisible(_towerPlacementMode);
         _towerTargetScheduledCount = 0;
         if (_selectedTower == tower) _selectedTower = null;
@@ -1406,7 +1455,7 @@ public partial class RougeGameManager
         if (endingFollow != null) endingFollow.EndCinematicFocus();
         if (_bossDeathShouldGrantVictory)
         {
-            TriggerTowerDefenseVictory("BOSS DESTROYED");
+            TriggerTowerDefenseVictory("首领已击破");
             return;
         }
         _bossDeathShouldGrantVictory = false;
@@ -1464,7 +1513,8 @@ public partial class RougeGameManager
         if (_towerDefenseGameOver) return;
         _towerDefenseVictory = true;
         _towerDefenseGameOver = true;
-        _towerDefenseGameOverReason = string.IsNullOrWhiteSpace(reason) ? "VICTORY CONDITION MET" : reason;
+        _towerDefenseGameOverReason = string.IsNullOrWhiteSpace(reason) ? "胜利条件已达成" : reason;
+        HideTowerDefenseSpawnWarnings();
         Time.timeScale = 0f;
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetCinematicShake(0f);
@@ -1484,19 +1534,19 @@ public partial class RougeGameManager
             {
                 case RougeLevelVictoryConditionType.KillEnemies:
                     if (totalKills >= Mathf.Max(1, condition.targetAmount))
-                        TriggerTowerDefenseVictory($"{Mathf.Max(1, condition.targetAmount)} ENEMIES DESTROYED");
+                        TriggerTowerDefenseVictory($"已消灭 {Mathf.Max(1, condition.targetAmount)} 个敌人");
                     break;
                 case RougeLevelVictoryConditionType.SurviveSeconds:
                     if (_survivalTime >= Mathf.Max(0.1f, condition.targetSeconds))
-                        TriggerTowerDefenseVictory($"SURVIVED {FormatGameTime(condition.targetSeconds)}");
+                        TriggerTowerDefenseVictory($"已坚守 {FormatGameTime(condition.targetSeconds)}");
                     break;
                 case RougeLevelVictoryConditionType.KillAllEnemies:
                     if (AreAllLevelEnemiesDefeated())
-                        TriggerTowerDefenseVictory("ALL ENEMIES DESTROYED");
+                        TriggerTowerDefenseVictory("所有敌人已消灭");
                     break;
                 case RougeLevelVictoryConditionType.EarnGold:
                     if (_towerDefenseGoldEarnedTotal >= Mathf.Max(1, condition.targetAmount))
-                        TriggerTowerDefenseVictory($"EARNED {Mathf.Max(1, condition.targetAmount)} GOLD");
+                        TriggerTowerDefenseVictory($"已累计获得 {Mathf.Max(1, condition.targetAmount)} 金币");
                     break;
                 // Boss kills are event-gated by the individual Boss encounter's Victory On Defeat flag.
                 case RougeLevelVictoryConditionType.KillBoss:
@@ -1640,6 +1690,7 @@ public partial class RougeGameManager
             }
             if (!point.isActiveAndEnabled) continue;
             point.timer -= dt;
+            point.UpdateSpawnWarning();
             if (point.timer > 0f) continue;
             int enemyLevel = GetTowerDefenseEnemyLevel();
             SpawnEnemyBatch(point, Mathf.Clamp(point.spawnCount, 1, 64));
@@ -1654,6 +1705,15 @@ public partial class RougeGameManager
         }
         if (exhaustedSpawnPoint && _towerDefenseSpawners.Count == 0)
             _towerDefenseAllSpawnersExhausted = true;
+    }
+
+    private void HideTowerDefenseSpawnWarnings()
+    {
+        for (int i = 0; i < _towerDefenseSpawners.Count; i++)
+        {
+            RougeEnemySpawnPoint point = _towerDefenseSpawners[i];
+            if (point != null) point.HideSpawnWarning();
+        }
     }
 
     private void SpawnEnemyBatch(RougeEnemySpawnPoint point, int count)
@@ -1996,6 +2056,12 @@ public partial class RougeGameManager
             if (tower.TowerType == RougeTowerType.OrbitSphere && IsOrbitSphereAttackActive(tower))
                 continue;
 
+            // The piercing laser owns its complete charge/fire sequence. Its normal attack
+            // cooldown begins only after the 1.5 second beam has fully collapsed.
+            if (tower.TowerType == RougeTowerType.PiercingLaser &&
+                IsPiercingLaserAttackActive(tower))
+                continue;
+
             tower.HideLaserBeams();
             tower.attackTimer -= dt * tower.AttackSpeedMultiplier;
             if (tower.attackTimer > 0f) continue;
@@ -2032,7 +2098,8 @@ public partial class RougeGameManager
 
             AimTowerAt(tower, targetPosition);
             FireTower(tower, i, targetPosition);
-            tower.attackTimer += tower.AttackInterval;
+            if (tower.TowerType != RougeTowerType.PiercingLaser)
+                tower.attackTimer += tower.AttackInterval;
         }
     }
 
@@ -2361,27 +2428,7 @@ public partial class RougeGameManager
                 break;
             case RougeTowerType.PiercingLaser:
             {
-                tower.PlayAttackAnimation(() =>
-                {
-                    if (tower == null) return;
-                    Vector3 start = GetTowerMuzzlePosition(tower);
-                    Vector2 direction2 = new Vector2(target.x - start.x, target.z - start.z).normalized;
-                    float beamLength = tower.AttackRange * 2f;
-                    const float beamWidth = 5f;
-                    Vector3 end = start + new Vector3(direction2.x, 0f, direction2.y) * beamLength;
-                    TryAddSkillArea(new RougeSkillArea
-                    {
-                        Type = 15,
-                        Position = new float2(start.x, start.z),
-                        Direction = new float2(direction2.x, direction2.y),
-                        Length = beamLength,
-                        Radius = beamWidth,
-                        Damage = tower.Damage,
-                        SourceTowerTypePlusOne = (int)tower.TowerType + 1,
-                        SourceTowerKillGoldBonus = tower.KillGoldBonus
-                    });
-                    SpawnTowerBeam(start, end, beamWidth, 0.2f);
-                });
+                StartPiercingLaserAttack(tower, target);
                 break;
             }
             case RougeTowerType.OrbitSphere:
@@ -2765,23 +2812,98 @@ public partial class RougeGameManager
         }
     }
 
-    private void SpawnTowerBeam(Vector3 start, Vector3 end, float width, float duration)
+    private void StartPiercingLaserAttack(RougeDefenseTower tower, Vector3 target)
     {
-        Vector3 direction = end - start;
+        if (tower == null || IsPiercingLaserAttackActive(tower)) return;
+
+        Vector3 start = GetTowerMuzzlePosition(tower);
+        Vector3 direction = target - start;
         direction.y = 0f;
-        float length = direction.magnitude;
-        if (length <= 0.01f) return;
-        direction /= length;
-        GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        visual.name = "Piercing Tower Laser";
+        if (direction.sqrMagnitude <= 0.0001f) return;
+        direction.Normalize();
+
+        TowerBeamVisual beam = new TowerBeamVisual
+        {
+            SourceTower = tower,
+            Start = start,
+            Direction = direction,
+            Length = tower.AttackRange * 2f,
+            MaxWidth = PiercingLaserBeamRadius,
+            Damage = tower.Damage,
+            KillGoldBonus = tower.KillGoldBonus,
+            Properties = new MaterialPropertyBlock(),
+            GlowProperties = new MaterialPropertyBlock(),
+            ChargeProperties = new MaterialPropertyBlock()
+        };
+
+        beam.Visual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
+            "Piercing Laser Core", out beam.Renderer);
+        beam.GlowVisual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
+            "Piercing Laser Outer Glow", out beam.GlowRenderer);
+        beam.RootCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
+            "Piercing Laser Hemispherical Root", out beam.RootCapRenderer);
+        beam.RootGlowCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
+            "Piercing Laser Hemispherical Root Glow", out beam.RootGlowCapRenderer);
+        beam.ChargeVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
+            "Piercing Laser Charge", out beam.ChargeRenderer);
+
+        ConfigurePiercingLaserStyle(beam.Properties,
+            new Color(1.65f, 1.58f, 2.05f, 1f),
+            new Color(0.95f, 0.035f, 2.2f, 1f),
+            new Color(0.07f, 0.34f, 1.8f, 1f), 0.045f, 0.44f, 0.26f, 1.75f);
+        ConfigurePiercingLaserStyle(beam.GlowProperties,
+            new Color(0.32f, 0.035f, 0.82f, 1f),
+            new Color(0.17f, 0.018f, 1.3f, 1f),
+            new Color(0.025f, 0.24f, 1.85f, 1f), 0.02f, 0.22f, 0.72f, 0.65f);
+        ConfigurePiercingLaserStyle(beam.ChargeProperties,
+            new Color(2.2f, 2.0f, 2.55f, 1f),
+            new Color(1.25f, 0.045f, 2.45f, 1f),
+            new Color(0.055f, 0.42f, 2.1f, 1f), 0.10f, 0.52f, 0.40f, 2.0f);
+
+        // The cylinder begins almost fully opaque so it joins cleanly to the separate
+        // hemispherical root cap. Other users keep the material's original soft fade.
+        beam.Properties.SetFloat(LaserStartFadeId, 0.006f);
+        beam.GlowProperties.SetFloat(LaserStartFadeId, 0.008f);
+
+        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(false);
+        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(false);
+        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(false);
+        UpdatePiercingLaserChargeVisual(ref beam, 0f);
+        _towerBeamVisuals.Add(beam);
+    }
+
+    private GameObject CreatePiercingLaserPrimitive(PrimitiveType primitiveType, string objectName,
+        out MeshRenderer renderer)
+    {
+        GameObject visual = GameObject.CreatePrimitive(primitiveType);
+        visual.name = objectName;
         Collider collider = visual.GetComponent<Collider>();
         if (collider != null) Destroy(collider);
-        MeshRenderer renderer = visual.GetComponent<MeshRenderer>();
-        if (renderer != null && _laserMat != null) renderer.sharedMaterial = _laserMat;
-        visual.transform.position = start + direction * (length * 0.5f);
-        visual.transform.rotation = Quaternion.LookRotation(direction, Vector3.up) * Quaternion.Euler(90f, 0f, 0f);
-        visual.transform.localScale = new Vector3(width, length * 0.5f, width * 0.4f);
-        _towerBeamVisuals.Add(new TowerBeamVisual { Visual = visual, Remaining = duration });
+        renderer = visual.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            if (_laserMat != null) renderer.sharedMaterial = _laserMat;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+        return visual;
+    }
+
+    private static void ConfigurePiercingLaserStyle(MaterialPropertyBlock properties,
+        Color coreColor, Color beamColor, Color glowColor, float coreRadius,
+        float beamRadius, float glowSoftness, float ribbonIntensity)
+    {
+        properties.SetColor(LaserCoreColorId, coreColor);
+        properties.SetColor(LaserBeamColorId, beamColor);
+        properties.SetColor(LaserGlowColorId, glowColor);
+        properties.SetColor(LaserBaseColorId, beamColor);
+        properties.SetFloat(LaserCoreRadiusId, coreRadius);
+        properties.SetFloat(LaserBeamRadiusId, beamRadius);
+        properties.SetFloat(LaserGlowSoftnessId, glowSoftness);
+        properties.SetFloat(LaserRibbonIntensityId, ribbonIntensity);
+        properties.SetFloat(LaserNoiseStrengthId, 0.36f);
+        properties.SetFloat(LaserFlowScaleId, 20f);
+        properties.SetFloat(LaserFlowSpeedId, -24f);
     }
 
     private void UpdateTowerBeamVisuals(float dt)
@@ -2789,17 +2911,225 @@ public partial class RougeGameManager
         for (int i = _towerBeamVisuals.Count - 1; i >= 0; i--)
         {
             TowerBeamVisual beam = _towerBeamVisuals[i];
-            beam.Remaining -= dt;
-            if (beam.Remaining <= 0f || beam.Visual == null)
+            if (beam.SourceTower == null || beam.Visual == null)
             {
-                if (beam.Visual != null) Destroy(beam.Visual);
+                DestroyTowerBeamVisual(beam);
                 _towerBeamVisuals.RemoveAt(i);
+                continue;
             }
-            else
+
+            beam.Start = GetTowerMuzzlePosition(beam.SourceTower);
+            float safeDt = Mathf.Max(0f, dt);
+            bool wasChargeComplete = beam.ChargeComplete;
+            if (!beam.ChargeComplete)
             {
-                _towerBeamVisuals[i] = beam;
+                // Charge time is expressed in base seconds. Attack speed advances only
+                // this clock, so all three 0.5 second charge pulses react to buffs/debuffs.
+                beam.ChargeElapsed += safeDt *
+                    Mathf.Max(0.01f, beam.SourceTower.AttackSpeedMultiplier);
+                beam.ChargeComplete = beam.ChargeElapsed >= PiercingLaserChargeDuration;
+                beam.ChargeElapsed = Mathf.Min(beam.ChargeElapsed, PiercingLaserChargeDuration);
+                UpdatePiercingLaserChargeVisual(ref beam,
+                    Mathf.Clamp01(beam.ChargeElapsed / PiercingLaserChargeDuration));
             }
+
+            if (beam.ChargeComplete)
+            {
+                // Firing deliberately uses unscaled combat time. Attack speed must not
+                // change the 0.25 second impact peak or the 0.75 second beam lifetime.
+                if (wasChargeComplete) beam.FireElapsed += safeDt;
+                UpdatePiercingLaserFireVisual(ref beam, beam.FireElapsed);
+            }
+
+            if (beam.ChargeComplete && beam.FireElapsed >= PiercingLaserFireDuration)
+            {
+                if (beam.SourceTower != null)
+                {
+                    // attackTimer is expressed in unscaled attack-interval units and is reduced
+                    // by AttackSpeedMultiplier in UpdateDefenseTowers.
+                    beam.SourceTower.attackTimer = beam.SourceTower.AttackInterval;
+                    beam.SourceTower.targetIndex = -1;
+                }
+                DestroyTowerBeamVisual(beam);
+                _towerBeamVisuals.RemoveAt(i);
+                continue;
+            }
+
+            _towerBeamVisuals[i] = beam;
         }
+    }
+
+    private void UpdatePiercingLaserChargeVisual(ref TowerBeamVisual beam, float progress)
+    {
+        // Three distinct scale pulses: each occupies 0.5 base seconds and grows then
+        // contracts once. Later stages retain more energy so the buildup still escalates.
+        float stagePosition = Mathf.Min(progress * PiercingLaserChargeStageCount,
+            PiercingLaserChargeStageCount - 0.0001f);
+        int stageIndex = Mathf.Clamp(Mathf.FloorToInt(stagePosition), 0,
+            PiercingLaserChargeStageCount - 1);
+        float stageProgress = stagePosition - stageIndex;
+        float rawPulse = Mathf.Sin(stageProgress * Mathf.PI);
+        float stagePulse = rawPulse * rawPulse * (3f - 2f * rawPulse);
+        float buildup = (stageIndex + stageProgress) / PiercingLaserChargeStageCount;
+        float stageStrength = (stageIndex + 1f) / PiercingLaserChargeStageCount;
+
+        float guideWidth = beam.MaxWidth * Mathf.Lerp(0.016f, 0.045f, buildup) *
+            Mathf.Lerp(0.78f, 1.28f, stagePulse);
+        SetPiercingLaserTransform(beam.Visual, beam.Start, beam.Direction,
+            beam.Length, guideWidth, 0.62f);
+        if (beam.Visual != null) beam.Visual.SetActive(true);
+        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(false);
+        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(false);
+        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(false);
+
+        float chargeDiameter = beam.MaxWidth * Mathf.Lerp(0.055f, 0.19f, stageStrength) *
+            Mathf.Lerp(0.72f, 1.65f, stagePulse);
+        if (beam.ChargeVisual != null)
+        {
+            beam.ChargeVisual.SetActive(true);
+            beam.ChargeVisual.transform.position = beam.Start + beam.Direction * 0.24f;
+            beam.ChargeVisual.transform.localScale = Vector3.one * chargeDiameter;
+        }
+
+        SetPiercingLaserRuntimeProperties(beam.Renderer, beam.Properties,
+            Mathf.Lerp(0.14f, 0.46f, buildup) * Mathf.Lerp(0.82f, 1.2f, stagePulse),
+            progress, stagePulse * 0.12f);
+        SetPiercingLaserRuntimeProperties(beam.ChargeRenderer, beam.ChargeProperties,
+            Mathf.Lerp(0.34f, 1.3f, buildup) * Mathf.Lerp(0.76f, 1.28f, stagePulse),
+            progress, stagePulse * Mathf.Lerp(0.22f, 0.58f, stageStrength));
+    }
+
+    private void UpdatePiercingLaserFireVisual(ref TowerBeamVisual beam, float fireTime)
+    {
+        if (!beam.FiringAnimationPlayed)
+        {
+            beam.FiringAnimationPlayed = true;
+            if (beam.SourceTower != null) beam.SourceTower.PlayAttackAnimation(null);
+        }
+
+        if (beam.ChargeVisual != null) beam.ChargeVisual.SetActive(false);
+        if (beam.Visual != null) beam.Visual.SetActive(true);
+        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(true);
+        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(true);
+        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(true);
+
+        float normalized = Mathf.Clamp01(fireTime / PiercingLaserFireDuration);
+        float envelope;
+        if (fireTime <= PiercingLaserDamageTime)
+        {
+            float grow = Mathf.Clamp01(fireTime / PiercingLaserDamageTime);
+            envelope = Mathf.SmoothStep(0f, 1f, grow);
+        }
+        else
+        {
+            float fade = Mathf.Clamp01((fireTime - PiercingLaserDamageTime) /
+                Mathf.Max(0.01f, PiercingLaserFireDuration - PiercingLaserDamageTime));
+            envelope = 1f - Mathf.SmoothStep(0f, 1f, fade);
+        }
+        float visibleLength = beam.Length * Mathf.SmoothStep(0.03f, 1f,
+            Mathf.Clamp01(fireTime / 0.08f));
+        float width = beam.MaxWidth * Mathf.Lerp(0.065f, 1f, envelope);
+        SetPiercingLaserTransform(beam.Visual, beam.Start, beam.Direction,
+            visibleLength, width, 0.58f);
+        SetPiercingLaserTransform(beam.GlowVisual, beam.Start, beam.Direction,
+            visibleLength, width * 1.58f, 0.84f);
+        SetPiercingLaserRootCapTransform(beam.RootCapVisual, beam.Start,
+            beam.Direction, width * 0.92f, 0.58f);
+        SetPiercingLaserRootCapTransform(beam.RootGlowCapVisual, beam.Start,
+            beam.Direction, width * 1.58f * 0.92f, 0.84f);
+
+        float impactFlash = Mathf.Pow(1f - Mathf.Clamp01(
+            Mathf.Abs(fireTime - PiercingLaserDamageTime) / 0.1f), 2f);
+        SetPiercingLaserRuntimeProperties(beam.Renderer, beam.Properties,
+            Mathf.Lerp(0.42f, 1.35f, envelope), normalized, impactFlash);
+        SetPiercingLaserRuntimeProperties(beam.GlowRenderer, beam.GlowProperties,
+            Mathf.Lerp(0.18f, 0.66f, envelope), normalized, impactFlash * 0.62f);
+        SetPiercingLaserRuntimeProperties(beam.RootCapRenderer, beam.Properties,
+            Mathf.Lerp(0.42f, 1.35f, envelope), normalized, impactFlash, true);
+        SetPiercingLaserRuntimeProperties(beam.RootGlowCapRenderer, beam.GlowProperties,
+            Mathf.Lerp(0.18f, 0.66f, envelope), normalized, impactFlash * 0.62f, true);
+
+        if (!beam.DamageApplied && fireTime >= PiercingLaserDamageTime)
+        {
+            beam.DamageApplied = TryAddSkillArea(new RougeSkillArea
+            {
+                Type = 15,
+                Position = new float2(beam.Start.x, beam.Start.z),
+                Direction = new float2(beam.Direction.x, beam.Direction.z),
+                Length = beam.Length,
+                Radius = PiercingLaserBeamRadius,
+                Damage = beam.Damage,
+                SourceTowerTypePlusOne = (int)RougeTowerType.PiercingLaser + 1,
+                SourceTowerKillGoldBonus = beam.KillGoldBonus
+            });
+        }
+    }
+
+    private static void SetPiercingLaserRuntimeProperties(MeshRenderer renderer,
+        MaterialPropertyBlock properties, float alpha, float phase, float impactFlash,
+        bool rootHemisphere = false)
+    {
+        if (renderer == null || properties == null) return;
+        properties.SetFloat(LaserAlphaId, alpha);
+        properties.SetFloat(LaserVisualPhaseId, phase);
+        properties.SetFloat(LaserImpactFlashId, impactFlash);
+        properties.SetFloat(LaserRootHemisphereId, rootHemisphere ? 1f : 0f);
+        renderer.SetPropertyBlock(properties);
+    }
+
+    private static void SetPiercingLaserTransform(GameObject visual, Vector3 start,
+        Vector3 direction, float length, float width, float depthScale)
+    {
+        if (visual == null) return;
+        float safeLength = Mathf.Max(0.01f, length);
+        float safeWidth = Mathf.Max(0.01f, width);
+        visual.transform.position = start + direction * (safeLength * 0.5f);
+        visual.transform.rotation = Quaternion.LookRotation(direction, Vector3.up) *
+            Quaternion.Euler(90f, 0f, 0f);
+        visual.transform.localScale = new Vector3(safeWidth, safeLength * 0.5f,
+            safeWidth * depthScale);
+    }
+
+    private static void SetPiercingLaserRootCapTransform(GameObject visual, Vector3 start,
+        Vector3 direction, float diameter, float depthScale)
+    {
+        if (visual == null) return;
+        float safeDiameter = Mathf.Max(0.01f, diameter);
+        visual.transform.position = start;
+        visual.transform.rotation = Quaternion.LookRotation(direction, Vector3.up) *
+            Quaternion.Euler(90f, 0f, 0f);
+        // Local Y follows the beam axis. Clipping Y > 0 leaves the rear half of this
+        // ellipsoid visible as the rounded root while the cylinder begins at the seam.
+        visual.transform.localScale = new Vector3(safeDiameter, safeDiameter,
+            safeDiameter * depthScale);
+    }
+
+    private bool IsPiercingLaserAttackActive(RougeDefenseTower tower)
+    {
+        for (int i = 0; i < _towerBeamVisuals.Count; i++)
+        {
+            if (_towerBeamVisuals[i].SourceTower == tower) return true;
+        }
+        return false;
+    }
+
+    private void StopPiercingLaserAttacksForTower(RougeDefenseTower tower)
+    {
+        for (int i = _towerBeamVisuals.Count - 1; i >= 0; i--)
+        {
+            if (_towerBeamVisuals[i].SourceTower != tower) continue;
+            DestroyTowerBeamVisual(_towerBeamVisuals[i]);
+            _towerBeamVisuals.RemoveAt(i);
+        }
+    }
+
+    private static void DestroyTowerBeamVisual(TowerBeamVisual beam)
+    {
+        if (beam.Visual != null) Destroy(beam.Visual);
+        if (beam.GlowVisual != null) Destroy(beam.GlowVisual);
+        if (beam.RootCapVisual != null) Destroy(beam.RootCapVisual);
+        if (beam.RootGlowCapVisual != null) Destroy(beam.RootGlowCapVisual);
+        if (beam.ChargeVisual != null) Destroy(beam.ChargeVisual);
     }
 
     private void RenderTowerDefensePausedFrame()
@@ -2824,6 +3154,7 @@ public partial class RougeGameManager
         if (_debugUnitViewMode) ExitDebugUnitView();
         _towerDefenseGameOver = true;
         _towerDefenseGameOverReason = reason;
+        HideTowerDefenseSpawnWarnings();
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         SetTowerPlaceVisualsVisible(false);
@@ -2852,18 +3183,31 @@ public partial class RougeGameManager
         statusRect.anchorMin = new Vector2(1f, 1f);
         statusRect.anchorMax = new Vector2(1f, 1f);
         statusRect.pivot = new Vector2(1f, 1f);
-        statusRect.anchoredPosition = new Vector2(-24f, -24f);
-        statusRect.sizeDelta = new Vector2(400f, 250f);
+        statusRect.anchoredPosition = new Vector2(-20f, -20f);
+        statusRect.sizeDelta = new Vector2(456f, 228f);
+        AddHudPanelChrome(statusPanel, new Color(0.08f, 0.72f, 0.94f, 1f));
 
-        _towerDefenseStatusText = CreateUiText("Status", statusPanel.transform, 22, TextAnchor.UpperLeft);
-        StretchRect(_towerDefenseStatusText.rectTransform, 20f, 16f, 20f, 58f);
+        Text statusTitle = CreateUiText("Status Title", statusPanel.transform, 21, TextAnchor.MiddleLeft);
+        RectTransform statusTitleRect = statusTitle.rectTransform;
+        statusTitleRect.anchorMin = new Vector2(0f, 1f);
+        statusTitleRect.anchorMax = new Vector2(1f, 1f);
+        statusTitleRect.pivot = new Vector2(0.5f, 1f);
+        statusTitleRect.anchoredPosition = new Vector2(0f, -7f);
+        statusTitleRect.sizeDelta = new Vector2(-40f, 30f);
+        statusTitle.text = "基地状态";
+        statusTitle.fontStyle = FontStyle.Bold;
+        statusTitle.color = new Color(0.72f, 0.92f, 1f, 1f);
+
+        _towerDefenseStatusText = CreateUiText("Status", statusPanel.transform, 17, TextAnchor.UpperLeft);
+        _towerDefenseStatusText.lineSpacing = 1.05f;
+        StretchRect(_towerDefenseStatusText.rectTransform, 20f, 42f, 20f, 44f);
         Image hpBackground = CreateUiImage("HP Background", statusPanel.transform, new Color(0.08f, 0.1f, 0.14f, 1f));
         RectTransform hpRect = hpBackground.rectTransform;
         hpRect.anchorMin = new Vector2(0f, 0f);
         hpRect.anchorMax = new Vector2(1f, 0f);
         hpRect.pivot = new Vector2(0.5f, 0f);
-        hpRect.anchoredPosition = new Vector2(0f, 24f);
-        hpRect.sizeDelta = new Vector2(-44f, 28f);
+        hpRect.anchoredPosition = new Vector2(0f, 15f);
+        hpRect.sizeDelta = new Vector2(-40f, 20f);
         _mainTowerHealthFill = CreateUiImage("HP Fill", hpBackground.transform, new Color(0.12f, 0.78f, 1f, 1f));
         StretchRect(_mainTowerHealthFill.rectTransform, 3f, 3f, 3f, 3f);
         _mainTowerHealthFill.type = Image.Type.Simple;
@@ -2875,10 +3219,22 @@ public partial class RougeGameManager
         damageRect.anchorMin = new Vector2(0f, 1f);
         damageRect.anchorMax = new Vector2(0f, 1f);
         damageRect.pivot = new Vector2(0f, 1f);
-        damageRect.anchoredPosition = new Vector2(24f, -24f);
-        damageRect.sizeDelta = new Vector2(310f, 244f);
-        _towerDamageRankingText = CreateUiText("Damage Ranking", damagePanel.transform, 19, TextAnchor.UpperLeft);
-        StretchRect(_towerDamageRankingText.rectTransform, 18f, 14f, 18f, 14f);
+        damageRect.anchoredPosition = new Vector2(20f, -20f);
+        damageRect.sizeDelta = new Vector2(306f, 236f);
+        AddHudPanelChrome(damagePanel, new Color(1f, 0.57f, 0.16f, 1f));
+        Text damageTitle = CreateUiText("Damage Ranking Title", damagePanel.transform, 21, TextAnchor.MiddleLeft);
+        RectTransform damageTitleRect = damageTitle.rectTransform;
+        damageTitleRect.anchorMin = new Vector2(0f, 1f);
+        damageTitleRect.anchorMax = new Vector2(1f, 1f);
+        damageTitleRect.pivot = new Vector2(0.5f, 1f);
+        damageTitleRect.anchoredPosition = new Vector2(0f, -7f);
+        damageTitleRect.sizeDelta = new Vector2(-36f, 30f);
+        damageTitle.text = "塔楼输出";
+        damageTitle.fontStyle = FontStyle.Bold;
+        damageTitle.color = new Color(1f, 0.78f, 0.48f, 1f);
+        _towerDamageRankingText = CreateUiText("Damage Ranking", damagePanel.transform, 17, TextAnchor.UpperLeft);
+        _towerDamageRankingText.lineSpacing = 1.04f;
+        StretchRect(_towerDamageRankingText.rectTransform, 18f, 43f, 18f, 12f);
 
         _towerPlaceEffectPanel = CreateUiPanel("Tower Grid Effect", canvasObject.transform,
             new Color(0.025f, 0.04f, 0.07f, 0.92f));
@@ -2886,10 +3242,11 @@ public partial class RougeGameManager
         effectRect.anchorMin = new Vector2(0f, 1f);
         effectRect.anchorMax = new Vector2(0f, 1f);
         effectRect.pivot = new Vector2(0f, 1f);
-        effectRect.anchoredPosition = new Vector2(24f, -280f);
-        effectRect.sizeDelta = new Vector2(460f, 150f);
+        effectRect.anchoredPosition = new Vector2(20f, -268f);
+        effectRect.sizeDelta = new Vector2(460f, 142f);
+        AddHudPanelChrome(_towerPlaceEffectPanel, new Color(0.22f, 0.92f, 0.72f, 1f));
         _towerPlaceEffectText = CreateUiText("Grid Effect", _towerPlaceEffectPanel.transform,
-            19, TextAnchor.UpperLeft);
+            17, TextAnchor.UpperLeft);
         StretchRect(_towerPlaceEffectText.rectTransform, 18f, 14f, 18f, 14f);
         _towerPlaceEffectPanel.SetActive(false);
 
@@ -2898,74 +3255,78 @@ public partial class RougeGameManager
         buildRect.anchorMin = new Vector2(0.5f, 0f);
         buildRect.anchorMax = new Vector2(0.5f, 0f);
         buildRect.pivot = new Vector2(0.5f, 0f);
-        buildRect.anchoredPosition = new Vector2(0f, 24f);
-        buildRect.sizeDelta = new Vector2(1500f, 252f);
+        buildRect.anchoredPosition = new Vector2(0f, 14f);
+        buildRect.sizeDelta = new Vector2(1280f, 188f);
+        AddHudPanelChrome(buildPanel, new Color(0.08f, 0.68f, 0.9f, 1f));
 
-        _towerDefenseModeText = CreateUiText("Mode", buildPanel.transform, 20, TextAnchor.UpperCenter);
+        _towerDefenseModeText = CreateUiText("Mode", buildPanel.transform, 18, TextAnchor.UpperCenter);
         RectTransform modeRect = _towerDefenseModeText.rectTransform;
         modeRect.anchorMin = new Vector2(0f, 1f);
         modeRect.anchorMax = new Vector2(1f, 1f);
         modeRect.pivot = new Vector2(0.5f, 1f);
-        modeRect.anchoredPosition = new Vector2(0f, -8f);
-        modeRect.sizeDelta = new Vector2(-28f, 58f);
+        modeRect.anchoredPosition = new Vector2(0f, -6f);
+        modeRect.sizeDelta = new Vector2(-28f, 46f);
+        _towerDefenseModeText.resizeTextForBestFit = true;
+        _towerDefenseModeText.resizeTextMinSize = 13;
+        _towerDefenseModeText.resizeTextMaxSize = 18;
 
         Text buildGroupTitle = CreateUiText("Build Group Title", buildPanel.transform, 15, TextAnchor.MiddleCenter);
-        SetBottomRect(buildGroupTitle.rectTransform, -315f, 164f, 900f, 20f);
-        buildGroupTitle.text = "BUILD TOWERS";
+        SetBottomRect(buildGroupTitle.rectTransform, -270f, 115f, 720f, 18f);
+        buildGroupTitle.text = "建造塔楼";
         buildGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
         Text actionGroupTitle = CreateUiText("Tower Action Group Title", buildPanel.transform, 15, TextAnchor.MiddleCenter);
-        SetBottomRect(actionGroupTitle.rectTransform, 390f, 164f, 420f, 20f);
-        actionGroupTitle.text = "SELECTED TOWER";
+        SetBottomRect(actionGroupTitle.rectTransform, 315f, 115f, 430f, 18f);
+        actionGroupTitle.text = "塔楼操作";
         actionGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
         Image groupSeparator = CreateUiImage("Build Group Separator", buildPanel.transform,
             new Color(0.22f, 0.42f, 0.58f, 0.8f));
-        SetBottomRect(groupSeparator.rectTransform, 150f, 16f, 2f, 144f);
+        SetBottomRect(groupSeparator.rectTransform, 88f, 8f, 2f, 123f);
 
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), -630f, 92f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), -420f, 92f, RougeTowerType.MachineGun, new Color(0.72f, 0.62f, 0.08f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), -210f, 92f, RougeTowerType.Cannon, new Color(0.78f, 0.2f, 0.06f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), 0f, 92f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.46f, 0.9f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -630f, 18f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -420f, 18f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -210f, 18f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), 0f, 18f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), -535f, 86f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), -360f, 86f, RougeTowerType.MachineGun, new Color(0.72f, 0.62f, 0.08f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), -185f, 86f, RougeTowerType.Cannon, new Color(0.78f, 0.2f, 0.06f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), -10f, 86f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.46f, 0.9f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -535f, 32f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -360f, 32f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -185f, 32f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), -10f, 32f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
 
-        _towerCancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "X\nCANCEL",
+        _towerCancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "取消",
             new Color(0.55f, 0.08f, 0.1f, 1f));
         _towerCancelBuildButtonText = _towerCancelBuildButton.GetComponentInChildren<Text>();
         RectTransform cancelRect = _towerCancelBuildButton.GetComponent<RectTransform>();
         cancelRect.anchorMin = new Vector2(0.5f, 0f);
         cancelRect.anchorMax = new Vector2(0.5f, 0f);
-        cancelRect.anchoredPosition = new Vector2(500f, 18f);
-        cancelRect.sizeDelta = new Vector2(200f, 68f);
+        cancelRect.anchoredPosition = new Vector2(420f, 32f);
+        cancelRect.sizeDelta = new Vector2(190f, 48f);
         _towerCancelBuildButton.onClick.AddListener(CancelTowerBuildSelection);
 
-        _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] UPGRADE", new Color(0.15f, 0.58f, 0.28f, 1f));
+        _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] 升级", new Color(0.15f, 0.58f, 0.28f, 1f));
         RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
         upgradeRect.anchorMin = new Vector2(0.5f, 0f);
         upgradeRect.anchorMax = new Vector2(0.5f, 0f);
-        upgradeRect.anchoredPosition = new Vector2(280f, 18f);
-        upgradeRect.sizeDelta = new Vector2(200f, 68f);
+        upgradeRect.anchoredPosition = new Vector2(215f, 32f);
+        upgradeRect.sizeDelta = new Vector2(190f, 48f);
         _towerUpgradeButton.onClick.AddListener(TryUpgradeSelectedTower);
         _towerUpgradeButtonText = _towerUpgradeButton.GetComponentInChildren<Text>();
 
-        _towerSellButton = CreateUiButton("Sell Tower", buildPanel.transform, "SELL", new Color(0.72f, 0.08f, 0.1f, 0.98f));
+        _towerSellButton = CreateUiButton("Sell Tower", buildPanel.transform, "出售", new Color(0.72f, 0.08f, 0.1f, 0.98f));
         RectTransform sellRect = _towerSellButton.GetComponent<RectTransform>();
         sellRect.anchorMin = new Vector2(0.5f, 0f);
         sellRect.anchorMax = new Vector2(0.5f, 0f);
-        sellRect.anchoredPosition = new Vector2(280f, 92f);
-        sellRect.sizeDelta = new Vector2(200f, 68f);
+        sellRect.anchoredPosition = new Vector2(215f, 86f);
+        sellRect.sizeDelta = new Vector2(190f, 48f);
         _towerSellButtonText = _towerSellButton.GetComponentInChildren<Text>();
         _towerSellButton.onClick.AddListener(SellSelectedTower);
         _towerSellButton.gameObject.SetActive(false);
 
-        _towerTargetPriorityButton = CreateUiButton("Target Priority", buildPanel.transform, "TARGET MODE\nNEAREST GOAL",
+        _towerTargetPriorityButton = CreateUiButton("Target Priority", buildPanel.transform, "索敌模式\n离终点最近",
             new Color(0.12f, 0.38f, 0.68f, 1f));
         RectTransform priorityRect = _towerTargetPriorityButton.GetComponent<RectTransform>();
         priorityRect.anchorMin = new Vector2(0.5f, 0f);
         priorityRect.anchorMax = new Vector2(0.5f, 0f);
-        priorityRect.anchoredPosition = new Vector2(500f, 92f);
-        priorityRect.sizeDelta = new Vector2(200f, 68f);
+        priorityRect.anchoredPosition = new Vector2(420f, 86f);
+        priorityRect.sizeDelta = new Vector2(190f, 48f);
         _towerTargetPriorityButtonText = _towerTargetPriorityButton.GetComponentInChildren<Text>();
         _towerTargetPriorityButton.onClick.AddListener(ToggleSelectedTowerTargetPriority);
         _towerTargetPriorityButton.gameObject.SetActive(false);
@@ -2979,6 +3340,7 @@ public partial class RougeGameManager
         bossRect.pivot = new Vector2(0.5f, 1f);
         bossRect.anchoredPosition = new Vector2(0f, -24f);
         bossRect.sizeDelta = new Vector2(680f, 112f);
+        AddHudPanelChrome(_bossPanel, new Color(0.92f, 0.12f, 0.78f, 1f));
         _bossStatusText = CreateUiText("Boss Status", _bossPanel.transform, 23, TextAnchor.UpperCenter);
         RectTransform bossTextRect = _bossStatusText.rectTransform;
         bossTextRect.anchorMin = new Vector2(0f, 1f);
@@ -3008,6 +3370,7 @@ public partial class RougeGameManager
         gameOverRect.anchorMax = new Vector2(0.5f, 0.5f);
         gameOverRect.pivot = new Vector2(0.5f, 0.5f);
         gameOverRect.sizeDelta = new Vector2(720f, 300f);
+        AddHudPanelChrome(gameOverPanel, new Color(0.95f, 0.18f, 0.12f, 1f));
         _towerDefenseGameOverText = CreateUiText("Game Over Text", gameOverPanel.transform, 42, TextAnchor.MiddleCenter);
         StretchRect(_towerDefenseGameOverText.rectTransform, 20f, 20f, 20f, 20f);
         gameOverPanel.SetActive(false);
@@ -3020,9 +3383,9 @@ public partial class RougeGameManager
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(195f, 68f);
+        rect.sizeDelta = new Vector2(168f, 48f);
         Text labelText = button.GetComponentInChildren<Text>();
-        if (labelText != null) labelText.fontSize = 18;
+        if (labelText != null) labelText.fontSize = 16;
         button.onClick.AddListener(() => BeginTowerBuild(type));
         int index = (int)type;
         if ((uint)index < (uint)_towerBuildButtons.Length)
@@ -3041,21 +3404,31 @@ public partial class RougeGameManager
     private static string GetTowerBuildLabel(int hotkey, RougeTowerType type)
     {
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n${cost}";
+        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{cost} 金币";
     }
 
     private string GetBossScheduleStatus()
     {
-        if (_bossDeathSequenceActive) return $"{bossBalance.displayName.ToUpperInvariant()} DEFEATED";
-        if (_bossSpawned) return $"{bossBalance.displayName.ToUpperInvariant()} ACTIVE";
-        if (_nextBossEncounterIndex >= _bossSchedule.Count) return "NO MORE BOSSES";
+        string activeBossName = GetLocalizedBossName(bossBalance != null ? bossBalance.displayName : null);
+        if (_bossDeathSequenceActive) return $"{activeBossName} 已击破";
+        if (_bossSpawned) return $"{activeBossName} 交战中";
+        if (_nextBossEncounterIndex >= _bossSchedule.Count) return "首领已全部击破";
         RougeTowerDefenseMap.BossEncounter next = _bossSchedule[_nextBossEncounterIndex];
         RougeBossBalanceConfig nextBalance = FindBossBalance(next.bossId);
         string bossName = nextBalance != null && !string.IsNullOrWhiteSpace(nextBalance.displayName)
-            ? nextBalance.displayName.ToUpperInvariant()
-            : $"BOSS ID {next.bossId}";
+            ? GetLocalizedBossName(nextBalance.displayName)
+            : $"首领 {next.bossId}";
         float countdown = Mathf.Max(0f, next.spawnMinute * 60f - _survivalTime);
-        return $"{bossName} IN {FormatGameTime(countdown)}";
+        return $"{bossName}来袭 {FormatGameTime(countdown)}";
+    }
+
+    private static string GetLocalizedBossName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) return "首领";
+        if (string.Equals(displayName, "Overlord", System.StringComparison.OrdinalIgnoreCase)) return "霸主";
+        if (displayName.StartsWith("Boss ", System.StringComparison.OrdinalIgnoreCase))
+            return "首领 " + displayName.Substring(5);
+        return displayName;
     }
 
     private void RefreshTowerDefenseUi(bool force = false)
@@ -3079,12 +3452,12 @@ public partial class RougeGameManager
             float enemySpeedBonus = (enemyBalance.EvaluateSpeedMultiplier(enemyLevel) *
                                      GetTowerDefenseEnemyMoveSpeedMultiplier() - 1f) * 100f;
             _towerDefenseStatusText.text =
-                $"MAIN TOWER  {hp:0} / {maxHp:0}\n" +
-                $"GOLD {_towerDefenseGold}   EARNED {_towerDefenseGoldEarnedTotal}   NORMAL +{enemyBalance.normalKillGold}   ELITE +{enemyBalance.eliteKillGold}\n" +
-                $"KILLS {totalKills}   TIME {FormatGameTime(_survivalTime)}   {bossTime}\n" +
-                $"ENEMY LV {enemyLevel} (NEW)   HP +{enemyHealthBonus:0.#}%   SPEED +{enemySpeedBonus:0.#}%\n" +
-                $"ENEMIES ~ {_towerDefenseAliveEstimate} / {GetTowerDefenseAliveEnemyCap()}   HP {GetTowerDefenseEnemyHealth():0.#}   SPEED {GetTowerDefenseEnemySpeed():0.0}\n" +
-                $"SPAWNERS {activeSpawners}/{_towerDefenseSpawners.Count}";
+                $"主塔  {hp:0} / {maxHp:0}    金币 {_towerDefenseGold}    累计 {_towerDefenseGoldEarnedTotal}\n" +
+                $"击杀 {totalKills}    时间 {FormatGameTime(_survivalTime)}    {bossTime}\n" +
+                $"敌人 Lv.{enemyLevel}    生命 +{enemyHealthBonus:0.#}%    移速 +{enemySpeedBonus:0.#}%\n" +
+                $"场上约 {_towerDefenseAliveEstimate} / {GetTowerDefenseAliveEnemyCap()}    单体生命 {GetTowerDefenseEnemyHealth():0.#}    速度 {GetTowerDefenseEnemySpeed():0.0}\n" +
+                $"击杀奖励  普通 +{enemyBalance.normalKillGold}    精英 +{enemyBalance.eliteKillGold}\n" +
+                $"出生点 {activeSpawners}/{_towerDefenseSpawners.Count}";
         }
         if (_mainTowerHealthFill != null)
             SetUiBarFill(_mainTowerHealthFill, mainTower != null ? mainTower.HealthNormalized : 0f);
@@ -3097,7 +3470,7 @@ public partial class RougeGameManager
                 !disabled && !_towerDefenseGameOver && CanAffordTowerType(type));
             if (_towerBuildButtonTexts[typeIndex] != null)
                 _towerBuildButtonTexts[typeIndex].text = disabled
-                    ? $"{TowerDefenseVisuals.GetTowerName(type)}\nDISABLED"
+                    ? $"{TowerDefenseVisuals.GetTowerName(type)}\n未解锁"
                     : GetTowerBuildLabel(typeIndex + 1, type);
         }
         RefreshTowerDamageRanking();
@@ -3118,7 +3491,7 @@ public partial class RougeGameManager
                 int refund = _selectedTower.AllowsSellRefund
                     ? Mathf.FloorToInt(_selectedTower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier))
                     : 0;
-                if (_towerSellButtonText != null) _towerSellButtonText.text = $"SELL  +{refund}";
+                if (_towerSellButtonText != null) _towerSellButtonText.text = $"出售  +{refund}";
             }
         }
         if (_towerTargetPriorityButton != null)
@@ -3131,22 +3504,22 @@ public partial class RougeGameManager
                 {
                     _towerTargetPriorityButtonText.text =
                         _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                            ? "[MMB] FOCUSED\nBOSS | DMG -2 (-30%)"
-                            : "[MMB] SCATTER\nNEAREST GOAL";
+                            ? "[中键] 集火首领\n伤害 -2 / -30%"
+                            : "[中键] 散射\n离终点最近";
                 }
                 else if (_selectedTower.TowerType == RougeTowerType.Flame)
                 {
                     _towerTargetPriorityButtonText.text =
                         _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                            ? "[MMB] FOCUSED\nBOSS | DMG -2 (-30%)"
-                            : "[MMB] ROTATE\nNEAREST GOAL";
+                            ? "[中键] 集火首领\n伤害 -2 / -30%"
+                            : "[中键] 轮换目标\n离终点最近";
                 }
                 else
                 {
                     _towerTargetPriorityButtonText.text =
                         _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                            ? "[MMB] TARGET\nBOSS FIRST"
-                            : "[MMB] TARGET\nNEAREST GOAL";
+                            ? "[中键] 索敌\n首领优先"
+                            : "[中键] 索敌\n离终点最近";
                 }
             }
         }
@@ -3160,20 +3533,20 @@ public partial class RougeGameManager
             RefreshBossThresholdMarkers();
             if (_bossStatusText != null)
             {
-                string phases = $"{(_bossInterferenceActive ? "INTERFERENCE " : "")}{(_bossShieldActive ? "SHIELD " : "")}{(_bossHasteActive ? "HASTE" : "")}";
+                string phases = $"{(_bossInterferenceActive ? "干扰 " : "")}{(_bossShieldActive ? "护盾 " : "")}{(_bossHasteActive ? "狂暴" : "")}";
                 _bossStatusText.text = _bossDeathSequenceActive
-                    ? "BOSS CORE OVERLOAD"
-                    : $"{bossBalance.displayName.ToUpperInvariant()}  {bossHealth:0} / {bossMaximumHealth:0}  ({bossHealthRatio * 100f:0.00}%)   {phases}";
+                    ? "首领核心过载"
+                    : $"{GetLocalizedBossName(bossBalance.displayName)}  {bossHealth:0} / {bossMaximumHealth:0}  ({bossHealthRatio * 100f:0.00}%)   {phases}";
             }
         }
         if (_towerDefenseModeText != null)
         {
             if (_debugUnitViewMode)
             {
-                string speedHint = _towerDefenseDoubleSpeed ? "SPEED ×2" : "SPEED ×1";
+                string speedHint = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
                 string modeHint = _towerPlacementMode
-                    ? "  |  EDIT ×0.5  |  LMB PLACE/SELECT  |  TAB EXIT EDIT"
-                    : $"  |  {speedHint}  |  F10 TOGGLE SPEED  |  TAB EDIT  |  LMB SELECT TOWER";
+                    ? "  |  编辑 ×0.5  |  左键放置/选择  |  Tab 退出编辑"
+                    : $"  |  {speedHint}  |  F10 切换速度  |  Tab 编辑  |  左键选择塔楼";
                 _towerDefenseModeText.text = GetDebugUnitViewStatusText() + modeHint;
             }
             else if (_towerPlacementMode)
@@ -3183,25 +3556,25 @@ public partial class RougeGameManager
                 string selected = !string.IsNullOrEmpty(tactical)
                     ? tactical
                     : _selectedTower != null
-                    ? $"SELECTED: {_selectedTower.DisplayName}  LV {_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
+                    ? $"已选：{_selectedTower.DisplayName}  Lv.{_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
                       $"{GetTowerUiStats(_selectedTower)}" +
                       (string.IsNullOrEmpty(_selectedTower.GetBuffDisplayText())
                           ? string.Empty
-                          : $"  |  BUFF {_selectedTower.GetBuffDisplayText()}") +
+                          : $"  |  增益 {_selectedTower.GetBuffDisplayText()}") +
                       (_selectedTower.IsTargetedDamage
-                          ? $"  |  {GetTowerTargetModeDescription(_selectedTower)}  |  MMB SWITCH"
+                          ? $"  |  {GetTowerTargetModeDescription(_selectedTower)}  |  中键切换"
                           : string.Empty)
                     : _towerBuildSelectionActive
-                        ? $"BUILD: {TowerDefenseVisuals.GetTowerName(_selectedBuildType)}  |  LEFT CLICK PLACE/SELECT"
-                        : "BUILD CANCELLED  |  SELECT A TOWER BUTTON TO BUILD";
+                        ? GetTowerBuildModeText()
+                        : "建造已取消  |  请从下方选择塔楼";
                 _towerDefenseModeText.text =
-                    $"EDIT MODE ×0.5  |  F2 攻击范围：{rangeMode}  |  RMB EXIT/CANCEL  |  MIDDLE-DRAG  |  WHEEL ZOOM\n" +
+                    $"编辑模式 ×0.5  |  F2 攻击范围：{rangeMode}  |  右键退出 / 取消  |  中键拖动  |  滚轮缩放\n" +
                     selected;
             }
             else
             {
-                string speed = _towerDefenseDoubleSpeed ? "SPEED ×2" : "SPEED ×1";
-                _towerDefenseModeText.text = $"{speed}  |  F10 TOGGLE SPEED  |  F1 FREE CAMERA  |  CLICK TOWER TO EDIT  |  CLICK BUILD BUTTON  |  LEFT-DRAG  |  WHEEL ZOOM";
+                string speed = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
+                _towerDefenseModeText.text = $"{speed}  |  F10 切换速度  |  F1 自由镜头  |  点击塔楼编辑  |  点击按钮建造  |  左键拖动  |  滚轮缩放";
             }
         }
         if (_towerUpgradeButton != null)
@@ -3213,10 +3586,10 @@ public partial class RougeGameManager
             if (_towerUpgradeButtonText != null)
             {
                 _towerUpgradeButtonText.text = !hasSelection
-                    ? "SELECT TOWER\nTO UPGRADE"
+                    ? "选择塔楼\n进行升级"
                     : !canUpgrade
-                        ? $"LV {_selectedTower.Level}/{_selectedTower.MaxLevel}\nMAX LEVEL"
-                        : $"[U] LV {_selectedTower.Level} > {_selectedTower.Level + 1}\n${_selectedTower.UpgradeCost}";
+                        ? $"等级 {_selectedTower.Level}/{_selectedTower.MaxLevel}\n已满级"
+                        : $"[U] {_selectedTower.Level} → {_selectedTower.Level + 1} 级\n{_selectedTower.UpgradeCost} 金币";
             }
         }
         if (_towerDefenseGameOverText != null)
@@ -3256,14 +3629,14 @@ public partial class RougeGameManager
 
         System.Text.StringBuilder builder = _hudBuilder;
         builder.Clear();
-        builder.AppendLine("TOWER DAMAGE");
         for (int rank = 0; rank < _towerDamageRankOrder.Length; rank++)
         {
             int typeIndex = _towerDamageRankOrder[rank];
             double damage = _towerDamageTotalsFixed[typeIndex] / 1000.0;
             builder.Append(rank + 1).Append(". ")
                 .Append(TowerDefenseVisuals.GetTowerName((RougeTowerType)typeIndex))
-                .Append("   ").AppendLine(FormatCompactDamage(damage));
+                .Append("   ").Append(FormatCompactDamage(damage));
+            if (rank < _towerDamageRankOrder.Length - 1) builder.AppendLine();
         }
         _towerDamageRankingText.text = builder.ToString();
     }
@@ -3296,8 +3669,8 @@ public partial class RougeGameManager
 
     private static string FormatCompactDamage(double value)
     {
-        if (value >= 1000000d) return $"{value / 1000000d:0.##}M";
-        if (value >= 10000d) return $"{value / 1000d:0.##}K";
+        if (value >= 100000000d) return $"{value / 100000000d:0.##}亿";
+        if (value >= 10000d) return $"{value / 10000d:0.##}万";
         return value.ToString("0");
     }
 
@@ -3312,24 +3685,26 @@ public partial class RougeGameManager
         switch (tower.TowerType)
         {
             case RougeTowerType.Ice:
-                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  SLOW {tower.EffectPercent:0}%/{tower.EffectDuration:0.#}s";
+                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  减速 {tower.EffectPercent:0}%/{tower.EffectDuration:0.#}秒";
             case RougeTowerType.MachineGun:
                 bool focusedMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
                 float halfSpread = MachineGunScatterHalfAngleDegrees *
                     (focusedMode ? MachineGunFocusedSpreadMultiplier : 1f);
-                return $"DMG {tower.Damage:0.##}  CD {tower.EffectiveAttackInterval:0.###}s  RADIUS {tower.AttackRange:0.#}  PELLETS {tower.TargetCount}  SPREAD ±{halfSpread:0.#}°";
+                return $"伤害 {tower.Damage:0.##}  间隔 {tower.EffectiveAttackInterval:0.###}秒  范围 {tower.AttackRange:0.#}  弹丸 {tower.TargetCount}  散布 ±{halfSpread:0.#}°";
             case RougeTowerType.Cannon:
-                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  SHELLS {tower.ProjectileCount} @ {TowerProjectileBurstInterval:0.##}s";
+                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  爆炸 {tower.AoeRadius:0.#}  连发 {tower.ProjectileCount} / {TowerProjectileBurstInterval:0.##}秒";
             case RougeTowerType.Flame:
-                return $"TICK {tower.Damage:0.##}/{tower.TickInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  AOE RADIUS {tower.AoeRadius:0.#}  LIFE {tower.EffectDuration:0.#}s  FIREBALLS {tower.ProjectileCount} @ {TowerProjectileBurstInterval:0.##}s  OFFSET ≤{tower.AoeRadius * FlameLandingOffsetRadiusMultiplier:0.#}";
+                return $"每跳 {tower.Damage:0.##}/{tower.TickInterval:0.##}秒  范围 {tower.AttackRange:0.#}  爆炸 {tower.AoeRadius:0.#}  持续 {tower.EffectDuration:0.#}秒  火球 {tower.ProjectileCount} / {TowerProjectileBurstInterval:0.##}秒  偏移 ≤{tower.AoeRadius * FlameLandingOffsetRadiusMultiplier:0.#}";
             case RougeTowerType.Laser:
-                return $"DMG {tower.Damage / 60f:0.#}/FRAME  RADIUS {tower.AttackRange:0.#}  TARGETS {tower.TargetCount}";
+                return $"每帧伤害 {tower.Damage / 60f:0.#}  范围 {tower.AttackRange:0.#}  目标 {tower.TargetCount}";
             case RougeTowerType.PiercingLaser:
-                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RADIUS {tower.AttackRange:0.#}  BEAM LEN {tower.AttackRange * 2f:0.#}";
+                float chargeStageDuration = PiercingLaserChargeStageDuration /
+                    Mathf.Max(0.01f, tower.AttackSpeedMultiplier);
+                return $"伤害 {tower.Damage:0.#}  蓄力 3段 × {chargeStageDuration:0.00}秒（受攻速）  发射 {PiercingLaserFireDuration:0.00}秒（固定）  峰值判定 {PiercingLaserDamageTime:0.00}秒  冷却 {tower.EffectiveAttackInterval:0.##}秒  光束长度 {tower.AttackRange * 2f:0.#}";
             case RougeTowerType.OrbitSphere:
-                return $"CRYSTAL LASER DMG {tower.Damage:0.#}/{tower.TickInterval:0.##}s  COUNT {tower.ProjectileCount}  RADIUS {tower.OrbitSphereRadius:0.#}  MAX R {tower.AttackRange:0.#}  HOLD {tower.OrbitOuterHoldDuration:0.##}s  RADIAL {tower.OrbitRadialSpeed:0.#}  ROT {tower.OrbitAngularSpeed:0.#}°/s";
+                return $"水晶伤害 {tower.Damage:0.#}/{tower.TickInterval:0.##}秒  数量 {tower.ProjectileCount}  轨道 {tower.OrbitSphereRadius:0.#}  最大范围 {tower.AttackRange:0.#}  停留 {tower.OrbitOuterHoldDuration:0.##}秒  径向 {tower.OrbitRadialSpeed:0.#}  旋转 {tower.OrbitAngularSpeed:0.#}°/秒";
             default:
-                return $"DMG {tower.Damage:0.#}  CD {tower.EffectiveAttackInterval:0.##}s  RANGE {tower.AttackRange:0.#}  MISSILES {tower.ProjectileCount} @ {tower.ProjectileInterval:0.##}s  AOE {tower.AoeRadius:0.#}  FLIGHT {tower.ProjectileFlightDuration:0.##}s  BROWNIAN {tower.BrownianStrength:0.#}";
+                return $"伤害 {tower.Damage:0.#}  间隔 {tower.EffectiveAttackInterval:0.##}秒  范围 {tower.AttackRange:0.#}  导弹 {tower.ProjectileCount} / {tower.ProjectileInterval:0.##}秒  爆炸 {tower.AoeRadius:0.#}  滞空 {tower.ProjectileFlightDuration:0.##}秒  漂移 {tower.BrownianStrength:0.#}";
         }
     }
 
@@ -3339,25 +3714,54 @@ public partial class RougeGameManager
         if (tower.TowerType == RougeTowerType.MachineGun)
         {
             return bossFirst
-                ? "MODE FOCUSED (BOSS FIRST, DMG -2/-30%, SPREAD -50%)"
-                : "MODE SCATTER (NEAREST GOAL)";
+                ? "集火模式（首领优先，伤害 -2/-30%，散布 -50%）"
+                : "散射模式（离终点最近）";
         }
         if (tower.TowerType == RougeTowerType.Flame)
         {
             return bossFirst
-                ? "MODE FOCUSED (BOSS FIRST, DMG -2/-30%)"
-                : "MODE ROTATE (NEAREST GOAL, DIFFERENT TARGETS)";
+                ? "集火模式（首领优先，伤害 -2/-30%）"
+                : "轮换模式（离终点最近，分散目标）";
         }
 
-        return $"TARGET {(bossFirst ? "BOSS FIRST" : "NEAREST GOAL")}";
+        return $"索敌：{(bossFirst ? "首领优先" : "离终点最近")}";
+    }
+
+    private string GetTowerBuildModeText()
+    {
+        string towerName = TowerDefenseVisuals.GetTowerName(_selectedBuildType);
+        if (_towerPreview == null || !_towerPreview.gameObject.activeInHierarchy)
+            return $"建造：{towerName}  |  将指针移到可建造地格";
+        if (_previewValid) return $"建造：{towerName}  |  可建造  |  左键放置";
+        string reason = _towerDefenseGold < _towerPreview.PlacementCost ? "金币不足" : "位置被占用或超出区域";
+        return $"建造：{towerName}  |  <color=#FF665E><b>不可建造：{reason}</b></color>";
     }
 
     private static GameObject CreateUiPanel(string name, Transform parent, Color color)
     {
         GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image));
         go.transform.SetParent(parent, false);
-        go.GetComponent<Image>().color = color;
+        Image image = go.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
         return go;
+    }
+
+    private static void AddHudPanelChrome(GameObject panel, Color accentColor)
+    {
+        if (panel == null) return;
+        Outline outline = panel.AddComponent<Outline>();
+        outline.effectColor = new Color(accentColor.r, accentColor.g, accentColor.b, 0.32f);
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
+        outline.useGraphicAlpha = true;
+
+        Image accent = CreateUiImage("Accent", panel.transform, accentColor);
+        RectTransform accentRect = accent.rectTransform;
+        accentRect.anchorMin = new Vector2(0f, 1f);
+        accentRect.anchorMax = new Vector2(1f, 1f);
+        accentRect.pivot = new Vector2(0.5f, 1f);
+        accentRect.anchoredPosition = Vector2.zero;
+        accentRect.sizeDelta = new Vector2(0f, 4f);
     }
 
     private void CreateBossThresholdMarker(Transform parent, int index, float normalizedX, string glyph, Color color)
@@ -3412,12 +3816,32 @@ public partial class RougeGameManager
         GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
         go.transform.SetParent(parent, false);
         Text text = go.GetComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.font = GetTowerDefenseHudFont();
         text.fontSize = fontSize;
         text.alignment = alignment;
         text.color = Color.white;
         text.raycastTarget = false;
+        Shadow shadow = go.AddComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.55f);
+        shadow.effectDistance = new Vector2(1f, -1f);
+        shadow.useGraphicAlpha = true;
         return text;
+    }
+
+    private static Font GetTowerDefenseHudFont()
+    {
+        if (s_towerDefenseHudFont != null) return s_towerDefenseHudFont;
+        s_towerDefenseHudFont = Font.CreateDynamicFontFromOSFont(new[]
+        {
+            "Microsoft YaHei UI",
+            "Microsoft YaHei",
+            "PingFang SC",
+            "Noto Sans CJK SC",
+            "Arial"
+        }, 22);
+        if (s_towerDefenseHudFont == null)
+            s_towerDefenseHudFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        return s_towerDefenseHudFont;
     }
 
     private static Button CreateUiButton(string name, Transform parent, string label, Color color)
@@ -3431,7 +3855,11 @@ public partial class RougeGameManager
         colors.highlightedColor = Color.Lerp(color, Color.white, 0.22f);
         colors.pressedColor = Color.Lerp(color, Color.black, 0.2f);
         button.colors = colors;
-        Text text = CreateUiText("Label", go.transform, 20, TextAnchor.MiddleCenter);
+        Outline outline = go.AddComponent<Outline>();
+        outline.effectColor = new Color(0f, 0f, 0f, 0.72f);
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
+        Text text = CreateUiText("Label", go.transform, 17, TextAnchor.MiddleCenter);
+        text.fontStyle = FontStyle.Bold;
         text.text = label;
         StretchRect(text.rectTransform, 4f, 4f, 4f, 4f);
         return button;
@@ -3697,9 +4125,9 @@ public partial class RougeGameManager
         _rocketBarrageMissileMaterial.name = "Rocket Barrage Missile (Instanced)";
         _rocketBarrageMissileMaterial.hideFlags = HideFlags.DontSave;
         _rocketBarrageMissileMaterial.enableInstancing = true;
-        Texture2D projectileTexture = Resources.Load<Texture2D>("Sprites/projectile_energy");
+        Texture2D projectileTexture = Resources.Load<Texture2D>("Sprites/projectile_rocket_missile");
         if (projectileTexture != null) _rocketBarrageMissileMaterial.SetTexture("_MainTex", projectileTexture);
-        ApplyBaseColor(_rocketBarrageMissileMaterial, new Color(1f, 0.32f, 0.045f, 1f));
+        ApplyBaseColor(_rocketBarrageMissileMaterial, Color.white);
         return true;
     }
 

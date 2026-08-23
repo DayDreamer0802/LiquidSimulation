@@ -371,7 +371,7 @@ MonoBehaviour:
   towerGoldCostMultiplier: 1
   towerDamageMultiplier: 1
   towerAttackSpeedMultiplier: 1
-  startingGold: 2000
+  startingGold: 9999
   bossEncounters:
   - bossId: 0
     spawnMinute: 15

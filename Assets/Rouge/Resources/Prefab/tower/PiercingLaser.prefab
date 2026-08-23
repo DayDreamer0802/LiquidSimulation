@@ -613,7 +613,7 @@ Transform:
   m_GameObject: {fileID: 7336945344055831605}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.8660254, z: 0.49999997, w: 0}
-  m_LocalPosition: {x: 0, y: 1.25, z: 0}
+  m_LocalPosition: {x: 0, y: 1.25, z: 0.59}
   m_LocalScale: {x: 0.7, y: 0.7, z: 0.7}
   m_ConstrainProportionsScale: 1
   m_Children:
@@ -639,9 +639,10 @@ MonoBehaviour:
   floatingTargetY: 0.22
   flaotingTargetTime: 2
   shootMoveContent: {fileID: 1340827250642178907}
-  shootMoveY: 0.5
-  shootMoveYTime1: 0.2
-  shootMoveYTime2: 0.15
+  shootMoveY: 1.25
+  shootMoveYTime1: 0.25
+  shootMoveYStayTime: 0.1
+  shootMoveYTime2: 0.4
   shootScaleContent: {fileID: 0}
   shootScale1: {x: 0.9, y: 1.1}
   shootScale1Time: 0.15
@@ -703,6 +704,7 @@ MonoBehaviour:
   investedGold: 1000
   isTargetedDamage: 1
   targetPriority: 0
+  towerPlaceEffect: 0
 --- !u!135 &9112328017559788165
 SphereCollider:
   m_ObjectHideFlags: 0

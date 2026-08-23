@@ -84,9 +84,14 @@ Shader "Rouge/Tower Place Grid"
 
                 // Footprint geometry is inset from the real grid in C#, so this layer
                 // is only a translucent status panel and never redraws/obscures lines.
-                float statePulse = 1.04 + 0.08 * sin(_Time.y * max(0.1, _FlowSpeed) * 2.8);
+                half invalidState = step(input.color.g * 2.5, input.color.r);
+                float statePulse = lerp(
+                    1.04 + 0.08 * sin(_Time.y * max(0.1, _FlowSpeed) * 2.8),
+                    1.02,
+                    invalidState);
                 half3 stateRgb = input.color.rgb * statePulse;
-                half stateAlpha = saturate(input.color.a * 0.56);
+                stateRgb = lerp(stateRgb, half3(1.0, 0.12, 0.085), invalidState);
+                half stateAlpha = saturate(input.color.a * lerp(0.56, 0.68, invalidState));
                 half4 footprintGrid = half4(stateRgb, stateAlpha);
                 return lerp(freeGrid, footprintGrid, step(0.5, _UseVertexColor));
             }

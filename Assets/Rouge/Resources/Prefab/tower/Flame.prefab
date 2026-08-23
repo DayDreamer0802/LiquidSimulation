@@ -349,7 +349,7 @@ Transform:
   m_GameObject: {fileID: 4252307117640054156}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 56.205734, y: 3.0500004, z: -51.502907}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -377,6 +377,7 @@ MonoBehaviour:
   investedGold: 625
   isTargetedDamage: 1
   targetPriority: 0
+  towerPlaceEffect: 0
 --- !u!135 &6725577728900257684
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -424,8 +425,8 @@ Transform:
   m_GameObject: {fileID: 4756324068541027811}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.8660254, z: 0.49999997, w: 0}
-  m_LocalPosition: {x: 0, y: 1.1, z: 0}
-  m_LocalScale: {x: 0.7, y: 0.7, z: 0.7}
+  m_LocalPosition: {x: 0, y: 1.1, z: -0.63}
+  m_LocalScale: {x: 0.8, y: 0.8, z: 0.8}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 5347178926842848779}

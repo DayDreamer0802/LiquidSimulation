@@ -44,6 +44,6 @@ public partial class RougeGameManager
 
     private static string GetDebugUnitViewStatusText()
     {
-        return "DEBUG FREE CAMERA  |  F1 EXIT  |  WASD MOVE  |  RMB LOOK  |  SPACE/E UP  |  CTRL/Q DOWN  |  SHIFT FAST";
+        return "调试自由镜头  |  F1 退出  |  WASD 移动  |  右键观察  |  空格/E 上升  |  Ctrl/Q 下降  |  Shift 加速";
     }
 }

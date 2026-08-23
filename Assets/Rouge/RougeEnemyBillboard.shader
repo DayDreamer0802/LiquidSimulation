@@ -103,6 +103,7 @@ Shader "Rouge/EnemyBillboard"
                     + cameraUp * (input.positionOS.y * spriteScale.y * 2.0);
 
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
+                float slowed = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
                 float4 positionHCS = TransformWorldToHClip(positionWS);
                 float4 feetHCS = TransformWorldToHClip(positionScale.xyz);
                 // A camera-facing quad normally has a depth gradient across its plane,
@@ -136,7 +137,10 @@ Shader "Rouge/EnemyBillboard"
                 int movementFrameCount = max(1, totalFrameCount - deathFrameCount);
                 uint phaseHash = input.instanceID * 1664525u + 1013904223u;
                 int instancePhase = (int)(phaseHash % (uint)movementFrameCount);
-                int movementFrame = (((int)floor(_Time.y * animationFps)) + instancePhase) % movementFrameCount;
+                // Translation is already reduced by the simulation. Slowing the walk cycle
+                // as well makes the effect readable inside a dense crowd.
+                float movementAnimationSpeed = lerp(1.0, 0.42, slowed);
+                int movementFrame = (((int)floor(_Time.y * animationFps * movementAnimationSpeed)) + instancePhase) % movementFrameCount;
                 int firstDeathFrame = min(movementFrameCount, totalFrameCount - 1);
                 int finalDeathFrame = max(firstDeathFrame, totalFrameCount - 1);
                 int hitFrame = firstDeathFrame;
@@ -156,7 +160,7 @@ Shader "Rouge/EnemyBillboard"
                 output.flash = frac(max(state.w, 0.0));
                 output.curse = step(0.5, fmod(visualFlags, 2.0));
                 output.dead = dead;
-                output.slow = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
+                output.slow = slowed;
                 output.enemyKind = enemyKind;
                 float launchBuffered = step(0.5, fmod(floor(visualFlags * 0.25), 2.0));
                 float aboveGround = step(_RenderHeight + 0.05, positionScale.y);
@@ -184,7 +188,7 @@ Shader "Rouge/EnemyBillboard"
                 color.rgb = lerp(color.rgb, luminance.xxx * 0.45, input.dead);
                 color.rgb = lerp(color.rgb,
                     color.rgb * half3(0.55, 0.78, 1.35) + half3(0.02, 0.08, 0.2),
-                    input.slow * 0.48);
+                    input.slow * 0.68);
                 // Keep airborne units visibly desaturated, but retain enough texture
                 // contrast to read as light grey instead of a flat white silhouette.
                 half airborneLuminance = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));

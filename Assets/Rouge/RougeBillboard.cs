@@ -75,7 +75,7 @@ public sealed class RougeBillboard : MonoBehaviour
 
     [SerializeField]  private float shootMoveY = -0.22f; //发射子弹后座位移Y
       [SerializeField] private float shootMoveYTime1 = 0.1f; //后坐用时
-
+      [SerializeField, Min(0f)] private float shootMoveYStayTime = 0f; //保持后坐位置的时间
      [SerializeField] private float shootMoveYTime2 = 0.1f; //还原用时
       //发射子弹时候缩放的content 如果这个不为null,那么需要在y缩小到最小之后才会发射子弹(也就是step2时候)
       [SerializeField] private Transform shootScaleContent;
@@ -173,6 +173,11 @@ public sealed class RougeBillboard : MonoBehaviour
         // A recoil-only tower fires at the end of its recoil. Scale-driven towers fire after the
         // second squash phase, when the authored vertical scale reaches its minimum.
         if (!hasScale) InvokeShot(onShotFired);
+
+        // Keep the authored recoil pose before restoring it. A zero value preserves the
+        // previous behaviour for every prefab that has not opted into a hold duration.
+        if (hasMove && shootMoveYStayTime > 0f)
+            yield return new WaitForSeconds(shootMoveYStayTime);
 
         float phaseTwoDuration = Mathf.Max(hasMove ? Mathf.Max(0f, shootMoveYTime2) : 0f,
             hasScale ? Mathf.Max(0f, shootScale2Time) : 0f);

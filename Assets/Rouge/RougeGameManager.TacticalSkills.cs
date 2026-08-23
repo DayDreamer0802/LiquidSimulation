@@ -721,8 +721,9 @@ public partial class RougeGameManager
         panelRect.anchorMin = new Vector2(0.5f, 0f);
         panelRect.anchorMax = new Vector2(0.5f, 0f);
         panelRect.pivot = new Vector2(0.5f, 0f);
-        panelRect.anchoredPosition = new Vector2(0f, 290f);
-        panelRect.sizeDelta = new Vector2(790f, 126f);
+        panelRect.anchoredPosition = new Vector2(0f, 216f);
+        panelRect.sizeDelta = new Vector2(740f, 112f);
+        AddHudPanelChrome(panel, new Color(0.62f, 0.32f, 1f, 1f));
 
         Text title = CreateUiText("Tactical Skills Title", panel.transform, 18, TextAnchor.UpperCenter);
         RectTransform titleRect = title.rectTransform;
@@ -731,12 +732,12 @@ public partial class RougeGameManager
         titleRect.pivot = new Vector2(0.5f, 1f);
         titleRect.anchoredPosition = new Vector2(0f, -5f);
         titleRect.sizeDelta = new Vector2(-20f, 28f);
-        title.text = "TACTICAL SKILLS  |  RMB CANCEL";
+        title.text = "战术技能  ·  右键取消";
 
-        CreateTacticalSkillButton(panel.transform, 0, -292.5f, new Color(0.08f, 0.55f, 0.78f, 1f), BeginWindmillSkillSelection);
-        CreateTacticalSkillButton(panel.transform, 1, -97.5f, new Color(0.42f, 0.08f, 0.68f, 1f), BeginBlackHoleSkillSelection);
-        CreateTacticalSkillButton(panel.transform, 2, 97.5f, new Color(0.95f, 0.48f, 0.08f, 1f), BeginOverclockSkillSelection);
-        CreateTacticalSkillButton(panel.transform, 3, 292.5f, new Color(0.72f, 0.16f, 0.06f, 1f), BeginMissileBarrageSkillSelection);
+        CreateTacticalSkillButton(panel.transform, 0, -270f, new Color(0.08f, 0.55f, 0.78f, 1f), BeginWindmillSkillSelection);
+        CreateTacticalSkillButton(panel.transform, 1, -90f, new Color(0.42f, 0.08f, 0.68f, 1f), BeginBlackHoleSkillSelection);
+        CreateTacticalSkillButton(panel.transform, 2, 90f, new Color(0.95f, 0.48f, 0.08f, 1f), BeginOverclockSkillSelection);
+        CreateTacticalSkillButton(panel.transform, 3, 270f, new Color(0.72f, 0.16f, 0.06f, 1f), BeginMissileBarrageSkillSelection);
     }
 
     private void CreateTacticalSkillButton(Transform parent, int index, float x, Color color, UnityEngine.Events.UnityAction action)
@@ -745,8 +746,8 @@ public partial class RougeGameManager
         RectTransform rect = button.GetComponent<RectTransform>();
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
-        rect.anchoredPosition = new Vector2(x, 14f);
-        rect.sizeDelta = new Vector2(180f, 78f);
+        rect.anchoredPosition = new Vector2(x, 44f);
+        rect.sizeDelta = new Vector2(168f, 68f);
         if (action != null) button.onClick.AddListener(action);
         else button.interactable = false;
         _tacticalSkillButtons[index] = button;
@@ -758,8 +759,8 @@ public partial class RougeGameManager
         if (_tacticalSkillButtonTexts[0] != null)
         {
             _tacticalSkillButtonTexts[0].text = _windmillSkillCooldown > 0f
-                ? $"WINDMILL\nCD {_windmillSkillCooldown:0.0}s"
-                : $"WINDMILL\n${_windmillSkillCost}  DMG ×{_windmillDamageMultiplier:0.##}";
+                ? $"风车\n冷却 {_windmillSkillCooldown:0.0}秒"
+                : $"风车\n{_windmillSkillCost} 金币  伤害 ×{_windmillDamageMultiplier:0.##}";
             bool available = _windmillSkillCooldown <= 0f && _towerDefenseGold >= _windmillSkillCost &&
                 _tacticalSkillSelection != TacticalSkillSelectionState.WindmillDirection;
             SetPurchaseButtonAvailability(_tacticalSkillButtons[0], _tacticalSkillButtonTexts[0], available);
@@ -767,16 +768,16 @@ public partial class RougeGameManager
         if (_tacticalSkillButtonTexts[1] != null)
         {
             _tacticalSkillButtonTexts[1].text = _blackHoleSkillCooldown > 0f
-                ? $"BLACK HOLE\nCD {_blackHoleSkillCooldown:0.0}s"
-                : $"BLACK HOLE\n${_blackHoleSkillCost}  DMG ×{_blackHoleDamageMultiplier:0.##}";
+                ? $"黑洞\n冷却 {_blackHoleSkillCooldown:0.0}秒"
+                : $"黑洞\n{_blackHoleSkillCost} 金币  伤害 ×{_blackHoleDamageMultiplier:0.##}";
             bool available = _blackHoleSkillCooldown <= 0f && _towerDefenseGold >= _blackHoleSkillCost;
             SetPurchaseButtonAvailability(_tacticalSkillButtons[1], _tacticalSkillButtonTexts[1], available);
         }
         if (_tacticalSkillButtonTexts[2] != null)
         {
             _tacticalSkillButtonTexts[2].text = _overclockSkillCooldown > 0f
-                ? $"OVERCLOCK\nCD {_overclockSkillCooldown:0.0}s"
-                : $"OVERCLOCK\n${_overclockSkillCost}  ALL TOWERS";
+                ? $"全塔超频\n冷却 {_overclockSkillCooldown:0.0}秒"
+                : $"全塔超频\n{_overclockSkillCost} 金币";
             bool available = _overclockSkillCooldown <= 0f && _towerDefenseGold >= _overclockSkillCost &&
                 _defenseTowers.Count > 0;
             SetPurchaseButtonAvailability(_tacticalSkillButtons[2], _tacticalSkillButtonTexts[2], available);
@@ -784,8 +785,8 @@ public partial class RougeGameManager
         if (_tacticalSkillButtonTexts[3] != null)
         {
             _tacticalSkillButtonTexts[3].text = _missileBarrageSkillCooldown > 0f
-                ? $"MISSILE RAIN\nCD {_missileBarrageSkillCooldown:0.0}s"
-                : "MISSILE RAIN\nAREA R50  10s";
+                ? $"导弹雨\n冷却 {_missileBarrageSkillCooldown:0.0}秒"
+                : "导弹雨\n半径 50  持续 10秒";
             bool available = _missileBarrageSkillCooldown <= 0f &&
                 _tacticalSkillSelection != TacticalSkillSelectionState.MissileBarragePoint;
             SetPurchaseButtonAvailability(_tacticalSkillButtons[3], _tacticalSkillButtonTexts[3], available);
@@ -796,10 +797,10 @@ public partial class RougeGameManager
     {
         return _tacticalSkillSelection switch
         {
-            TacticalSkillSelectionState.WindmillPoint => "WINDMILL 1/2  |  CHOOSE IMPACT POINT  |  RED AREA IS INVALID",
-            TacticalSkillSelectionState.WindmillDirection => "WINDMILL 2/2  |  CHOOSE TRAVEL DIRECTION",
-            TacticalSkillSelectionState.BlackHolePoint => "BLACK HOLE  |  CHOOSE CENTER POINT",
-            TacticalSkillSelectionState.MissileBarragePoint => "MISSILE RAIN  |  CHOOSE AREA CENTER  |  RADIUS 50",
+            TacticalSkillSelectionState.WindmillPoint => "风车 1/2  |  选择落点  |  红色区域不可用",
+            TacticalSkillSelectionState.WindmillDirection => "风车 2/2  |  选择移动方向",
+            TacticalSkillSelectionState.BlackHolePoint => "黑洞  |  选择中心点",
+            TacticalSkillSelectionState.MissileBarragePoint => "导弹雨  |  选择区域中心  |  半径 50",
             _ => string.Empty
         };
     }

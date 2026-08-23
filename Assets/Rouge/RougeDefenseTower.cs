@@ -143,8 +143,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
     private const float SelectedHintRadiusPadding = 0.2f;
     private const float UpgradeHintRadiusPadding = 2.2f;
     private const int MaxLaserConnections = 30;
-    private const float OrbitLaserBeamWidth = 0.18f;
+    private const float OrbitLaserBeamWidth = 0.86f;
     private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 4];
+    private readonly Vector2[] laserRibbonUvs = new Vector2[MaxLaserConnections * 4];
     private readonly int[] laserLineIndices = new int[MaxLaserConnections * 2];
     private readonly int[] laserRibbonIndices = new int[MaxLaserConnections * 12];
     private GameObject laserBeamObject;
@@ -249,7 +250,9 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void SetPreviewState(bool valid, bool[] cellValidity = null)
     {
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, true,
-            valid ? new Color(0.2f, 1f, 0.35f, 0.62f) : new Color(1f, 0.15f, 0.12f, 0.62f));
+            valid
+                ? new Color(0.12f, 1f, 0.3f, 0.68f)
+                : new Color(1f, 0.13f, 0.09f, 0.76f));
         SetRangeVisibility(true, valid);
     }
 
@@ -279,8 +282,13 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void SetRangeVisibility(bool visible, bool valid = true)
     {
         if (collisionRing != null) collisionRing.enabled = false;
+        if (attackRing != null)
+            attackRing.widthMultiplier = valid ? 0.12f : 0.18f;
         TowerDefenseVisuals.UpdateCircle(attackRing, transform.position, AttackRange,
-            new Color(0.15f, 0.72f, 1f, 0.78f), visible);
+            valid
+                ? new Color(0.12f, 0.82f, 1f, 0.88f)
+                : new Color(1f, 0.14f, 0.1f, 0.82f),
+            visible);
     }
 
     internal void SetEditHintState(bool editMode, bool selected, bool upgradeAvailable,
@@ -355,7 +363,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     {
         Camera mainCamera = Camera.main;
         Vector3 viewDirection = mainCamera != null ? mainCamera.transform.forward : Vector3.down;
-        float halfWidth = OrbitLaserBeamWidth * 0.5f;
+        float widthPulse = 0.92f + Mathf.Sin(Time.time * 9.5f) * 0.08f;
+        float halfWidth = OrbitLaserBeamWidth * widthPulse * 0.5f;
         for (int i = 0; i < connectionCount; i++)
         {
             Vector3 end = targets[i] + Vector3.up * 0.08f;
@@ -376,6 +385,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
         int indexCount = connectionCount * 12;
         laserBeamMesh.Clear(false);
         laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
+        laserBeamMesh.SetUVs(0, laserRibbonUvs, 0, vertexCount);
         laserBeamMesh.SetIndices(laserRibbonIndices, 0, indexCount, MeshTopology.Triangles, 0, true);
         laserBeamObject.SetActive(true);
     }
@@ -675,6 +685,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
         {
             int vertex = i * 4;
             int index = i * 12;
+            laserRibbonUvs[vertex] = new Vector2(0f, 0f);
+            laserRibbonUvs[vertex + 1] = new Vector2(0f, 1f);
+            laserRibbonUvs[vertex + 2] = new Vector2(1f, 0f);
+            laserRibbonUvs[vertex + 3] = new Vector2(1f, 1f);
             // Duplicate the two triangles in reverse winding so the ribbon stays visible
             // with every camera angle and material culling mode.
             laserRibbonIndices[index] = vertex;

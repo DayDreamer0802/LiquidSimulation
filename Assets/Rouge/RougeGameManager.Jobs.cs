@@ -1798,9 +1798,6 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = effects.FreezeTimer > 0f
-                ? 0f
-                : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 toGoal = GoalPos - pos.xz;
@@ -1893,6 +1890,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
             float3 bossUnaffectedAcceleration = acceleration;
             float3 bossUnaffectedVelocity = vel;
+            bool towerAreaRepelled = false;
 
             if (SkillAreaCount > 0)
             {
@@ -1924,7 +1922,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             break;
                         case 13:
                         case 14:
-                            ProcessTowerArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
+                            towerAreaRepelled |= ProcessTowerArea(ref acceleration, ref health,
+                                ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill,
+                                !isBoss);
                             break;
                         case 15:
                         case 16:
@@ -2126,7 +2126,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
             bool hitPlayer = false;
             float towerContactDistance = radius + MainTowerContactRadius;
-            if (MainTowerContactEnabled && health > 0f && !isAirborne && tornadoMark < 0.5f && distToGoalSq < towerContactDistance * towerContactDistance)
+            if (MainTowerContactEnabled && !towerAreaRepelled && health > 0f && !isAirborne &&
+                tornadoMark < 0.5f && distToGoalSq < towerContactDistance * towerContactDistance)
             {
                 if (isBoss)
                     System.Threading.Interlocked.Increment(ref ((int*)BossReachedGoalCount.GetUnsafePtr())[0]);
@@ -2163,14 +2164,23 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             vel += acceleration * DeltaTime;
             if (!isAirborne)
             {
+                // Status areas are processed later in this iteration, so derive the cap
+                // here from the updated effect state. Ice therefore slows on the hit frame
+                // instead of waiting for the following simulation frame.
+                float slowMoveFactor = effects.FreezeTimer > 0f
+                    ? 0f
+                    : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
                 float effectiveMaxSpeed = maxSpeed * slowMoveFactor;
                 float speedSq = math.lengthsq(vel.xz);
-                if (speedSq > effectiveMaxSpeed * effectiveMaxSpeed)
+                // A main-tower blast is an impulse, not ordinary locomotion. Let the first
+                // outward frame exceed the walking-speed cap or the knockback is reduced to
+                // a tiny hesitation before pathfinding turns the enemy back toward the goal.
+                if (!towerAreaRepelled && speedSq > effectiveMaxSpeed * effectiveMaxSpeed)
                 {
                     vel.xz *= effectiveMaxSpeed * math.rsqrt(speedSq);
                 }
 
-                vel.xz *= VelocityDamping;
+                vel.xz *= towerAreaRepelled ? 0.99f : VelocityDamping;
             }
             else
             {
@@ -2291,7 +2301,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                         System.Threading.Interlocked.Add(ref ((int*)TowerDefenseGoldEarned.GetUnsafePtr())[0], reward);
                 }
                 flashTimer = math.max(flashTimer, 0.99f);
+                float facingDirectionAtDeath = effects.FacingDirection;
                 effects = default;
+                effects.FacingDirection = facingDirectionAtDeath;
             }
 
             float2 arenaLimit = math.max(float2.zero, ArenaHalfExtents - math.max(radius, 0.05f));
@@ -2821,17 +2833,36 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, weightedSkill);
     }
 
-    private void ProcessTowerArea(ref float health, ref float flashTimer, ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
+    private bool ProcessTowerArea(ref float3 acceleration, ref float health,
+        ref float flashTimer, ref float3 vel, ref float tornadoMark,
+        ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill,
+        bool allowRepulse)
     {
-        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        if (math.abs(pos.y - RenderHeight) > 5f) return false;
         float2 diff = pos.xz - skill.Position;
-        if (math.lengthsq(diff) > skill.Radius * skill.Radius) return;
+        if (math.lengthsq(diff) > skill.Radius * skill.Radius) return false;
 
-        if (skill.PullForce > 0f)
+        bool repelled = false;
+        if (allowRepulse && skill.PullForce > 0f)
         {
             float2 outward = math.normalizesafe(diff, new float2(0f, 1f));
             float inwardSpeed = math.max(0f, -math.dot(vel.xz, outward));
             vel.xz += outward * (skill.PullForce + inwardSpeed);
+
+            // Navigation acceleration has already been calculated by the time tower areas
+            // are processed. Remove its inward component and remember the outward heading,
+            // so the next few navigation frames continue the push instead of immediately
+            // steering back into the main tower.
+            float inwardAcceleration = math.min(0f, math.dot(acceleration.xz, outward));
+            acceleration.xz -= outward * inwardAcceleration;
+            effects.NavigationDirectionX = outward.x;
+            effects.NavigationDirectionY = outward.y;
+            effects.NavigationReverseCooldown = math.max(effects.NavigationReverseCooldown, 0.32f);
+            if (math.abs(outward.x) > 0.12f)
+            {
+                effects.FacingDirection = outward.x < 0f ? -1f : 1f;
+            }
+            repelled = true;
         }
 
         if (skill.Damage > 0f)
@@ -2841,6 +2872,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         }
 
         ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
+        return repelled;
     }
 
     private void ProcessTowerLaser(ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
@@ -3352,9 +3384,6 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.SlowStacks = 0f;
             }
 
-            float slowMoveFactor = effects.FreezeTimer > 0f
-                ? 0f
-                : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 desired = math.normalizesafe(toPlayer);
@@ -3672,6 +3701,9 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             vel += acceleration * DeltaTime;
             if (!isAirborne)
             {
+                float slowMoveFactor = effects.FreezeTimer > 0f
+                    ? 0f
+                    : math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f);
                 float effectiveMaxSpeed = maxSpeed * slowMoveFactor;
                 float speedSq = math.lengthsq(vel.xz);
                 if (speedSq > effectiveMaxSpeed * effectiveMaxSpeed)

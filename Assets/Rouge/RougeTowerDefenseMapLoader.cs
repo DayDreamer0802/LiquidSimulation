@@ -325,7 +325,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     }
 
     public void SetTowerPlaceGridState(bool visible, IReadOnlyList<RougeDefenseTower> towers,
-        RougeDefenseTower previewTower, IReadOnlyList<bool> previewCellValidity)
+        RougeDefenseTower previewTower, IReadOnlyList<bool> previewCellValidity, bool previewValid)
     {
         for (int i = _towerPlaceGridRenderers.Count - 1; i >= 0; i--)
         {
@@ -339,12 +339,12 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         }
 
         if (map == null || _runtimeRoot == null) return;
-        SyncTowerFootprintGridOverlays(visible, towers, previewTower, previewCellValidity);
+        SyncTowerFootprintGridOverlays(visible, towers, previewTower, previewCellValidity, previewValid);
     }
 
     private void SyncTowerFootprintGridOverlays(bool visible,
         IReadOnlyList<RougeDefenseTower> towers, RougeDefenseTower previewTower,
-        IReadOnlyList<bool> previewCellValidity)
+        IReadOnlyList<bool> previewCellValidity, bool previewValid)
     {
         _bluePlacedTowerGridCells.Clear();
         _greenValidTowerGridCells.Clear();
@@ -392,9 +392,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                     bool isTowerPlaceCell = map.IsTowerPlaceMicroCell(cell);
                     previewTouchesTowerPlace |= isTowerPlaceCell;
                     int validityIndex = y * previewSize.x + x;
-                    bool cellIsValid = hasExplicitValidity
+                    bool cellIsValid = previewValid && (hasExplicitValidity
                         ? previewCellValidity[validityIndex]
-                        : isTowerPlaceCell && !_bluePlacedTowerGridCells.Contains(cell);
+                        : isTowerPlaceCell && !_bluePlacedTowerGridCells.Contains(cell));
                     if (cellIsValid && !_bluePlacedTowerGridCells.Contains(cell))
                     {
                         _greenValidTowerGridCells.Add(cell);
@@ -538,7 +538,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
         AppendTowerCellSet(_greenValidTowerGridCells, new Color32(30, 255, 76, 210), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_redInvalidTowerGridCells, new Color32(255, 46, 30, 238), anchor,
+        AppendTowerCellSet(_redInvalidTowerGridCells, new Color32(255, 58, 46, 226), anchor,
             cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
 
         mesh.Clear();

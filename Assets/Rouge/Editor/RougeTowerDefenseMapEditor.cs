@@ -11,8 +11,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         Tile,
         EnemySpawn,
         MainTower,
-        BossSpawn,
-        Erase
+        BossSpawn
     }
 
     private enum UpperDragKind
@@ -23,6 +22,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         BossSpawn
     }
 
+    private RougeTowerDefenseMap _mapAsset;
     private RougeTowerDefenseMap _map;
     private SerializedObject _serializedMap;
     private RougeTowerDefenseMapLoader _loader;
@@ -35,6 +35,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private int _draggedEnemySpawnIndex = -1;
     private int _enemySpawnDropIndex = -1;
     private bool _painting;
+    private int _paintUndoGroup = -1;
     private Vector2Int _lastPaintCell = new Vector2Int(int.MinValue, int.MinValue);
     private Vector2Int _hoverCell = new Vector2Int(-1, -1);
     private UpperDragKind _upperDragKind;
@@ -45,6 +46,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private static int s_bossOptionsJsonHash = int.MinValue;
     private static int[] s_bossOptionIds;
     private static string[] s_bossOptionLabels;
+    private string _savedDraftJson = string.Empty;
+    private string _saveStatus = string.Empty;
 
     [MenuItem("Rouge/塔防/地图编辑器")]
     public static void Open()
@@ -57,18 +60,40 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private void OnEnable()
     {
+        Undo.undoRedoPerformed += OnUndoRedoPerformed;
+        saveChangesMessage = "地图还有未保存的修改。要保存到关卡 Asset 吗？";
         RougeTowerDefenseMap selected = Selection.activeObject as RougeTowerDefenseMap;
         if (selected != null) SetMap(selected);
     }
 
+    private void OnDisable()
+    {
+        Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+        DestroyWorkingCopy();
+    }
+
+    public override void SaveChanges()
+    {
+        SaveMap();
+        base.SaveChanges();
+    }
+
+    public override void DiscardChanges()
+    {
+        ReloadWorkingCopy();
+        base.DiscardChanges();
+    }
+
     private void OnSelectionChange()
     {
-        if (Selection.activeObject is RougeTowerDefenseMap selected) SetMap(selected);
+        if (Selection.activeObject is RougeTowerDefenseMap selected && selected != _mapAsset)
+            TrySetMap(selected);
         Repaint();
     }
 
     private void OnGUI()
     {
+        HandleSaveShortcut();
         DrawTopBar();
         if (_map == null)
         {
@@ -91,22 +116,30 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         {
             EditorGUI.BeginChangeCheck();
             RougeTowerDefenseMap selected = (RougeTowerDefenseMap)EditorGUILayout.ObjectField(
-                _map, typeof(RougeTowerDefenseMap), false, GUILayout.Width(260f));
-            if (EditorGUI.EndChangeCheck()) SetMap(selected);
+                _mapAsset, typeof(RougeTowerDefenseMap), false, GUILayout.Width(260f));
+            if (EditorGUI.EndChangeCheck()) TrySetMap(selected);
             if (GUILayout.Button("新建地图", EditorStyles.toolbarButton, GUILayout.Width(75f))) CreateMapAsset();
-            using (new EditorGUI.DisabledScope(_map == null))
+            using (new EditorGUI.DisabledScope(_mapAsset == null))
             {
                 if (GUILayout.Button("添加/更新场景加载器", EditorStyles.toolbarButton, GUILayout.Width(160f)))
                     AddOrUpdateLoader();
-                if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(55f)))
+                Color previousBackground = GUI.backgroundColor;
+                if (hasUnsavedChanges) GUI.backgroundColor = new Color(1f, 0.68f, 0.18f);
+                if (GUILayout.Button(hasUnsavedChanges ? "保存 *" : "保存", EditorStyles.toolbarButton,
+                        GUILayout.Width(62f))) SaveMap();
+                GUI.backgroundColor = previousBackground;
+                using (new EditorGUI.DisabledScope(!hasUnsavedChanges))
                 {
-                    EditorUtility.SetDirty(_map);
-                    AssetDatabase.SaveAssets();
+                    if (GUILayout.Button("放弃修改", EditorStyles.toolbarButton, GUILayout.Width(70f)))
+                        ReloadWorkingCopy();
                 }
             }
             GUILayout.FlexibleSpace();
-            GUILayout.Label("独立二维编辑器——不使用场景绘制", EditorStyles.miniLabel);
+            GUILayout.Label(hasUnsavedChanges ? "未保存：仅存在于当前草稿" : "已保存",
+                EditorStyles.miniLabel);
         }
+        if (!string.IsNullOrEmpty(_saveStatus))
+            EditorGUILayout.HelpBox(_saveStatus, hasUnsavedChanges ? MessageType.Warning : MessageType.Info);
     }
 
     private void DrawSettingsPanel()
@@ -118,7 +151,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             _settingsScroll = EditorGUILayout.BeginScrollView(_settingsScroll);
             EditorGUILayout.LabelField("图层 / 画笔", EditorStyles.boldLabel);
             PaintTool nextTool = (PaintTool)GUILayout.Toolbar((int)_tool,
-                new[] { "地图", "敌人", "主塔", "Boss", "擦除" }, GUILayout.Height(28f));
+                new[] { "地图", "敌人", "主塔", "Boss" }, GUILayout.Height(28f));
             if (nextTool != _tool)
             {
                 _tool = nextTool;
@@ -166,9 +199,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         {
             if (GUILayout.Button("应用尺寸（保留已有格子）"))
             {
-                Undo.RecordObject(_map, "Resize Tower Defense Map");
+                Undo.RegisterCompleteObjectUndo(_map, "Resize Tower Defense Map");
                 _map.ResizeGrid(_pendingWidth, _pendingHeight, _pendingCellSize, true);
-                EditorUtility.SetDirty(_map);
+                MarkMapChanged();
             }
         }
         EditorGUILayout.HelpBox(
@@ -202,9 +235,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 "所选塔楼格效果", selectedDefinition.towerPlaceEffect);
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RecordObject(_map, "Change Tower Grid Effect");
+                Undo.RegisterCompleteObjectUndo(_map, "Change Tower Grid Effect");
                 selectedDefinition.towerPlaceEffect = selectedEffect;
-                EditorUtility.SetDirty(_map);
+                MarkMapChanged();
             }
             EditorGUILayout.HelpBox(
                 RougeTowerPlaceEffectRules.GetDisplayName(selectedDefinition.towerPlaceEffect) + "\n" +
@@ -219,7 +252,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             "塔楼格效果按地块定义配置；一座塔只读取其中心点下方的一个地形格。", MessageType.None);
         _serializedMap.Update();
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("tileDefinitions"), true);
-        if (_serializedMap.ApplyModifiedProperties()) EditorUtility.SetDirty(_map);
+        if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
     }
 
     private void DrawEnemyLayerSettings()
@@ -277,16 +310,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private void ApplyMapPropertyChanges(string undoName)
     {
-        if (EditorGUI.EndChangeCheck())
-        {
-            Undo.RecordObject(_map, undoName);
-            _serializedMap.ApplyModifiedProperties();
-            EditorUtility.SetDirty(_map);
-        }
-        else
-        {
-            _serializedMap.ApplyModifiedProperties();
-        }
+        bool guiChanged = EditorGUI.EndChangeCheck();
+        if (guiChanged) Undo.SetCurrentGroupName(undoName);
+        if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
     }
 
     private void DrawEnemySpawns(SerializedProperty spawns)
@@ -475,16 +501,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.Space(5f);
         DrawDisabledTowerIds(_serializedMap.FindProperty("disabledTowerTypeIds"));
 
-        if (EditorGUI.EndChangeCheck())
-        {
-            Undo.RecordObject(_map, "Edit Tower Defense Level Rules");
-            _serializedMap.ApplyModifiedProperties();
-            EditorUtility.SetDirty(_map);
-        }
-        else
-        {
-            _serializedMap.ApplyModifiedProperties();
-        }
+        bool guiChanged = EditorGUI.EndChangeCheck();
+        if (guiChanged) Undo.SetCurrentGroupName("Edit Tower Defense Level Rules");
+        if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
     }
 
     private static bool ContainsVictoryCondition(SerializedProperty conditions,
@@ -741,23 +760,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             new GUIContent("最小缩放"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("maximumCameraZoom"),
             new GUIContent("最大缩放"));
-        if (EditorGUI.EndChangeCheck())
-        {
-            Undo.RecordObject(_map, "Edit Level Camera Clamp");
-            _serializedMap.ApplyModifiedProperties();
-            EditorUtility.SetDirty(_map);
-            ResolveSceneLoader();
-            if (_loader != null)
-            {
-                _loader.ApplyCameraSettingsToExistingBounds();
-                EditorSceneManager.MarkSceneDirty(_loader.gameObject.scene);
-            }
-            SceneView.RepaintAll();
-        }
-        else
-        {
-            _serializedMap.ApplyModifiedProperties();
-        }
+        bool guiChanged = EditorGUI.EndChangeCheck();
+        if (guiChanged) Undo.SetCurrentGroupName("Edit Level Camera Clamp");
+        if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
         EditorGUILayout.HelpBox(
             "这些数值保存在当前地图资源中，因此每个关卡互相独立。使用该地图的场景加载器会在运行时应用它们。",
             MessageType.None);
@@ -889,7 +894,11 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             }
             _painting = true;
             _lastPaintCell = new Vector2Int(int.MinValue, int.MinValue);
-            Undo.RecordObject(_map, evt.button == 1 ? "Erase Map" : "Paint Map");
+            Undo.IncrementCurrentGroup();
+            _paintUndoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName(evt.button == 1 ? "Erase Map Stroke" : "Paint Map Stroke");
+            Undo.RegisterCompleteObjectUndo(_map,
+                evt.button == 1 ? "Erase Map Stroke" : "Paint Map Stroke");
             PaintLine(_hoverCell, evt.button == 1);
             evt.Use();
         }
@@ -914,7 +923,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         {
             _painting = false;
             _lastPaintCell = new Vector2Int(int.MinValue, int.MinValue);
-            EditorUtility.SetDirty(_map);
+            if (_paintUndoGroup >= 0) Undo.CollapseUndoOperations(_paintUndoGroup);
+            _paintUndoGroup = -1;
+            MarkMapChanged();
             evt.Use();
         }
     }
@@ -947,7 +958,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             if (twice <= dx) { error += dx; y0 += sy; }
         }
         _lastPaintCell = destination;
-        EditorUtility.SetDirty(_map);
+        MarkMapChanged();
     }
 
     private void PaintCell(Vector2Int cell, bool forceErase)
@@ -956,11 +967,6 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         {
             if (_tool == PaintTool.Tile) _map.EraseBaseTile(cell);
             else _map.RemoveUpperObjectAt(cell);
-            return;
-        }
-        if (_tool == PaintTool.Erase)
-        {
-            _map.RemoveUpperObjectAt(cell);
             return;
         }
         switch (_tool)
@@ -985,48 +991,47 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 if (_map.FindEnemySpawn(cell) != null)
                 {
                     SelectEnemySpawnAt(cell);
-                    Undo.RecordObject(_map, "Move Enemy Spawn");
+                    Undo.RegisterCompleteObjectUndo(_map, "Move Enemy Spawn");
                     _upperDragKind = UpperDragKind.Enemy;
                     _upperDragSource = cell;
                 }
                 else if (_map.IsGround(cell) && !_map.HasUpperObject(cell))
                 {
-                    Undo.RecordObject(_map, "Create Enemy Spawn");
+                    Undo.RegisterCompleteObjectUndo(_map, "Create Enemy Spawn");
                     if (_map.AddEnemySpawn(cell))
                     {
                         SelectEnemySpawn(_map.EnemySpawns.Count - 1);
-                        EditorUtility.SetDirty(_map);
+                        MarkMapChanged();
                     }
                 }
                 break;
             case PaintTool.MainTower:
                 if (_map.HasMainTower && _map.MainTowerCell == cell)
                 {
-                    Undo.RecordObject(_map, "Move Main Tower");
+                    Undo.RegisterCompleteObjectUndo(_map, "Move Main Tower");
                     _upperDragKind = UpperDragKind.MainTower;
                     _upperDragSource = cell;
                 }
                 else if (!_map.HasMainTower && _map.IsGround(cell) && !_map.HasUpperObject(cell))
                 {
-                    Undo.RecordObject(_map, "Create Main Tower");
-                    _map.PlaceMainTower(cell);
+                    Undo.RegisterCompleteObjectUndo(_map, "Create Main Tower");
+                    if (_map.PlaceMainTower(cell)) MarkMapChanged();
                 }
                 break;
             case PaintTool.BossSpawn:
                 if (_map.HasBossSpawn && _map.BossSpawnCell == cell)
                 {
-                    Undo.RecordObject(_map, "Move Boss Spawn");
+                    Undo.RegisterCompleteObjectUndo(_map, "Move Boss Spawn");
                     _upperDragKind = UpperDragKind.BossSpawn;
                     _upperDragSource = cell;
                 }
                 else if (!_map.HasBossSpawn && _map.IsGround(cell) && !_map.HasUpperObject(cell))
                 {
-                    Undo.RecordObject(_map, "Create Boss Spawn");
-                    _map.PlaceBossSpawn(cell);
+                    Undo.RegisterCompleteObjectUndo(_map, "Create Boss Spawn");
+                    if (_map.PlaceBossSpawn(cell)) MarkMapChanged();
                 }
                 break;
         }
-        EditorUtility.SetDirty(_map);
         Repaint();
     }
 
@@ -1059,7 +1064,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         if (moved)
         {
             _upperDragSource = destination;
-            EditorUtility.SetDirty(_map);
+            MarkMapChanged();
         }
     }
 
@@ -1101,9 +1106,93 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         return $"({world.x:0.#}, {world.z:0.#})";
     }
 
+    private void HandleSaveShortcut()
+    {
+        Event current = Event.current;
+        if (current == null || current.type != EventType.KeyDown || current.keyCode != KeyCode.S ||
+            (!current.control && !current.command)) return;
+        SaveMap();
+        current.Use();
+    }
+
+    private void OnUndoRedoPerformed()
+    {
+        if (_map == null) return;
+        _serializedMap?.UpdateIfRequiredOrScript();
+        UpdateUnsavedState();
+        _saveStatus = hasUnsavedChanges
+            ? "已撤销/重做到草稿；点击“保存”才会写入关卡 Asset。"
+            : "草稿已回到上次保存的状态。";
+        Repaint();
+    }
+
+    private void MarkMapChanged()
+    {
+        if (_map == null) return;
+        EditorUtility.SetDirty(_map);
+        UpdateUnsavedState();
+        if (hasUnsavedChanges)
+            _saveStatus = "修改只保存在编辑器草稿中，尚未写入关卡 Asset。";
+        Repaint();
+    }
+
+    private void UpdateUnsavedState()
+    {
+        hasUnsavedChanges = _map != null && GetDraftJson(_map) != _savedDraftJson;
+    }
+
+    private static string GetDraftJson(RougeTowerDefenseMap map)
+    {
+        return map != null ? EditorJsonUtility.ToJson(map, false) : string.Empty;
+    }
+
+    private void SaveMap()
+    {
+        if (_mapAsset == null || _map == null) return;
+        _serializedMap?.ApplyModifiedProperties();
+        string assetName = _mapAsset.name;
+        EditorUtility.CopySerialized(_map, _mapAsset);
+        _mapAsset.name = assetName;
+        EditorUtility.SetDirty(_mapAsset);
+        AssetDatabase.SaveAssetIfDirty(_mapAsset);
+        _savedDraftJson = GetDraftJson(_map);
+        hasUnsavedChanges = false;
+        _saveStatus = "已手动保存到 " + AssetDatabase.GetAssetPath(_mapAsset);
+        Repaint();
+    }
+
+    private bool ConfirmCanReplaceDraft()
+    {
+        if (!hasUnsavedChanges) return true;
+        int choice = EditorUtility.DisplayDialogComplex(
+            "地图尚未保存",
+            "当前修改只存在于草稿中。切换地图后将无法恢复。",
+            "保存并继续", "取消", "放弃修改");
+        if (choice == 1) return false;
+        if (choice == 0) SaveMap();
+        return choice == 2 || !hasUnsavedChanges;
+    }
+
+    private void ReloadWorkingCopy()
+    {
+        RougeTowerDefenseMap asset = _mapAsset;
+        SetMap(asset);
+        _saveStatus = asset != null ? "已放弃草稿修改，并从关卡 Asset 重新载入。" : string.Empty;
+    }
+
+    private bool TrySetMap(RougeTowerDefenseMap map)
+    {
+        if (map == _mapAsset) return true;
+        if (!ConfirmCanReplaceDraft()) return false;
+        SetMap(map);
+        return true;
+    }
+
     private void SetMap(RougeTowerDefenseMap map)
     {
-        _map = map;
+        DestroyWorkingCopy();
+        _mapAsset = map;
+        _map = null;
         _upperDragKind = UpperDragKind.None;
         _upperDragSource = new Vector2Int(-1, -1);
         _expandedEnemySpawnIndex = -1;
@@ -1111,15 +1200,34 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         _draggedEnemySpawnIndex = -1;
         _enemySpawnDropIndex = -1;
         _settingsScroll = Vector2.zero;
-        _serializedMap = map != null ? new SerializedObject(map) : null;
-        ResolveSceneLoader();
         if (map != null)
         {
-            _pendingWidth = map.Width;
-            _pendingHeight = map.Height;
-            _pendingCellSize = map.CellSize;
-            _tileIndex = Mathf.Clamp(_tileIndex, 1, Mathf.Max(1, map.TileDefinitions.Count - 1));
+            _map = CreateInstance<RougeTowerDefenseMap>();
+            EditorUtility.CopySerialized(map, _map);
+            _map.name = map.name + " (Editing Draft)";
+            _map.hideFlags = HideFlags.HideInHierarchy;
         }
+        _serializedMap = _map != null ? new SerializedObject(_map) : null;
+        _savedDraftJson = GetDraftJson(_map);
+        hasUnsavedChanges = false;
+        _saveStatus = map != null ? "已载入草稿；修改不会自动写入关卡 Asset。" : string.Empty;
+        ResolveSceneLoader();
+        if (_map != null)
+        {
+            _pendingWidth = _map.Width;
+            _pendingHeight = _map.Height;
+            _pendingCellSize = _map.CellSize;
+            _tileIndex = Mathf.Clamp(_tileIndex, 1, Mathf.Max(1, _map.TileDefinitions.Count - 1));
+        }
+    }
+
+    private void DestroyWorkingCopy()
+    {
+        if (_map == null) return;
+        Undo.ClearUndo(_map);
+        DestroyImmediate(_map);
+        _map = null;
+        _serializedMap = null;
     }
 
     private void ResolveSceneLoader()
@@ -1130,7 +1238,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         for (int i = 0; i < loaders.Length; i++)
         {
             SerializedObject candidate = new SerializedObject(loaders[i]);
-            if (candidate.FindProperty("map").objectReferenceValue != _map) continue;
+            if (candidate.FindProperty("map").objectReferenceValue != _mapAsset) continue;
             _loader = loaders[i];
             return;
         }
@@ -1138,13 +1246,14 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private void CreateMapAsset()
     {
+        if (!ConfirmCanReplaceDraft()) return;
         string path = EditorUtility.SaveFilePanelInProject(
             "创建塔防地图", "TowerDefenseMap", "asset", "请选择地图资源的保存位置。" );
         if (string.IsNullOrEmpty(path)) return;
         RougeTowerDefenseMap created = CreateInstance<RougeTowerDefenseMap>();
         created.InitializeDefaults();
         AssetDatabase.CreateAsset(created, path);
-        AssetDatabase.SaveAssets();
+        AssetDatabase.SaveAssetIfDirty(created);
         Selection.activeObject = created;
         SetMap(created);
     }
@@ -1159,7 +1268,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             loader = Undo.AddComponent<RougeTowerDefenseMapLoader>(go);
         }
         SerializedObject serializedLoader = new SerializedObject(loader);
-        serializedLoader.FindProperty("map").objectReferenceValue = _map;
+        serializedLoader.FindProperty("map").objectReferenceValue = _mapAsset;
         serializedLoader.ApplyModifiedProperties();
         _loader = loader;
         EditorUtility.SetDirty(loader);

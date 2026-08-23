@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Rouge_CrystalLaserRibbon
+  m_Shader: {fileID: 4800000, guid: 9b7b6f2ab8ce45afb1ea07e91e2d9551, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 1
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _Alpha: 0.9
+    - _BeamWidth: 0.42
+    - _CoreWidth: 0.07
+    - _EdgeSoftness: 0.5
+    - _EndFade: 0.018
+    - _FlowScale: 34
+    - _FlowSpeed: 20
+    - _PulseSpeed: 7.5
+    - _SparkIntensity: 1.45
+    m_Colors:
+    - _BeamColor: {r: 0.025, g: 0.46, b: 2, a: 1}
+    - _CoreColor: {r: 1.25, g: 1.5, b: 1.85, a: 1}
+    - _GlowColor: {r: 0.2, g: 0.018, b: 1.2, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

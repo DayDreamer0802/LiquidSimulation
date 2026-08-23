@@ -101,14 +101,14 @@ internal static class TowerDefenseVisuals
     {
         switch (type)
         {
-            case RougeTowerType.Ice: return "ICE TOWER";
-            case RougeTowerType.MachineGun: return "MACHINE GUN";
-            case RougeTowerType.Cannon: return "CANNON";
-            case RougeTowerType.Flame: return "FLAME TOWER";
-            case RougeTowerType.Laser: return "LASER TOWER";
-            case RougeTowerType.PiercingLaser: return "PIERCING LASER";
-            case RougeTowerType.OrbitSphere: return "CRYSTAL TOWER";
-            default: return "ROCKET BARRAGE";
+            case RougeTowerType.Ice: return "冰霜塔";
+            case RougeTowerType.MachineGun: return "机枪塔";
+            case RougeTowerType.Cannon: return "加农炮";
+            case RougeTowerType.Flame: return "火焰塔";
+            case RougeTowerType.Laser: return "激光塔";
+            case RougeTowerType.PiercingLaser: return "穿透激光";
+            case RougeTowerType.OrbitSphere: return "水晶塔";
+            default: return "火箭齐射";
         }
     }
 
@@ -400,18 +400,42 @@ internal static class TowerDefenseVisuals
     public static Material GetCrystalLaserMaterial()
     {
         if (s_crystalLaserMaterial != null) return s_crystalLaserMaterial;
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        s_crystalLaserMaterial = Resources.Load<Material>("Rouge_CrystalLaserRibbon");
+        if (s_crystalLaserMaterial != null) return s_crystalLaserMaterial;
+
+        Shader shader = Shader.Find("Rouge/TowerLaserRibbon");
+        bool usesEnergyRibbonShader = shader != null;
+        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
         if (shader == null) shader = Shader.Find("Unlit/Color");
         if (shader == null) shader = Shader.Find("Sprites/Default");
         s_crystalLaserMaterial = new Material(shader)
         {
-            name = "Crystal Tower Thin Blue Laser Material",
-            color = new Color(0.08f, 0.58f, 1f, 1f),
+            name = "Crystal Tower Energy Ribbon Material",
             renderQueue = 3000,
             enableInstancing = true
         };
-        if (s_crystalLaserMaterial.HasProperty("_BaseColor"))
-            s_crystalLaserMaterial.SetColor("_BaseColor", s_crystalLaserMaterial.color);
+        Color fallbackColor = new Color(0.08f, 0.58f, 1f, 1f);
+        if (usesEnergyRibbonShader)
+        {
+            s_crystalLaserMaterial.SetColor("_CoreColor", new Color(1.25f, 1.5f, 1.85f, 1f));
+            s_crystalLaserMaterial.SetColor("_BeamColor", new Color(0.025f, 0.46f, 2.0f, 1f));
+            s_crystalLaserMaterial.SetColor("_GlowColor", new Color(0.20f, 0.018f, 1.2f, 1f));
+            s_crystalLaserMaterial.SetFloat("_CoreWidth", 0.07f);
+            s_crystalLaserMaterial.SetFloat("_BeamWidth", 0.42f);
+            s_crystalLaserMaterial.SetFloat("_EdgeSoftness", 0.50f);
+            s_crystalLaserMaterial.SetFloat("_FlowScale", 34f);
+            s_crystalLaserMaterial.SetFloat("_FlowSpeed", 20f);
+            s_crystalLaserMaterial.SetFloat("_PulseSpeed", 7.5f);
+            s_crystalLaserMaterial.SetFloat("_SparkIntensity", 1.45f);
+            s_crystalLaserMaterial.SetFloat("_EndFade", 0.018f);
+            s_crystalLaserMaterial.SetFloat("_Alpha", 0.9f);
+        }
+        else
+        {
+            s_crystalLaserMaterial.color = fallbackColor;
+            if (s_crystalLaserMaterial.HasProperty("_BaseColor"))
+                s_crystalLaserMaterial.SetColor("_BaseColor", fallbackColor);
+        }
         return s_crystalLaserMaterial;
     }
 
@@ -506,24 +530,28 @@ internal static class TowerDefenseVisuals
                 // Keep the authored sci-fi artwork readable during placement. The grid
                 // and energy rings carry most of the valid/invalid state instead of
                 // turning the whole tower into a flat green or red silhouette.
+                bool invalidPreview = transparent && tint.r > 0.8f && tint.g < 0.25f;
+                float tintStrength = invalidPreview ? 0.55f : 0.24f;
                 spriteRenderer.color = transparent
                     ? new Color(
-                        Mathf.Lerp(1f, tint.r, 0.24f),
-                        Mathf.Lerp(1f, tint.g, 0.24f),
-                        Mathf.Lerp(1f, tint.b, 0.24f),
-                        Mathf.Lerp(0.72f, tint.a, 0.3f))
+                        Mathf.Lerp(1f, tint.r, tintStrength),
+                        Mathf.Lerp(1f, tint.g, tintStrength),
+                        Mathf.Lerp(1f, tint.b, tintStrength),
+                        invalidPreview ? Mathf.Max(0.74f, tint.a) : Mathf.Lerp(0.72f, tint.a, 0.3f))
                     : Color.white;
                 continue;
             }
 
             Material material = renderers[i].material;
             Color baseColor = material.HasProperty("_BaseColor") ? material.GetColor("_BaseColor") : material.color;
+            bool invalidMaterialPreview = transparent && tint.r > 0.8f && tint.g < 0.25f;
+            float materialTintStrength = invalidMaterialPreview ? 0.54f : 0.3f;
             Color output = transparent
                 ? new Color(
-                    baseColor.r * Mathf.Lerp(1f, tint.r, 0.3f),
-                    baseColor.g * Mathf.Lerp(1f, tint.g, 0.3f),
-                    baseColor.b * Mathf.Lerp(1f, tint.b, 0.3f),
-                    Mathf.Lerp(0.72f, tint.a, 0.3f))
+                    baseColor.r * Mathf.Lerp(1f, tint.r, materialTintStrength),
+                    baseColor.g * Mathf.Lerp(1f, tint.g, materialTintStrength),
+                    baseColor.b * Mathf.Lerp(1f, tint.b, materialTintStrength),
+                    invalidMaterialPreview ? Mathf.Max(0.76f, tint.a) : Mathf.Lerp(0.72f, tint.a, 0.3f))
                 : new Color(baseColor.r, baseColor.g, baseColor.b, 1f);
             material.color = output;
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", output);

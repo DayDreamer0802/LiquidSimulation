@@ -19,6 +19,10 @@ Shader "Rouge/LaserBeam"
         _FresnelStrength("Fresnel Strength", Range(0.0, 4.0)) = 1.25
         _EndFade("End Fade", Range(0.001, 0.35)) = 0.08
         _Alpha("Global Intensity", Range(0.0, 3.0)) = 1.0
+        [PerRendererData] _VisualPhase("Visual Phase", Range(0.0, 1.0)) = 0.5
+        [PerRendererData] _ImpactFlash("Impact Flash", Range(0.0, 1.0)) = 0.0
+        [PerRendererData] _StartFade("Start Fade", Range(0.001, 0.35)) = 0.08
+        [PerRendererData] _RootHemisphere("Root Hemisphere", Range(0.0, 1.0)) = 0.0
     }
 
     SubShader
@@ -64,6 +68,10 @@ Shader "Rouge/LaserBeam"
             float _FresnelStrength;
             float _EndFade;
             float _Alpha;
+            float _VisualPhase;
+            float _ImpactFlash;
+            float _StartFade;
+            float _RootHemisphere;
             CBUFFER_END
 
             struct Attributes
@@ -116,6 +124,14 @@ Shader "Rouge/LaserBeam"
                 float axis = saturate(input.positionOS.y * 0.5 + 0.5);
                 float angle = atan2(input.positionOS.z, input.positionOS.x);
                 float time = _Time.y;
+                // The dedicated root-cap sphere keeps only its rear half. Joined to the
+                // cylinder at y=0 this produces a true hemisphere instead of a long cone.
+                float hemisphereClip = lerp(1.0, -input.positionOS.y + 0.0001,
+                    step(0.5, _RootHemisphere));
+                clip(hemisphereClip);
+                float visualPhase = saturate(_VisualPhase);
+                float phaseEnvelope = sin(visualPhase * 3.14159265);
+                float impactFlash = saturate(_ImpactFlash);
 
                 float core = 1.0 - smoothstep(_CoreRadius, _CoreRadius + 0.16, radial);
                 float body = 1.0 - smoothstep(_BeamRadius, _BeamRadius + _GlowSoftness, radial);
@@ -135,16 +151,30 @@ Shader "Rouge/LaserBeam"
                 float ribbonEnvelope = smoothstep(_CoreRadius, 0.48, radial) * (1.0 - smoothstep(0.6, 1.0, radial));
                 float ribbons = max(ribbonA, ribbonB) * ribbonEnvelope * _RibbonIntensity;
 
-                float pulse = 0.88 + sin(time * _PulseSpeed + axis * 8.0) * 0.12;
-                float endFade = smoothstep(0.0, _EndFade, axis) * smoothstep(0.0, _EndFade, 1.0 - axis);
+                // Thin travelling knots break up the perfectly uniform tube. They read as
+                // compressed packets of energy without requiring another texture sample.
+                float knotA = pow(saturate(sin(axis * 61.0 - time * 31.0 + angle * 1.7) * 0.5 + 0.5), 22.0);
+                float knotB = pow(saturate(sin(axis * 37.0 - time * 19.0 - angle * 2.3) * 0.5 + 0.5), 28.0);
+                float knotMask = max(knotA, knotB) * (core + innerHalo * 0.68);
 
-                float3 whiteCore = _CoreColor.rgb * core * (1.15 + fastFlow * 0.5);
-                float3 beam = _BeamColor.rgb * (innerHalo * 1.15 + body * 0.42) * flow;
-                float3 glow = _GlowColor.rgb * outerHalo * (0.42 + fresnel * _FresnelStrength);
+                float pulse = (0.88 + sin(time * _PulseSpeed + axis * 8.0) * 0.12) *
+                    (0.88 + phaseEnvelope * 0.22 + impactFlash * 0.35);
+                float endFade = smoothstep(0.0, _StartFade, axis) *
+                    smoothstep(0.0, _EndFade, 1.0 - axis);
+
+                float3 whiteCore = _CoreColor.rgb * core * (1.25 + fastFlow * 0.6 + impactFlash * 1.5);
+                float3 beam = _BeamColor.rgb * (innerHalo * 1.2 + body * 0.46) * flow;
+                float3 glow = _GlowColor.rgb * outerHalo *
+                    (0.46 + fresnel * _FresnelStrength + impactFlash * 0.45);
                 float3 ribbonColor = lerp(_CoreColor.rgb, _BeamColor.rgb, 0.72) * ribbons;
-                float3 emission = (whiteCore + beam + glow + ribbonColor) * pulse * endFade * _Alpha;
+                float3 energyKnots = lerp(_BeamColor.rgb, _CoreColor.rgb, 0.72) * knotMask *
+                    (0.8 + phaseEnvelope * 0.65 + impactFlash * 1.6);
+                float3 impactCore = _CoreColor.rgb * impactFlash * (core + body * 0.45) * 1.4;
+                float3 emission = (whiteCore + beam + glow + ribbonColor + energyKnots + impactCore) *
+                    pulse * endFade * _Alpha;
 
-                float mask = saturate(core + body * 0.82 + ribbons * 0.55 + fresnel * body * 0.35) * endFade;
+                float mask = saturate(core + body * 0.84 + ribbons * 0.55 + knotMask * 0.4 +
+                    fresnel * body * 0.35 + impactFlash * body * 0.25) * endFade;
                 clip(mask - 0.015);
                 return half4(emission * mask, mask);
             }
