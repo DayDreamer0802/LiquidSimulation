@@ -563,7 +563,7 @@ internal static class TowerDefenseVisuals
                         Mathf.Lerp(1f, tint.g, tintStrength),
                         Mathf.Lerp(1f, tint.b, tintStrength),
                         invalidPreview ? Mathf.Max(0.74f, tint.a) : Mathf.Lerp(0.72f, tint.a, 0.3f))
-                    : Color.white;
+                    : tint;
                 continue;
             }
 

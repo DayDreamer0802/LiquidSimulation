@@ -29,6 +29,10 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     private Material _towerPlaceGridMaterial;
     private Material _towerFootprintGridMaterial;
     private Material _towerOwnedCellHighlightMaterial;
+    private readonly Dictionary<Vector2Int, RougeTowerPlaceEffect> _runtimeTowerPlaceEffects =
+        new Dictionary<Vector2Int, RougeTowerPlaceEffect>();
+    private readonly Dictionary<Vector2Int, TileVisualState> _tileVisuals =
+        new Dictionary<Vector2Int, TileVisualState>();
     private readonly HashSet<Vector2Int> _bluePlacedTowerGridCells = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> _greenValidTowerGridCells = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> _redInvalidTowerGridCells = new HashSet<Vector2Int>();
@@ -47,7 +51,48 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         public readonly HashSet<Vector2Int> redCells = new HashSet<Vector2Int>();
     }
 
+    private sealed class TileVisualState
+    {
+        public Renderer[] renderers;
+        public Color[] spriteColors;
+    }
+
     public RougeTowerDefenseMap Map => map;
+
+    public RougeTowerPlaceEffect GetEffectiveTowerPlaceEffect(Vector2Int cell)
+    {
+        return _runtimeTowerPlaceEffects.TryGetValue(cell, out RougeTowerPlaceEffect effect)
+            ? effect
+            : map != null ? map.GetTowerPlaceEffect(cell) : RougeTowerPlaceEffect.None;
+    }
+
+    public float GetMinimumEffectiveTowerGoldCostMultiplier()
+    {
+        float minimum = map != null ? map.GetMinimumTowerGoldCostMultiplier() : 1f;
+        foreach (RougeTowerPlaceEffect effect in _runtimeTowerPlaceEffects.Values)
+        {
+            minimum = Mathf.Min(minimum,
+                RougeTowerPlaceEffectRules.GetGoldCostMultiplier(effect));
+        }
+        return minimum;
+    }
+
+    public bool TrySetRuntimeTowerPlaceEffect(Vector2Int cell, RougeTowerPlaceEffect effect)
+    {
+        if (map == null || _runtimeRoot == null || effect == RougeTowerPlaceEffect.None ||
+            !map.IsTowerPlace(cell) || GetEffectiveTowerPlaceEffect(cell) != RougeTowerPlaceEffect.None)
+            return false;
+        _runtimeTowerPlaceEffects[cell] = effect;
+        ApplyTileEffectColor(cell, effect);
+        return true;
+    }
+
+    public bool ClearRuntimeTowerPlaceEffect(Vector2Int cell)
+    {
+        if (!_runtimeTowerPlaceEffects.Remove(cell)) return false;
+        RestoreTileColor(cell);
+        return true;
+    }
 
     private void OnEnable()
     {
@@ -91,6 +136,8 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     public void ClearMap()
     {
         ClearTowerFootprintGridOverlays();
+        _runtimeTowerPlaceEffects.Clear();
+        _tileVisuals.Clear();
         if (_runtimeRoot != null)
         {
             if (Application.isPlaying) Destroy(_runtimeRoot);
@@ -108,6 +155,92 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         _towerPlaceGridMaterial = null;
         _towerFootprintGridMaterial = null;
         _towerOwnedCellHighlightMaterial = null;
+    }
+
+    private void RegisterTileVisual(Vector2Int cell, GameObject instance)
+    {
+        Renderer[] renderers = instance != null
+            ? instance.GetComponentsInChildren<Renderer>(true)
+            : System.Array.Empty<Renderer>();
+        Color[] spriteColors = new Color[renderers.Length];
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i] is SpriteRenderer spriteRenderer)
+                spriteColors[i] = spriteRenderer.color;
+        }
+        _tileVisuals[cell] = new TileVisualState
+        {
+            renderers = renderers,
+            spriteColors = spriteColors
+        };
+    }
+
+    private void ApplyTileEffectColor(Vector2Int cell, RougeTowerPlaceEffect effect)
+    {
+        if (!_tileVisuals.TryGetValue(cell, out TileVisualState visual) || visual == null) return;
+        Color target = RougeTowerPlaceEffectRules.GetVisualColor(effect);
+        target.a = 1f;
+        for (int rendererIndex = 0; rendererIndex < visual.renderers.Length; rendererIndex++)
+        {
+            Renderer renderer = visual.renderers[rendererIndex];
+            if (renderer == null) continue;
+            if (renderer is SpriteRenderer spriteRenderer)
+            {
+                spriteRenderer.color = RecolorTileMaterial(
+                    visual.spriteColors[rendererIndex], target, 0.72f, 1f, 0.2f);
+                continue;
+            }
+
+            Material[] materials = renderer.sharedMaterials;
+            for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
+            {
+                Material material = materials[materialIndex];
+                if (material == null) continue;
+                MaterialPropertyBlock properties = new MaterialPropertyBlock();
+                if (material.HasProperty("_BaseColor"))
+                    properties.SetColor("_BaseColor", RecolorTileMaterial(
+                        material.GetColor("_BaseColor"), target, 0.88f, 1.08f, 0.1f));
+                if (material.HasProperty("_PanelColor"))
+                    properties.SetColor("_PanelColor", RecolorTileMaterial(
+                        material.GetColor("_PanelColor"), target, 0.82f, 0.92f, 0.08f));
+                if (material.HasProperty("_AccentColor"))
+                    properties.SetColor("_AccentColor", RecolorTileMaterial(
+                        material.GetColor("_AccentColor"), target, 1f, 1.05f, 0.72f));
+                if (material.HasProperty("_Color"))
+                    properties.SetColor("_Color", RecolorTileMaterial(
+                        material.GetColor("_Color"), target, 0.78f, 1f, 0.16f));
+                renderer.SetPropertyBlock(properties, materialIndex);
+            }
+        }
+    }
+
+    private void RestoreTileColor(Vector2Int cell)
+    {
+        if (!_tileVisuals.TryGetValue(cell, out TileVisualState visual) || visual == null) return;
+        for (int rendererIndex = 0; rendererIndex < visual.renderers.Length; rendererIndex++)
+        {
+            Renderer renderer = visual.renderers[rendererIndex];
+            if (renderer == null) continue;
+            if (renderer is SpriteRenderer spriteRenderer)
+                spriteRenderer.color = visual.spriteColors[rendererIndex];
+            Material[] materials = renderer.sharedMaterials;
+            for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
+                renderer.SetPropertyBlock(null, materialIndex);
+        }
+    }
+
+    private static Color RecolorTileMaterial(Color source, Color target, float saturationBlend,
+        float valueMultiplier, float minimumValue)
+    {
+        Color.RGBToHSV(source, out _, out float sourceSaturation, out float sourceValue);
+        Color.RGBToHSV(target, out float targetHue, out float targetSaturation, out _);
+        float saturation = Mathf.Lerp(sourceSaturation, targetSaturation,
+            Mathf.Clamp01(saturationBlend));
+        float value = Mathf.Clamp(sourceValue * Mathf.Max(0f, valueMultiplier),
+            Mathf.Clamp01(minimumValue), 1f);
+        Color result = Color.HSVToRGB(targetHue, saturation, value);
+        result.a = source.a;
+        return result;
     }
 
     private void BuildTileVisuals()
@@ -149,6 +282,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 instance.name = $"{definition.name} [{x},{y}]";
                 Collider[] visualColliders = instance.GetComponentsInChildren<Collider>(true);
                 for (int i = 0; i < visualColliders.Length; i++) visualColliders[i].enabled = false;
+                RegisterTileVisual(cell, instance);
             }
         }
     }

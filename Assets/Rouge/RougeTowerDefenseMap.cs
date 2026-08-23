@@ -138,6 +138,22 @@ public static class RougeTowerPlaceEffectRules
                 return "此地图格没有特殊效果";
         }
     }
+
+    public static Color GetVisualColor(RougeTowerPlaceEffect effect)
+    {
+        switch (effect)
+        {
+            case RougeTowerPlaceEffect.DamageAmplifier: return new Color(1f, 0.22f, 0.08f, 0.38f);
+            case RougeTowerPlaceEffect.RangeAmplifier: return new Color(0.08f, 0.78f, 1f, 0.38f);
+            case RougeTowerPlaceEffect.AttackSpeedAmplifier: return new Color(1f, 0.78f, 0.08f, 0.38f);
+            case RougeTowerPlaceEffect.PremiumAmplifier: return new Color(1f, 0.18f, 0.78f, 0.4f);
+            case RougeTowerPlaceEffect.FreeLevelNoRefund: return new Color(0.52f, 0.62f, 0.78f, 0.4f);
+            case RougeTowerPlaceEffect.Bounty: return new Color(1f, 0.52f, 0.04f, 0.4f);
+            case RougeTowerPlaceEffect.Discount: return new Color(0.12f, 0.9f, 0.34f, 0.38f);
+            case RougeTowerPlaceEffect.Relocation: return new Color(0.68f, 0.2f, 1f, 0.4f);
+            default: return Color.clear;
+        }
+    }
 }
 
 [CreateAssetMenu(fileName = "TowerDefenseMap", menuName = "Rouge/Tower Defense Map")]

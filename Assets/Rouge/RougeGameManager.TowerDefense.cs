@@ -29,6 +29,19 @@ public partial class RougeGameManager
     private const float PiercingLaserDamageTime = 0.25f;
     private const float PiercingLaserBeamRadius = 2.8f;
     private const float PiercingLaserMaxVisualWidthMultiplier = 1.25f;
+    private const int ChargeTowerBaseGoldCost = 3000;
+    private const float ChargeTowerCountCostMultiplier = 0.25f;
+    private static readonly RougeTowerPlaceEffect[] ChargeTowerEffectPool =
+    {
+        RougeTowerPlaceEffect.DamageAmplifier,
+        RougeTowerPlaceEffect.RangeAmplifier,
+        RougeTowerPlaceEffect.AttackSpeedAmplifier,
+        RougeTowerPlaceEffect.PremiumAmplifier,
+        RougeTowerPlaceEffect.FreeLevelNoRefund,
+        RougeTowerPlaceEffect.Bounty,
+        RougeTowerPlaceEffect.Discount,
+        RougeTowerPlaceEffect.Relocation
+    };
     private static readonly int LaserAlphaId = Shader.PropertyToID("_Alpha");
     private static readonly int LaserVisualPhaseId = Shader.PropertyToID("_VisualPhase");
     private static readonly int LaserImpactFlashId = Shader.PropertyToID("_ImpactFlash");
@@ -84,6 +97,8 @@ public partial class RougeGameManager
     private bool _showAllTowerAttackRanges;
     private bool _towerDefenseDoubleSpeed;
     private bool _towerBuildSelectionActive = true;
+    private bool _chargeTowerBuildSelectionActive;
+    private bool _chargeTowerEffectSelectionActive;
     private bool _towerDefenseGameOver;
     private bool _towerDefenseSceneReloadRequested;
     private string _towerDefenseGameOverReason;
@@ -96,6 +111,12 @@ public partial class RougeGameManager
     private int _towerDefenseSpawnSearchCursor;
     private RougeTowerType _selectedBuildType = RougeTowerType.Ice;
     private RougeDefenseTower _towerPreview;
+    private RougeDefenseTower _pendingChargeTower;
+    private Vector2Int _pendingChargeTowerCell;
+    private int _pendingChargeTowerEscrow;
+    private int _chargeTowerRefreshCount;
+    private readonly RougeTowerPlaceEffect[] _chargeTowerEffectChoices =
+        new RougeTowerPlaceEffect[3];
     private RougeDefenseTower _selectedTower;
     private RougeDefenseTower _relocatingTower;
     private bool _towerRelocationActive;
@@ -128,6 +149,14 @@ public partial class RougeGameManager
     private Text _towerDamageRankingText;
     private GameObject _towerPlaceEffectPanel;
     private Text _towerPlaceEffectText;
+    private Button _chargeTowerBuildButton;
+    private Text _chargeTowerBuildButtonText;
+    private GameObject _chargeTowerEffectSelectionPanel;
+    private Text _chargeTowerEffectSelectionSummary;
+    private readonly Button[] _chargeTowerEffectChoiceButtons = new Button[3];
+    private readonly Text[] _chargeTowerEffectChoiceTexts = new Text[3];
+    private Button _chargeTowerRefreshButton;
+    private Text _chargeTowerRefreshButtonText;
     private readonly Button[] _towerBuildButtons = new Button[TowerDefenseVisuals.TowerTypeCount];
     private readonly Text[] _towerBuildButtonTexts = new Text[TowerDefenseVisuals.TowerTypeCount];
     private readonly int[] _towerDamageRankOrder = new int[TowerDefenseVisuals.TowerTypeCount];
@@ -287,6 +316,11 @@ public partial class RougeGameManager
         _towerDefenseDoubleSpeed = false;
         TowerDefenseBuildModeActive = false;
         _towerBuildSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
+        _chargeTowerEffectSelectionActive = false;
+        _pendingChargeTower = null;
+        _pendingChargeTowerEscrow = 0;
+        _chargeTowerRefreshCount = 0;
         _towerRelocationActive = false;
         _relocatingTower = null;
         _relocationOriginalAnchor = default;
@@ -365,6 +399,11 @@ public partial class RougeGameManager
         TowerDefenseBuildModeActive = false;
         _towerPlacementMode = false;
         _towerDefenseDoubleSpeed = false;
+        if (_pendingChargeTower != null) Destroy(_pendingChargeTower.gameObject);
+        _pendingChargeTower = null;
+        _pendingChargeTowerEscrow = 0;
+        _chargeTowerEffectSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
         ClearTowerRelocationState();
         RefreshTowerEditHints();
         if (player != null)
@@ -502,9 +541,12 @@ public partial class RougeGameManager
     {
         if (IsTowerTypeDisabled(type)) return false;
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        float minimumMultiplier = _towerDefenseLevel != null
-            ? _towerDefenseLevel.GetMinimumTowerGoldCostMultiplier()
-            : 1f;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        float minimumMultiplier = loader != null
+            ? loader.GetMinimumEffectiveTowerGoldCostMultiplier()
+            : _towerDefenseLevel != null
+                ? _towerDefenseLevel.GetMinimumTowerGoldCostMultiplier()
+                : 1f;
         return _towerDefenseGold >= Mathf.Max(0, Mathf.RoundToInt(cost * minimumMultiplier));
     }
 
@@ -514,7 +556,30 @@ public partial class RougeGameManager
         {
             if (CanAffordTowerType((RougeTowerType)typeIndex)) return true;
         }
-        return false;
+        return _towerDefenseGold >= GetMinimumChargeTowerGoldCost();
+    }
+
+    private int GetMinimumChargeTowerGoldCost()
+    {
+        return CalculateChargeTowerGoldCost();
+    }
+
+    private int GetChargeTowerGoldCost()
+    {
+        return CalculateChargeTowerGoldCost();
+    }
+
+    private int CalculateChargeTowerGoldCost()
+    {
+        int existingChargeTowers = 0;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            if (_defenseTowers[i] != null && _defenseTowers[i].IsChargeTower)
+                existingChargeTowers++;
+        }
+        double multiplier = 1d + existingChargeTowers * ChargeTowerCountCostMultiplier;
+        return (int)System.Math.Min(int.MaxValue,
+            System.Math.Ceiling(ChargeTowerBaseGoldCost * multiplier));
     }
 
     private bool HasPendingBossEncounter()
@@ -599,7 +664,9 @@ public partial class RougeGameManager
         {
             if (towers[i] == null) continue;
             towers[i].Ensure2DVisual();
-            towers[i].ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(towers[i].transform.position), true);
+            towers[i].ApplyTowerPlaceEffect(towers[i].IsChargeTower
+                ? RougeTowerPlaceEffect.None
+                : GetTowerPlaceEffectAtWorld(towers[i].transform.position), true);
             towers[i].name = towers[i].DisplayName + " Lv." + towers[i].Level;
             _defenseTowers.Add(towers[i]);
         }
@@ -697,10 +764,27 @@ public partial class RougeGameManager
 
         Keyboard keyboard = Keyboard.current;
         Mouse mouse = Mouse.current;
+#if UNITY_EDITOR
+        if (keyboard != null && keyboard.f9Key.wasPressedThisFrame)
+        {
+            _towerDefenseGold = _towerDefenseGold > int.MaxValue - 1000
+                ? int.MaxValue
+                : _towerDefenseGold + 1000;
+            RefreshTowerDefenseUi(true);
+        }
+#endif
         if (_towerDefenseGameOver)
         {
             if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
                 ReloadTowerDefenseScene();
+            return;
+        }
+
+        if (_chargeTowerEffectSelectionActive)
+        {
+            ApplyTowerDefenseTimeScale();
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+                CancelPendingChargeTowerConstruction();
             return;
         }
 
@@ -761,6 +845,7 @@ public partial class RougeGameManager
             if (keyboard.digit6Key.wasPressedThisFrame || keyboard.numpad6Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.PiercingLaser);
             if (keyboard.digit7Key.wasPressedThisFrame || keyboard.numpad7Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.OrbitSphere);
             if (keyboard.digit8Key.wasPressedThisFrame || keyboard.numpad8Key.wasPressedThisFrame) SelectTowerBuildType(RougeTowerType.RocketBarrage);
+            if (keyboard.cKey.wasPressedThisFrame) BeginChargeTowerBuild();
             if (keyboard.uKey.wasPressedThisFrame) TryUpgradeSelectedTower();
             if (keyboard.rKey.wasPressedThisFrame) BeginSelectedTowerRelocation();
             if (keyboard.escapeKey.wasPressedThisFrame)
@@ -847,6 +932,7 @@ public partial class RougeGameManager
         {
             ClearTacticalSkillSelection();
             ClearTowerRelocationState();
+            _chargeTowerBuildSelectionActive = false;
             if (_towerPreview != null) Destroy(_towerPreview.gameObject);
             _towerPreview = null;
             SelectPlacedTower(null);
@@ -863,7 +949,9 @@ public partial class RougeGameManager
     private void ApplyTowerDefenseTimeScale()
     {
         if (_towerDefenseGameOver) return;
-        Time.timeScale = _towerPlacementMode
+        Time.timeScale = _chargeTowerEffectSelectionActive
+            ? 0f
+            : _towerPlacementMode
             ? 0.5f
             : GetTowerDefensePlayTimeScale();
     }
@@ -873,6 +961,7 @@ public partial class RougeGameManager
         if (tower == null) return;
         ClearTowerRelocationState();
         _towerBuildSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
         _towerPreview = null;
         SetTowerPlacementMode(true);
@@ -882,6 +971,7 @@ public partial class RougeGameManager
     private void SelectTowerBuildType(RougeTowerType type)
     {
         ClearTowerRelocationState();
+        _chargeTowerBuildSelectionActive = false;
         if (IsTowerTypeDisabled(type))
         {
             _towerBuildSelectionActive = false;
@@ -959,6 +1049,38 @@ public partial class RougeGameManager
         SelectTowerBuildType(type);
     }
 
+    private void BeginChargeTowerBuild()
+    {
+        if (_towerDefenseGameOver || _chargeTowerEffectSelectionActive ||
+            _towerDefenseGold < GetMinimumChargeTowerGoldCost()) return;
+        ClearTacticalSkillSelection();
+        ClearTowerRelocationState();
+        if (!_towerPlacementMode)
+        {
+            _towerBuildSelectionActive = false;
+            SetTowerPlacementMode(true);
+        }
+        if (_towerPreview != null) Destroy(_towerPreview.gameObject);
+
+        GameObject go = InstantiateTowerPrefab(RougeTowerType.OrbitSphere);
+        if (go == null)
+        {
+            _chargeTowerBuildSelectionActive = false;
+            RefreshTowerDefenseUi(true);
+            return;
+        }
+        go.SetActive(false);
+        go.name = "Tower Preview - 充能塔";
+        _towerPreview = go.GetComponent<RougeDefenseTower>();
+        _towerPreview.ConfigureAsChargeTower(true);
+        _towerBuildSelectionActive = false;
+        _chargeTowerBuildSelectionActive = true;
+        _previewValid = false;
+        SetTowerPlaceVisualsVisible(true);
+        SelectPlacedTower(null);
+        RefreshTowerDefenseUi(true);
+    }
+
     private void CancelTowerBuildSelection()
     {
         if (HasTacticalSkillSelection)
@@ -972,6 +1094,7 @@ public partial class RougeGameManager
             return;
         }
         _towerBuildSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
         _previewValid = false;
         if (_towerPreview != null) Destroy(_towerPreview.gameObject);
         _towerPreview = null;
@@ -1076,7 +1199,13 @@ public partial class RougeGameManager
         _towerPreview.gameObject.SetActive(true);
         _previewTowerAnchor = anchor;
         _towerPreview.transform.position = position;
-        _towerPreview.ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(position));
+        if (_towerPreview.IsChargeTower)
+        {
+            _towerPreview.SetChargeTowerPlacementCost(GetChargeTowerGoldCost());
+            _towerPreview.ApplyTowerPlaceEffect(RougeTowerPlaceEffect.None);
+        }
+        else
+            _towerPreview.ApplyTowerPlaceEffect(GetTowerPlaceEffectAtWorld(position));
         RougeDefenseTower ignoredTower = _towerRelocationActive ? _relocatingTower : _towerPreview;
         _previewCellValidity = GetTowerFootprintCellValidity(anchor, _towerPreview.FootprintCells, ignoredTower);
         _previewValid = CanPlacePreviewTower();
@@ -1088,6 +1217,15 @@ public partial class RougeGameManager
     {
         if (_towerPreview == null || !_towerPreview.gameObject.activeInHierarchy ||
             !AreAllFootprintCellsValid(_previewCellValidity)) return false;
+        if (!_towerRelocationActive && _towerPreview.IsChargeTower)
+        {
+            RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+            if (map == null || !map.WorldToCell(_towerPreview.transform.position,
+                    out Vector2Int ownerCell) || !map.IsTowerPlace(ownerCell) ||
+                GetTowerPlaceEffectAtWorld(_towerPreview.transform.position) != RougeTowerPlaceEffect.None)
+                return false;
+            return _towerDefenseGold >= _towerPreview.PlacementCost;
+        }
         if (!_towerRelocationActive) return _towerDefenseGold >= _towerPreview.PlacementCost;
         return _relocatingTower != null && _previewTowerAnchor != _relocationOriginalAnchor &&
             _towerDefenseGold >= _relocatingTower.RelocationCost;
@@ -1096,9 +1234,12 @@ public partial class RougeGameManager
     private RougeTowerPlaceEffect GetTowerPlaceEffectAtWorld(Vector3 worldPosition)
     {
         RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
-        return map != null && map.WorldToCell(worldPosition, out Vector2Int centerCell)
-            ? map.GetTowerPlaceEffect(centerCell)
-            : RougeTowerPlaceEffect.None;
+        if (map == null || !map.WorldToCell(worldPosition, out Vector2Int centerCell))
+            return RougeTowerPlaceEffect.None;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        return loader != null
+            ? loader.GetEffectiveTowerPlaceEffect(centerCell)
+            : map.GetTowerPlaceEffect(centerCell);
     }
 
     private bool TryGetPointerGroundPosition(out Vector3 worldPosition)
@@ -1216,6 +1357,11 @@ public partial class RougeGameManager
             CompleteTowerRelocation();
             return;
         }
+        if (_towerPreview.IsChargeTower)
+        {
+            BeginChargeTowerEffectSelection();
+            return;
+        }
         int cost = _towerPreview.PlacementCost;
         _towerDefenseGold -= cost;
         _towerPreview.FinalizePlacement();
@@ -1242,6 +1388,131 @@ public partial class RougeGameManager
         RefreshTowerDefenseUi();
     }
 
+    private void BeginChargeTowerEffectSelection()
+    {
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (_towerPreview == null || !_towerPreview.IsChargeTower || map == null ||
+            !map.WorldToCell(_towerPreview.transform.position, out Vector2Int ownerCell)) return;
+        int cost = GetChargeTowerGoldCost();
+        _towerPreview.SetChargeTowerPlacementCost(cost);
+        if (_towerDefenseGold < cost || GetTowerPlaceEffectAtWorld(_towerPreview.transform.position) !=
+            RougeTowerPlaceEffect.None) return;
+
+        _towerDefenseGold -= cost;
+        _pendingChargeTowerEscrow = cost;
+        _pendingChargeTowerCell = ownerCell;
+        _pendingChargeTower = _towerPreview;
+        _towerPreview = null;
+        _towerBuildSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
+        _chargeTowerEffectSelectionActive = true;
+        _chargeTowerRefreshCount = 0;
+        _previewValid = false;
+        _previewCellValidity = null;
+        RollChargeTowerEffectChoices();
+        SetTowerPlaceVisualsVisible(false);
+        if (_chargeTowerEffectSelectionPanel != null)
+            _chargeTowerEffectSelectionPanel.transform.SetAsLastSibling();
+        ApplyTowerDefenseTimeScale();
+        RefreshTowerDefenseUi(true);
+    }
+
+    private void ConfirmChargeTowerEffect(int choiceIndex)
+    {
+        if (!_chargeTowerEffectSelectionActive || _pendingChargeTower == null ||
+            choiceIndex < 0 || choiceIndex >= _chargeTowerEffectChoices.Length) return;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        RougeTowerPlaceEffect effect = _chargeTowerEffectChoices[choiceIndex];
+        if (loader == null || !loader.TrySetRuntimeTowerPlaceEffect(_pendingChargeTowerCell, effect))
+        {
+            CancelPendingChargeTowerConstruction();
+            return;
+        }
+
+        RougeDefenseTower placed = _pendingChargeTower;
+        placed.FinalizePlacement();
+        placed.name = placed.DisplayName;
+        _defenseTowers.Add(placed);
+        ApplyActivatedEffectToTowersInCell(_pendingChargeTowerCell, effect);
+        _pendingChargeTower = null;
+        _pendingChargeTowerEscrow = 0;
+        _chargeTowerEffectSelectionActive = false;
+        _chargeTowerRefreshCount = 0;
+        _towerTargetScheduledCount = 0;
+        if (_chargeTowerEffectSelectionPanel != null)
+            _chargeTowerEffectSelectionPanel.SetActive(false);
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
+        SelectPlacedTower(placed);
+        ApplyTowerDefenseTimeScale();
+        RefreshTowerDefenseUi(true);
+    }
+
+    private void ApplyActivatedEffectToTowersInCell(Vector2Int cell, RougeTowerPlaceEffect effect)
+    {
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (map == null) return;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null || tower.IsChargeTower ||
+                !map.WorldToCell(tower.transform.position, out Vector2Int towerCell) || towerCell != cell)
+                continue;
+            tower.ApplyActivatedTowerPlaceEffect(effect);
+            tower.name = tower.DisplayName + " Lv." + tower.Level;
+        }
+    }
+
+    private void CancelPendingChargeTowerConstruction()
+    {
+        if (!_chargeTowerEffectSelectionActive) return;
+        _towerDefenseGold += Mathf.Max(0, _pendingChargeTowerEscrow);
+        _pendingChargeTowerEscrow = 0;
+        if (_pendingChargeTower != null) Destroy(_pendingChargeTower.gameObject);
+        _pendingChargeTower = null;
+        _chargeTowerEffectSelectionActive = false;
+        _chargeTowerBuildSelectionActive = false;
+        _chargeTowerRefreshCount = 0;
+        if (_chargeTowerEffectSelectionPanel != null)
+            _chargeTowerEffectSelectionPanel.SetActive(false);
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
+        ApplyTowerDefenseTimeScale();
+        RefreshTowerDefenseUi(true);
+    }
+
+    private void RefreshChargeTowerEffectChoices()
+    {
+        if (!_chargeTowerEffectSelectionActive) return;
+        int refreshCost = GetChargeTowerRefreshGoldCost(_chargeTowerRefreshCount);
+        if (_towerDefenseGold < refreshCost) return;
+        _towerDefenseGold -= refreshCost;
+        _chargeTowerRefreshCount++;
+        RollChargeTowerEffectChoices();
+        RefreshTowerDefenseUi(true);
+    }
+
+    private static int GetChargeTowerRefreshGoldCost(int refreshCount)
+    {
+        if (refreshCount <= 0) return 0;
+        if (refreshCount == 1) return 300;
+        if (refreshCount == 2) return 450;
+        if (refreshCount == 3) return 725;
+        double cost = 725d;
+        for (int i = 3; i < refreshCount; i++) cost = System.Math.Ceiling(cost * 1.5d);
+        return (int)System.Math.Min(int.MaxValue, cost);
+    }
+
+    private void RollChargeTowerEffectChoices()
+    {
+        int[] indices = { 0, 1, 2, 3, 4, 5, 6, 7 };
+        for (int i = indices.Length - 1; i > 0; i--)
+        {
+            int swapIndex = UnityEngine.Random.Range(0, i + 1);
+            (indices[i], indices[swapIndex]) = (indices[swapIndex], indices[i]);
+        }
+        for (int i = 0; i < _chargeTowerEffectChoices.Length; i++)
+            _chargeTowerEffectChoices[i] = ChargeTowerEffectPool[indices[i]];
+    }
+
     private void SelectPlacedTower(RougeDefenseTower tower)
     {
         if (_selectedTower != null) _selectedTower.SetRangeVisibility(false);
@@ -1258,6 +1529,15 @@ public partial class RougeGameManager
             ? Mathf.FloorToInt(tower.InvestedGold * Mathf.Clamp01(towerBalance.sellRefundMultiplier))
             : 0;
         _towerDefenseGold += refund;
+        if (tower.IsChargeTower)
+        {
+            RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+            RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+            if (map != null && loader != null &&
+                map.WorldToCell(tower.transform.position, out Vector2Int chargedCell) &&
+                loader.ClearRuntimeTowerPlaceEffect(chargedCell))
+                ApplyActivatedEffectToTowersInCell(chargedCell, RougeTowerPlaceEffect.None);
+        }
         _defenseTowers.Remove(tower);
         StopPiercingLaserAttacksForTower(tower);
         StopOrbitSphereAttacksForTower(tower);
@@ -2169,6 +2449,11 @@ public partial class RougeGameManager
             tower.SetBossInterference(bossDebuffed,
                 bossDebuffed ? bossBalance.interferenceAttackSpeedBuffLevel : 0);
             tower.UpdatePresentation(dt);
+            if (tower.IsChargeTower)
+            {
+                tower.HideLaserBeams();
+                continue;
+            }
 
             bool usesProjectileBurst = tower.TowerType == RougeTowerType.Cannon ||
                 tower.TowerType == RougeTowerType.Flame;
@@ -2250,6 +2535,11 @@ public partial class RougeGameManager
         {
             RougeDefenseTower tower = _defenseTowers[i];
             if (tower == null)
+            {
+                _towerTargetRequests[i] = default;
+                continue;
+            }
+            if (tower.IsChargeTower)
             {
                 _towerTargetRequests[i] = default;
                 continue;
@@ -3502,14 +3792,15 @@ public partial class RougeGameManager
             new Color(0.22f, 0.42f, 0.58f, 0.8f));
         SetBottomRect(groupSeparator.rectTransform, 88f, 8f, 2f, 123f);
 
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), -535f, 86f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), -360f, 86f, RougeTowerType.MachineGun, new Color(0.72f, 0.62f, 0.08f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), -185f, 86f, RougeTowerType.Cannon, new Color(0.78f, 0.2f, 0.06f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), -10f, 86f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.46f, 0.9f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -535f, 32f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -360f, 32f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -185f, 32f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), -10f, 32f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), -560f, 86f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), -420f, 86f, RougeTowerType.MachineGun, new Color(0.72f, 0.62f, 0.08f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), -280f, 86f, RougeTowerType.Cannon, new Color(0.78f, 0.2f, 0.06f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), -140f, 86f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.46f, 0.9f, 1f));
+        CreateChargeTowerBuildButton(buildPanel.transform, 0f, 86f);
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -560f, 32f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -420f, 32f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -280f, 32f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
+        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), -140f, 32f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
 
         _towerCancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "取消",
             new Color(0.55f, 0.08f, 0.1f, 1f));
@@ -3564,6 +3855,8 @@ public partial class RougeGameManager
 
         if (CommanderSkillsEnabled) BuildTacticalSkillUi(canvasObject.transform);
 
+        BuildChargeTowerEffectSelectionUi(canvasObject.transform);
+
         _bossPanel = CreateUiPanel("Boss Panel", canvasObject.transform, new Color(0.08f, 0.015f, 0.1f, 0.94f));
         RectTransform bossRect = _bossPanel.GetComponent<RectTransform>();
         bossRect.anchorMin = new Vector2(0.5f, 1f);
@@ -3614,7 +3907,7 @@ public partial class RougeGameManager
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(168f, 48f);
+        rect.sizeDelta = new Vector2(134f, 48f);
         Text labelText = button.GetComponentInChildren<Text>();
         if (labelText != null) labelText.fontSize = 16;
         button.onClick.AddListener(() => BeginTowerBuild(type));
@@ -3712,13 +4005,20 @@ public partial class RougeGameManager
                     ? $"{TowerDefenseVisuals.GetTowerName(type)}\n未解锁"
                     : GetTowerBuildLabel(typeIndex + 1, type, buildPreviewEffect);
         }
+        SetPurchaseButtonAvailability(_chargeTowerBuildButton, _chargeTowerBuildButtonText,
+            !_towerDefenseGameOver && !_chargeTowerEffectSelectionActive &&
+            _towerDefenseGold >= GetMinimumChargeTowerGoldCost());
+        if (_chargeTowerBuildButtonText != null)
+            _chargeTowerBuildButtonText.text = GetChargeTowerBuildLabel();
+        RefreshChargeTowerEffectSelectionUi();
         RefreshTowerDamageRanking();
         RefreshTowerPlaceEffectHud();
         if (CommanderSkillsEnabled) RefreshTacticalSkillUi();
         if (_towerCancelBuildButton != null)
         {
             bool canCancel = _towerPlacementMode &&
-                (HasTacticalSkillSelection || _towerBuildSelectionActive || _towerRelocationActive || _selectedTower != null);
+                (HasTacticalSkillSelection || _towerBuildSelectionActive ||
+                 _chargeTowerBuildSelectionActive || _towerRelocationActive || _selectedTower != null);
             SetPurchaseButtonAvailability(_towerCancelBuildButton, _towerCancelBuildButtonText, canCancel);
             if (_towerCancelBuildButtonText != null)
                 _towerCancelBuildButtonText.text = _towerRelocationActive ? "[Esc] 取消搬运" : "取消";
@@ -3818,7 +4118,7 @@ public partial class RougeGameManager
                     : _selectedTower != null
                     ? $"已选：{_selectedTower.DisplayName}  Lv.{_selectedTower.Level}/{_selectedTower.MaxLevel}  " +
                       GetTowerUiStats(_selectedTower)
-                    : _towerBuildSelectionActive
+                    : _towerBuildSelectionActive || _chargeTowerBuildSelectionActive
                         ? GetTowerBuildModeText()
                         : "建造已取消  |  请从下方选择塔楼";
                 _towerDefenseModeText.text =
@@ -3845,7 +4145,9 @@ public partial class RougeGameManager
                     : !hasSelection
                     ? "选择塔楼\n进行升级"
                     : !canUpgrade
-                        ? $"等级 {_selectedTower.Level}/{_selectedTower.MaxLevel}\n已满级"
+                        ? _selectedTower.IsChargeTower
+                            ? "充能塔\n不可升级"
+                            : $"等级 {_selectedTower.Level}/{_selectedTower.MaxLevel}\n已满级"
                         : $"[U] {_selectedTower.Level} → {_selectedTower.Level + 1} 级\n{_selectedTower.UpgradeCost} 金币";
             }
         }
@@ -3919,6 +4221,20 @@ public partial class RougeGameManager
             : contextTower == _towerPreview
                 ? $"建造花费  ${contextTower.PlacementCost}"
                 : $"下次升级  {(contextTower.CanUpgrade ? "$" + contextTower.UpgradeCost : "已满级")}";
+        if (contextTower.IsChargeTower)
+        {
+            RougeTowerPlaceEffect chargedEffect = GetTowerPlaceEffectAtWorld(
+                contextTower.transform.position);
+            string effectText = chargedEffect == RougeTowerPlaceEffect.None
+                ? "等待选择地块效果"
+                : RougeTowerPlaceEffectRules.GetDisplayName(chargedEffect) + "：" +
+                  RougeTowerPlaceEffectRules.GetDescription(chargedEffect);
+            _towerPlaceEffectText.text =
+                "充能塔\n" +
+                effectText + "\n自身不受地块特殊效果影响，且不可升级\n" +
+                center + "   |   " + cost;
+            return;
+        }
         _towerPlaceEffectText.text =
             "塔楼地图格效果\n" +
             RougeTowerPlaceEffectRules.GetDisplayName(effect) + "\n" +
@@ -3941,6 +4257,7 @@ public partial class RougeGameManager
 
     private static string GetTowerUiStats(RougeDefenseTower tower)
     {
+        if (tower.IsChargeTower) return "持续为归属地块赋予所选效果  |  不可升级  |  自身不受地块效果影响";
         int barrageCount = tower.TowerType == RougeTowerType.MachineGun ||
                            tower.TowerType == RougeTowerType.Laser
             ? tower.TargetCount
@@ -3967,14 +4284,162 @@ public partial class RougeGameManager
         }
     }
 
+    private void CreateChargeTowerBuildButton(Transform parent, float x, float y)
+    {
+        _chargeTowerBuildButton = CreateUiButton("Charge Tower", parent,
+            GetChargeTowerBuildLabel(), new Color(0.06f, 0.7f, 0.62f, 1f));
+        RectTransform rect = _chargeTowerBuildButton.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0f);
+        rect.anchorMax = new Vector2(0.5f, 0f);
+        rect.anchoredPosition = new Vector2(x, y);
+        rect.sizeDelta = new Vector2(134f, 48f);
+        _chargeTowerBuildButtonText = _chargeTowerBuildButton.GetComponentInChildren<Text>();
+        if (_chargeTowerBuildButtonText != null) _chargeTowerBuildButtonText.fontSize = 15;
+        _chargeTowerBuildButton.onClick.AddListener(BeginChargeTowerBuild);
+    }
+
+    private void BuildChargeTowerEffectSelectionUi(Transform canvas)
+    {
+        _chargeTowerEffectSelectionPanel = CreateUiPanel("Charge Tower Effect Selection", canvas,
+            new Color(0.005f, 0.012f, 0.02f, 0.82f));
+        StretchRect(_chargeTowerEffectSelectionPanel.GetComponent<RectTransform>(), 0f, 0f, 0f, 0f);
+        _chargeTowerEffectSelectionPanel.GetComponent<Image>().raycastTarget = true;
+
+        GameObject content = CreateUiPanel("Selection Content", _chargeTowerEffectSelectionPanel.transform,
+            new Color(0.025f, 0.055f, 0.075f, 0.98f));
+        RectTransform contentRect = content.GetComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0.5f, 0.5f);
+        contentRect.anchorMax = new Vector2(0.5f, 0.5f);
+        contentRect.pivot = new Vector2(0.5f, 0.5f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(940f, 560f);
+        content.GetComponent<Image>().raycastTarget = true;
+        AddHudPanelChrome(content, new Color(0.08f, 0.92f, 0.78f, 1f));
+
+        Text title = CreateUiText("Title", content.transform, 30, TextAnchor.MiddleCenter);
+        SetBottomRect(title.rectTransform, 0f, 490f, 880f, 46f);
+        title.text = "充能塔：选择地块效果（三选一）";
+        title.fontStyle = FontStyle.Bold;
+        title.color = new Color(0.56f, 1f, 0.88f, 1f);
+
+        _chargeTowerEffectSelectionSummary = CreateUiText("Summary", content.transform, 18,
+            TextAnchor.MiddleCenter);
+        SetBottomRect(_chargeTowerEffectSelectionSummary.rectTransform, 0f, 438f, 880f, 48f);
+        _chargeTowerEffectSelectionSummary.color = new Color(0.76f, 0.88f, 0.94f, 1f);
+
+        for (int i = 0; i < _chargeTowerEffectChoiceButtons.Length; i++)
+        {
+            int capturedIndex = i;
+            Button button = CreateUiButton("Effect Choice " + (i + 1), content.transform,
+                string.Empty, new Color(0.12f, 0.32f, 0.38f, 1f));
+            RectTransform rect = button.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0f);
+            rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.anchoredPosition = new Vector2((i - 1) * 292f, 176f);
+            rect.sizeDelta = new Vector2(276f, 224f);
+            Text label = button.GetComponentInChildren<Text>();
+            if (label != null)
+            {
+                label.fontSize = 18;
+                label.alignment = TextAnchor.MiddleCenter;
+                label.horizontalOverflow = HorizontalWrapMode.Wrap;
+                label.verticalOverflow = VerticalWrapMode.Truncate;
+            }
+            button.onClick.AddListener(() => ConfirmChargeTowerEffect(capturedIndex));
+            _chargeTowerEffectChoiceButtons[i] = button;
+            _chargeTowerEffectChoiceTexts[i] = label;
+        }
+
+        _chargeTowerRefreshButton = CreateUiButton("Refresh Choices", content.transform,
+            "刷新", new Color(0.12f, 0.48f, 0.72f, 1f));
+        RectTransform refreshRect = _chargeTowerRefreshButton.GetComponent<RectTransform>();
+        refreshRect.anchorMin = new Vector2(0.5f, 0f);
+        refreshRect.anchorMax = new Vector2(0.5f, 0f);
+        refreshRect.pivot = new Vector2(0.5f, 0f);
+        refreshRect.anchoredPosition = new Vector2(-150f, 62f);
+        refreshRect.sizeDelta = new Vector2(270f, 62f);
+        _chargeTowerRefreshButtonText = _chargeTowerRefreshButton.GetComponentInChildren<Text>();
+        _chargeTowerRefreshButton.onClick.AddListener(RefreshChargeTowerEffectChoices);
+
+        Button cancel = CreateUiButton("Cancel Charge Tower", content.transform,
+            "取消建造（返还托管金币）", new Color(0.68f, 0.12f, 0.16f, 1f));
+        RectTransform cancelRect = cancel.GetComponent<RectTransform>();
+        cancelRect.anchorMin = new Vector2(0.5f, 0f);
+        cancelRect.anchorMax = new Vector2(0.5f, 0f);
+        cancelRect.pivot = new Vector2(0.5f, 0f);
+        cancelRect.anchoredPosition = new Vector2(150f, 62f);
+        cancelRect.sizeDelta = new Vector2(270f, 62f);
+        cancel.onClick.AddListener(CancelPendingChargeTowerConstruction);
+        _chargeTowerEffectSelectionPanel.SetActive(false);
+    }
+
+    private void RefreshChargeTowerEffectSelectionUi()
+    {
+        if (_chargeTowerEffectSelectionPanel == null) return;
+        _chargeTowerEffectSelectionPanel.SetActive(_chargeTowerEffectSelectionActive);
+        if (!_chargeTowerEffectSelectionActive) return;
+
+        if (_chargeTowerEffectSelectionSummary != null)
+        {
+            _chargeTowerEffectSelectionSummary.text =
+                $"地块 [{_pendingChargeTowerCell.x}, {_pendingChargeTowerCell.y}]  |  " +
+                $"已托管 {_pendingChargeTowerEscrow} 金币  |  当前可用 {_towerDefenseGold} 金币\n" +
+                "取消只返还托管的建造费；已支付的刷新费不返还";
+        }
+        for (int i = 0; i < _chargeTowerEffectChoices.Length; i++)
+        {
+            RougeTowerPlaceEffect effect = _chargeTowerEffectChoices[i];
+            if (_chargeTowerEffectChoiceTexts[i] != null)
+            {
+                _chargeTowerEffectChoiceTexts[i].text =
+                    RougeTowerPlaceEffectRules.GetDisplayName(effect) + "\n\n" +
+                    RougeTowerPlaceEffectRules.GetDescription(effect);
+            }
+            if (_chargeTowerEffectChoiceButtons[i] != null)
+            {
+                Color color = RougeTowerPlaceEffectRules.GetVisualColor(effect);
+                color.a = 1f;
+                _chargeTowerEffectChoiceButtons[i].image.color = Color.Lerp(color,
+                    new Color(0.035f, 0.08f, 0.11f, 1f), 0.42f);
+            }
+        }
+
+        int refreshCost = GetChargeTowerRefreshGoldCost(_chargeTowerRefreshCount);
+        SetPurchaseButtonAvailability(_chargeTowerRefreshButton, _chargeTowerRefreshButtonText,
+            _towerDefenseGold >= refreshCost);
+        if (_chargeTowerRefreshButtonText != null)
+            _chargeTowerRefreshButtonText.text = refreshCost == 0
+                ? "刷新三项（本次免费）"
+                : $"刷新三项（{refreshCost} 金币）";
+    }
+
     private string GetTowerBuildModeText()
     {
-        string towerName = TowerDefenseVisuals.GetTowerName(_selectedBuildType);
+        string towerName = _chargeTowerBuildSelectionActive
+            ? "充能塔"
+            : TowerDefenseVisuals.GetTowerName(_selectedBuildType);
         if (_towerPreview == null || !_towerPreview.gameObject.activeInHierarchy)
             return $"建造：{towerName}  |  将指针移到可建造地格";
         if (_previewValid) return $"建造：{towerName}  |  可建造  |  左键放置";
-        string reason = _towerDefenseGold < _towerPreview.PlacementCost ? "金币不足" : "位置被占用或超出区域";
+        string reason;
+        if (_towerDefenseGold < _towerPreview.PlacementCost)
+            reason = "金币不足";
+        else if (_towerPreview.IsChargeTower &&
+                 GetTowerPlaceEffectAtWorld(_towerPreview.transform.position) != RougeTowerPlaceEffect.None)
+            reason = "归属地块已有特殊效果";
+        else
+            reason = "位置被占用或超出区域";
         return $"建造：{towerName}  |  <color=#FF665E><b>不可建造：{reason}</b></color>";
+    }
+
+    private string GetChargeTowerBuildLabel()
+    {
+        int cost = _towerPreview != null && _towerPreview.IsChargeTower &&
+                   _towerPreview.gameObject.activeInHierarchy
+            ? _towerPreview.PlacementCost
+            : GetMinimumChargeTowerGoldCost();
+        return $"[C] 充能塔\n{cost} 金币";
     }
 
     private static GameObject CreateUiPanel(string name, Transform parent, Color color)
