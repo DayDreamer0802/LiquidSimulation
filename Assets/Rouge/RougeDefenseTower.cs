@@ -425,6 +425,15 @@ public sealed class RougeDefenseTower : MonoBehaviour
         if (billboard != null) billboard.SetWorldDirection(worldTarget - transform.position);
     }
 
+    internal Vector3 GetCurrentAimDirection()
+    {
+        if (billboard != null && billboard.TryGetWorldDirection(out Vector3 direction))
+            return direction;
+        Vector3 fallback = transform.forward;
+        fallback.y = 0f;
+        return fallback.sqrMagnitude > 0.0001f ? fallback.normalized : Vector3.forward;
+    }
+
     internal Vector3 GetShootPosition()
     {
         return billboard != null ? billboard.ShootPosition : transform.position + Vector3.up * 3f;

@@ -130,6 +130,12 @@ public sealed class RougeBillboard : MonoBehaviour
         if (_hasWorldDirection) _worldDirection = direction.normalized;
     }
 
+    public bool TryGetWorldDirection(out Vector3 direction)
+    {
+        direction = _worldDirection;
+        return _hasWorldDirection;
+    }
+
     /// <summary>
     /// Plays the prefab-authored firing motion and invokes <paramref name="onShotFired"/> at
     /// the release frame. Towers with no firing motion release immediately. Rapid-fire towers

@@ -24,6 +24,7 @@ public partial class RougeGameManager
     private const int PiercingLaserChargeStageCount = 3;
     private const float PiercingLaserChargeDuration =
         PiercingLaserChargeStageDuration * PiercingLaserChargeStageCount;
+    private const float PiercingLaserTurnDuration = 0.25f;
     private const float PiercingLaserFireDuration = 0.75f;
     private const float PiercingLaserDamageTime = 0.25f;
     private const float PiercingLaserBeamRadius = 2.8f;
@@ -207,13 +208,17 @@ public partial class RougeGameManager
         public MaterialPropertyBlock ChargeProperties;
         public Vector3 Start;
         public Vector3 Direction;
+        public Vector3 TurnStartDirection;
         public float Length;
         public float MaxWidth;
         public float ChargeElapsed;
         public float FireElapsed;
+        public float TurnElapsed;
         public float Damage;
         public int KillGoldBonus;
+        public int TargetIndex;
         public bool ChargeComplete;
+        public bool TargetLost;
         public bool DamageApplied;
         public bool FiringAnimationPlayed;
     }
@@ -2057,7 +2062,7 @@ public partial class RougeGameManager
                 continue;
 
             // The piercing laser owns its complete charge/fire sequence. Its normal attack
-            // cooldown begins only after the 1.5 second beam has fully collapsed.
+            // cooldown begins only after the fixed 0.75 second beam has fully collapsed.
             if (tower.TowerType == RougeTowerType.PiercingLaser &&
                 IsPiercingLaserAttackActive(tower))
                 continue;
@@ -2096,7 +2101,10 @@ public partial class RougeGameManager
                 continue;
             }
 
-            AimTowerAt(tower, targetPosition);
+            // Piercing laser owns a visible 0.25 second turn during its charge instead
+            // of snapping the turret to the target before the sequence begins.
+            if (tower.TowerType != RougeTowerType.PiercingLaser)
+                AimTowerAt(tower, targetPosition);
             FireTower(tower, i, targetPosition);
             if (tower.TowerType != RougeTowerType.PiercingLaser)
                 tower.attackTimer += tower.AttackInterval;
@@ -2821,16 +2829,19 @@ public partial class RougeGameManager
         direction.y = 0f;
         if (direction.sqrMagnitude <= 0.0001f) return;
         direction.Normalize();
+        Vector3 currentAimDirection = tower.GetCurrentAimDirection();
 
         TowerBeamVisual beam = new TowerBeamVisual
         {
             SourceTower = tower,
             Start = start,
-            Direction = direction,
+            Direction = currentAimDirection,
+            TurnStartDirection = currentAimDirection,
             Length = tower.AttackRange * 2f,
             MaxWidth = PiercingLaserBeamRadius,
             Damage = tower.Damage,
             KillGoldBonus = tower.KillGoldBonus,
+            TargetIndex = tower.targetIndex,
             Properties = new MaterialPropertyBlock(),
             GlowProperties = new MaterialPropertyBlock(),
             ChargeProperties = new MaterialPropertyBlock()
@@ -2929,6 +2940,7 @@ public partial class RougeGameManager
                     Mathf.Max(0.01f, beam.SourceTower.AttackSpeedMultiplier);
                 beam.ChargeComplete = beam.ChargeElapsed >= PiercingLaserChargeDuration;
                 beam.ChargeElapsed = Mathf.Min(beam.ChargeElapsed, PiercingLaserChargeDuration);
+                UpdatePiercingLaserTracking(ref beam, safeDt);
                 UpdatePiercingLaserChargeVisual(ref beam,
                     Mathf.Clamp01(beam.ChargeElapsed / PiercingLaserChargeDuration));
             }
@@ -2957,6 +2969,52 @@ public partial class RougeGameManager
 
             _towerBeamVisuals[i] = beam;
         }
+    }
+
+    private void UpdatePiercingLaserTracking(ref TowerBeamVisual beam, float dt)
+    {
+        if (beam.SourceTower == null) return;
+
+        if (!beam.TargetLost)
+        {
+            if (!IsEnemyTargetValid(beam.TargetIndex, beam.Start, float.MaxValue,
+                    out Vector3 targetPosition))
+            {
+                // Once the target dies or becomes invalid, this attack permanently keeps
+                // its last aim. Do not follow a new enemy that later reuses the same slot.
+                beam.TargetLost = true;
+            }
+            else
+            {
+                Vector3 desiredDirection = targetPosition - beam.Start;
+                desiredDirection.y = 0f;
+                if (desiredDirection.sqrMagnitude > 0.0001f)
+                {
+                    desiredDirection.Normalize();
+                    if (beam.TurnElapsed < PiercingLaserTurnDuration)
+                    {
+                        beam.TurnElapsed = Mathf.Min(PiercingLaserTurnDuration,
+                            beam.TurnElapsed + Mathf.Max(0f, dt));
+                        float turnProgress = Mathf.Clamp01(beam.TurnElapsed /
+                            PiercingLaserTurnDuration);
+                        turnProgress = Mathf.SmoothStep(0f, 1f, turnProgress);
+                        beam.Direction = Vector3.Slerp(beam.TurnStartDirection,
+                            desiredDirection, turnProgress).normalized;
+                    }
+                    else
+                    {
+                        // Moving targets remain smoothly tracked with a 0.25 second settle
+                        // time instead of making the charging guide beam jitter or snap.
+                        float followT = 1f - Mathf.Exp(-4.6f * Mathf.Max(0f, dt) /
+                            PiercingLaserTurnDuration);
+                        beam.Direction = Vector3.Slerp(beam.Direction,
+                            desiredDirection, followT).normalized;
+                    }
+                }
+            }
+        }
+
+        AimTowerAt(beam.SourceTower, beam.Start + beam.Direction * 10f);
     }
 
     private void UpdatePiercingLaserChargeVisual(ref TowerBeamVisual beam, float progress)
@@ -3700,7 +3758,7 @@ public partial class RougeGameManager
             case RougeTowerType.PiercingLaser:
                 float chargeStageDuration = PiercingLaserChargeStageDuration /
                     Mathf.Max(0.01f, tower.AttackSpeedMultiplier);
-                return $"伤害 {tower.Damage:0.#}  蓄力 3段 × {chargeStageDuration:0.00}秒（受攻速）  发射 {PiercingLaserFireDuration:0.00}秒（固定）  峰值判定 {PiercingLaserDamageTime:0.00}秒  冷却 {tower.EffectiveAttackInterval:0.##}秒  光束长度 {tower.AttackRange * 2f:0.#}";
+                return $"伤害 {tower.Damage:0.#}  转向 {PiercingLaserTurnDuration:0.00}秒  蓄力 3段 × {chargeStageDuration:0.00}秒（受攻速）  发射 {PiercingLaserFireDuration:0.00}秒（固定）  峰值判定 {PiercingLaserDamageTime:0.00}秒  冷却 {tower.EffectiveAttackInterval:0.##}秒  光束长度 {tower.AttackRange * 2f:0.#}";
             case RougeTowerType.OrbitSphere:
                 return $"水晶伤害 {tower.Damage:0.#}/{tower.TickInterval:0.##}秒  数量 {tower.ProjectileCount}  轨道 {tower.OrbitSphereRadius:0.#}  最大范围 {tower.AttackRange:0.#}  停留 {tower.OrbitOuterHoldDuration:0.##}秒  径向 {tower.OrbitRadialSpeed:0.#}  旋转 {tower.OrbitAngularSpeed:0.#}°/秒";
             default:
