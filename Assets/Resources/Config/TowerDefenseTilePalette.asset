@@ -1,0 +1,463 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 340a59205a6c45e3ba4af469f4d05a49, type: 3}
+  m_Name: TowerDefenseTilePalette
+  m_EditorClassIdentifier: 
+  tileDefinitions:
+  - name: Empty
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0, g: 0, b: 0, a: 0}
+    blocksNavigation: 0
+    towerPlace: 0
+    towerPlaceEffect: 0
+    fallbackHeight: 0.2
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Ground
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.345279, g: 0.45158416, b: 0.54088044, a: 0.85}
+    blocksNavigation: 0
+    towerPlace: 0
+    towerPlaceEffect: 0
+    fallbackHeight: 0.08
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Wall
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.37106913, g: 0.37106913, b: 0.37106913, a: 0.9}
+    blocksNavigation: 1
+    towerPlace: 0
+    towerPlaceEffect: 0
+    fallbackHeight: 3
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Tower Place
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.9213836, g: 0.9740566, b: 1, a: 0.58431375}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 0
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Dmg+2
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 1, g: 0.55567867, b: 0.21069163, a: 0.6901961}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 1
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Rng+2
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.49371064, g: 0.86033076, b: 1, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 2
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Spd+2
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.7233647, g: 0.46855342, b: 1, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 3
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: All+1
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.7625786, g: 1, b: 0.5251572, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 4
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Lv+1
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.7012578, g: 1, b: 0.9599541, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 5
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: killCoin+1
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 1, g: 0.78368247, b: 0.07861614, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 6
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Cheap
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.66091126, g: 0.8081054, b: 0.8867924, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 7
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: ChangePos
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.6194968, g: 0.7716981, b: 1, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 8
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Echo
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.7876529, g: 0.56289303, b: 1, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 9
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Small
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.5144179, g: 0.6415094, b: 0.6216112, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 10
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: Combine
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 0.4853921, g: 0.34929392, b: 0.5471698, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 11
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}
+  - name: CollectCoin
+    prefab: {fileID: 0}
+    useAutoTile: 0
+    autoTileGroup: 
+    autoTilePrefabs:
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    - {fileID: 0}
+    editorColor: {r: 1, g: 0.93440306, b: 0.70754707, a: 0.7921569}
+    blocksNavigation: 0
+    towerPlace: 1
+    towerPlaceEffect: 12
+    fallbackHeight: 0.1
+    yOffset: 0
+    prefabEulerAngles: {x: 0, y: 0, z: 0}

@@ -493,18 +493,32 @@ public sealed class RougeDefenseTower : MonoBehaviour
     internal void SetRangeVisibility(bool visible, bool valid = true)
     {
         if (collisionRing != null) collisionRing.enabled = false;
-        if (IsSpecialTower)
+        if (IsChargeTower)
         {
             if (attackRing != null) attackRing.enabled = false;
             return;
         }
         if (attackRing != null)
             attackRing.widthMultiplier = valid ? 0.12f : 0.18f;
+        Color rangeColor = valid
+            ? new Color(0.12f, 0.82f, 1f, 0.88f)
+            : new Color(1f, 0.14f, 0.1f, 0.82f);
+        if (IsReinforcementTower)
+        {
+            RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+            Vector2Int ownedCell = default;
+            bool hasOwnedCell = map != null &&
+                map.WorldToCell(transform.position, out ownedCell);
+            Vector3 center = hasOwnedCell
+                ? map.CellCenter(ownedCell, transform.position.y)
+                : transform.position;
+            TowerDefenseVisuals.UpdateCellOutline(attackRing, center,
+                hasOwnedCell ? map.CellSize : 0f, rangeColor,
+                visible && hasOwnedCell);
+            return;
+        }
         TowerDefenseVisuals.UpdateCircle(attackRing, transform.position, AttackRange,
-            valid
-                ? new Color(0.12f, 0.82f, 1f, 0.88f)
-                : new Color(1f, 0.14f, 0.1f, 0.82f),
-            visible);
+            rangeColor, visible);
     }
 
     internal void SetEditHintState(bool editMode, bool selected, bool upgradeAvailable,

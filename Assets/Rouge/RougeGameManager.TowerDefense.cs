@@ -4836,6 +4836,7 @@ public partial class RougeGameManager
             : contextTower == _towerPreview
                 ? $"建造花费  ${contextTower.PlacementCost}"
                 : $"下次升级  {(contextTower.CanUpgrade ? "$" + contextTower.UpgradeCost : "已满级")}";
+        string reinforcementDescription = GetReinforcementTowerTileDescription(contextTower);
         if (contextTower.IsChargeTower)
         {
             RougeTowerPlaceEffect chargedEffect = GetTowerPlaceEffectAtWorld(
@@ -4849,7 +4850,8 @@ public partial class RougeGameManager
                 : string.Empty;
             _towerPlaceEffectText.text =
                 "充能塔\n" +
-                effectText + wealthStatus + "\n自身不受地块特殊效果影响，且不可升级\n" +
+                effectText + wealthStatus + reinforcementDescription +
+                "\n自身不受地块特殊效果影响，且不可升级\n" +
                 center + "   |   " + cost;
             return;
         }
@@ -4859,8 +4861,38 @@ public partial class RougeGameManager
         _towerPlaceEffectText.text =
             "塔楼地图格效果\n" +
             RougeTowerPlaceEffectRules.GetDisplayName(effect) + "\n" +
-            RougeTowerPlaceEffectRules.GetDescription(effect) + accumulatedWealthStatus + "\n" +
+            RougeTowerPlaceEffectRules.GetDescription(effect) + accumulatedWealthStatus +
+            reinforcementDescription + "\n" +
             center + "   |   " + cost;
+    }
+
+    private string GetReinforcementTowerTileDescription(RougeDefenseTower contextTower)
+    {
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        if (contextTower == null || map == null ||
+            !map.WorldToCell(contextTower.transform.position, out Vector2Int contextCell))
+            return string.Empty;
+
+        int auraLevel = 0;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null || !tower.IsReinforcementTower ||
+                (_towerRelocationActive && tower == _relocatingTower) ||
+                !map.WorldToCell(tower.transform.position, out Vector2Int towerCell) ||
+                towerCell != contextCell)
+                continue;
+            auraLevel += tower.ReinforcementAuraBuffLevel;
+        }
+
+        bool previewAddsAura = contextTower == _towerPreview &&
+                               contextTower.IsReinforcementTower;
+        if (previewAddsAura) auraLevel += contextTower.ReinforcementAuraBuffLevel;
+        if (auraLevel <= 0) return string.Empty;
+
+        string previewSuffix = previewAddsAura ? "（建造后）" : string.Empty;
+        return $"\n<color=#FFBF4A><b>强化塔附加{previewSuffix}：" +
+               $"本格所有塔楼全属性 Lv+{auraLevel}</b></color>";
     }
 
     private string GetAccumulatedWealthTileStatus(Vector3 worldPosition)

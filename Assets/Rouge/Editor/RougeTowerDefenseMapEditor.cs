@@ -25,6 +25,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private RougeTowerDefenseMap _mapAsset;
     private RougeTowerDefenseMap _map;
     private SerializedObject _serializedMap;
+    private RougeTowerDefenseTilePalette _tilePalette;
+    private SerializedObject _serializedTilePalette;
     private RougeTowerDefenseMapLoader _loader;
     private PaintTool _tool;
     private int _tileIndex = 1;
@@ -62,6 +64,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     {
         Undo.undoRedoPerformed += OnUndoRedoPerformed;
         saveChangesMessage = "地图还有未保存的修改。要保存到关卡 Asset 吗？";
+        ResolveSharedTilePalette();
         RougeTowerDefenseMap selected = Selection.activeObject as RougeTowerDefenseMap;
         if (selected != null) SetMap(selected);
     }
@@ -94,6 +97,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
     private void OnGUI()
     {
         HandleSaveShortcut();
+        if (_tilePalette == null) ResolveSharedTilePalette();
         DrawTopBar();
         if (_map == null)
         {
@@ -211,7 +215,26 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             MessageType.None);
 
         EditorGUILayout.Space(6f);
-        EditorGUILayout.LabelField("地块调色板", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("共享地块调色板", EditorStyles.boldLabel);
+        if (_tilePalette == null)
+        {
+            EditorGUILayout.HelpBox(
+                "找不到 Resources/Config/TowerDefenseTilePalette。地图会暂时使用自身的旧版地块定义。",
+                MessageType.Error);
+            return;
+        }
+        using (new EditorGUILayout.HorizontalScope())
+        {
+            using (new EditorGUI.DisabledScope(true))
+                EditorGUILayout.ObjectField(_tilePalette,
+                    typeof(RougeTowerDefenseTilePalette), false);
+            if (GUILayout.Button("定位", GUILayout.Width(52f)))
+                Selection.activeObject = _tilePalette;
+        }
+        EditorGUILayout.HelpBox(
+            "此调色板由所有塔防地图共同使用。地块索引、预制体、颜色或效果的修改会立即保存，并同步影响所有地图。\n" +
+            "地图保存的是地块整数索引：已有条目请勿重排或删除，新地块应追加到列表末尾。",
+            MessageType.Info);
         for (int i = 1; i < _map.TileDefinitions.Count; i++)
         {
             RougeTowerDefenseMap.TileDefinition definition = _map.TileDefinitions[i];
@@ -235,9 +258,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 "所选塔楼格效果", selectedDefinition.towerPlaceEffect);
             if (EditorGUI.EndChangeCheck())
             {
-                Undo.RegisterCompleteObjectUndo(_map, "Change Tower Grid Effect");
+                Undo.RegisterCompleteObjectUndo(_tilePalette, "Change Shared Tower Grid Effect");
                 selectedDefinition.towerPlaceEffect = selectedEffect;
-                MarkMapChanged();
+                SaveSharedTilePalette();
             }
             EditorGUILayout.HelpBox(
                 RougeTowerPlaceEffectRules.GetDisplayName(selectedDefinition.towerPlaceEffect) + "\n" +
@@ -250,9 +273,15 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.HelpBox(
             "自动地块索引使用北/东/南/西位：北 1、东 2、南 4、西 8。缺少的变体会使用基础预制体。" +
             "塔楼格效果按地块定义配置；一座塔只读取其中心点下方的一个地形格。", MessageType.None);
-        _serializedMap.Update();
-        EditorGUILayout.PropertyField(_serializedMap.FindProperty("tileDefinitions"), true);
-        if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
+        _serializedTilePalette.Update();
+        EditorGUILayout.PropertyField(
+            _serializedTilePalette.FindProperty("tileDefinitions"), true);
+        if (_serializedTilePalette.ApplyModifiedProperties())
+        {
+            _tileIndex = Mathf.Clamp(_tileIndex, 1,
+                Mathf.Max(1, _map.TileDefinitions.Count - 1));
+            SaveSharedTilePalette();
+        }
     }
 
     private void DrawEnemyLayerSettings()
@@ -1117,12 +1146,24 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
     private void OnUndoRedoPerformed()
     {
-        if (_map == null) return;
+        bool paletteChanged = _tilePalette != null && EditorUtility.IsDirty(_tilePalette);
+        if (paletteChanged)
+        {
+            AssetDatabase.SaveAssetIfDirty(_tilePalette);
+            _serializedTilePalette?.UpdateIfRequiredOrScript();
+        }
+        if (_map == null)
+        {
+            Repaint();
+            return;
+        }
         _serializedMap?.UpdateIfRequiredOrScript();
         UpdateUnsavedState();
         _saveStatus = hasUnsavedChanges
             ? "已撤销/重做到草稿；点击“保存”才会写入关卡 Asset。"
-            : "草稿已回到上次保存的状态。";
+            : paletteChanged
+                ? "共享地块调色板已撤销/重做并保存；所有地图同步生效。"
+                : "草稿已回到上次保存的状态。";
         Repaint();
     }
 
@@ -1155,6 +1196,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         _mapAsset.name = assetName;
         EditorUtility.SetDirty(_mapAsset);
         AssetDatabase.SaveAssetIfDirty(_mapAsset);
+        if (_tilePalette != null) AssetDatabase.SaveAssetIfDirty(_tilePalette);
         _savedDraftJson = GetDraftJson(_map);
         hasUnsavedChanges = false;
         _saveStatus = "已手动保存到 " + AssetDatabase.GetAssetPath(_mapAsset);
@@ -1242,6 +1284,29 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             _loader = loaders[i];
             return;
         }
+    }
+
+    private void ResolveSharedTilePalette()
+    {
+        _tilePalette = RougeTowerDefenseTilePalette.Shared;
+        if (_tilePalette == null)
+        {
+            _tilePalette = AssetDatabase.LoadAssetAtPath<RougeTowerDefenseTilePalette>(
+                "Assets/Resources/Config/TowerDefenseTilePalette.asset");
+        }
+        _serializedTilePalette = _tilePalette != null
+            ? new SerializedObject(_tilePalette)
+            : null;
+    }
+
+    private void SaveSharedTilePalette()
+    {
+        if (_tilePalette == null) return;
+        EditorUtility.SetDirty(_tilePalette);
+        AssetDatabase.SaveAssetIfDirty(_tilePalette);
+        _serializedTilePalette?.UpdateIfRequiredOrScript();
+        _saveStatus = "共享地块调色板已保存；所有地图将使用相同定义。";
+        Repaint();
     }
 
     private void CreateMapAsset()

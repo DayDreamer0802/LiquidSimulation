@@ -2522,7 +2522,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 625
       levels:
-      - damage: 10
+      - goldCost: 625
+        damage: 10
         attackInterval: 5
         attackRange: 24
         targetCount: 1
@@ -2538,7 +2539,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 18
+      - goldCost: 1250
+        damage: 18
         attackInterval: 4.5
         attackRange: 28
         targetCount: 1
@@ -2554,7 +2556,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 26
+      - goldCost: 2500
+        damage: 26
         attackInterval: 4
         attackRange: 32
         targetCount: 1
@@ -2570,7 +2573,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 32
+      - goldCost: 5000
+        damage: 32
         attackInterval: 3.5
         attackRange: 36
         targetCount: 1
@@ -2586,7 +2590,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 40
+      - goldCost: 10000
+        damage: 40
         attackInterval: 3
         attackRange: 40
         targetCount: 1
@@ -2609,7 +2614,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 400
       levels:
-      - damage: 5
+      - goldCost: 400
+        damage: 5
         attackInterval: 0.05
         attackRange: 36
         targetCount: 3
@@ -2625,7 +2631,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 8
+      - goldCost: 800
+        damage: 8
         attackInterval: 0.05
         attackRange: 44
         targetCount: 6
@@ -2641,7 +2648,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 12
+      - goldCost: 1600
+        damage: 12
         attackInterval: 0.05
         attackRange: 52
         targetCount: 9
@@ -2657,7 +2665,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 15
+      - goldCost: 3200
+        damage: 15
         attackInterval: 0.05
         attackRange: 60
         targetCount: 12
@@ -2673,7 +2682,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 20
+      - goldCost: 6400
+        damage: 20
         attackInterval: 0.05
         attackRange: 72
         targetCount: 15
@@ -2696,7 +2706,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 750
       levels:
-      - damage: 50
+      - goldCost: 750
+        damage: 50
         attackInterval: 3
         attackRange: 44
         targetCount: 1
@@ -2712,7 +2723,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 75
+      - goldCost: 1500
+        damage: 75
         attackInterval: 2.7
         attackRange: 52
         targetCount: 1
@@ -2728,7 +2740,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 100
+      - goldCost: 3000
+        damage: 100
         attackInterval: 2.4
         attackRange: 60
         targetCount: 1
@@ -2744,7 +2757,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 125
+      - goldCost: 6000
+        damage: 125
         attackInterval: 2.2
         attackRange: 68
         targetCount: 1
@@ -2760,7 +2774,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 200
+      - goldCost: 12000
+        damage: 200
         attackInterval: 2
         attackRange: 80
         targetCount: 2
@@ -2783,7 +2798,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 625
       levels:
-      - damage: 10
+      - goldCost: 625
+        damage: 10
         attackInterval: 5
         attackRange: 20
         targetCount: 1
@@ -2799,7 +2815,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 12
+      - goldCost: 1250
+        damage: 12
         attackInterval: 5
         attackRange: 24
         targetCount: 1
@@ -2815,7 +2832,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 14
+      - goldCost: 2500
+        damage: 14
         attackInterval: 5
         attackRange: 28
         targetCount: 1
@@ -2831,7 +2849,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 16
+      - goldCost: 5000
+        damage: 16
         attackInterval: 5
         attackRange: 32
         targetCount: 1
@@ -2847,7 +2866,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 20
+      - goldCost: 10000
+        damage: 20
         attackInterval: 5
         attackRange: 36
         targetCount: 1
@@ -2870,7 +2890,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 750
       levels:
-      - damage: 2
+      - goldCost: 750
+        damage: 2
         attackInterval: 0.016666668
         attackRange: 30
         targetCount: 5
@@ -2886,7 +2907,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 3
+      - goldCost: 1500
+        damage: 3
         attackInterval: 0.016666668
         attackRange: 34
         targetCount: 10
@@ -2902,7 +2924,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 4
+      - goldCost: 3000
+        damage: 4
         attackInterval: 0.016666668
         attackRange: 38
         targetCount: 15
@@ -2918,7 +2941,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 5
+      - goldCost: 6000
+        damage: 5
         attackInterval: 0.016666668
         attackRange: 42
         targetCount: 20
@@ -2934,7 +2958,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 7
+      - goldCost: 12000
+        damage: 7
         attackInterval: 0.016666668
         attackRange: 48
         targetCount: 30
@@ -2957,7 +2982,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 1000
       levels:
-      - damage: 200
+      - goldCost: 1000
+        damage: 200
         attackInterval: 5
         attackRange: 40
         targetCount: 1
@@ -2973,7 +2999,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 300
+      - goldCost: 2000
+        damage: 300
         attackInterval: 4.75
         attackRange: 44
         targetCount: 1
@@ -2989,7 +3016,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 400
+      - goldCost: 4000
+        damage: 400
         attackInterval: 4.5
         attackRange: 48
         targetCount: 1
@@ -3005,7 +3033,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 500
+      - goldCost: 8000
+        damage: 500
         attackInterval: 4.25
         attackRange: 52
         targetCount: 1
@@ -3021,7 +3050,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 1000
+      - goldCost: 16000
+        damage: 1000
         attackInterval: 4
         attackRange: 60
         targetCount: 1
@@ -3044,7 +3074,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 900
       levels:
-      - damage: 30
+      - goldCost: 900
+        damage: 30
         attackInterval: 3
         attackRange: 24
         targetCount: 1
@@ -3060,7 +3091,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 45
+      - goldCost: 1800
+        damage: 45
         attackInterval: 2.8
         attackRange: 30
         targetCount: 1
@@ -3076,7 +3108,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 65
+      - goldCost: 3600
+        damage: 65
         attackInterval: 2.6
         attackRange: 36
         targetCount: 1
@@ -3092,7 +3125,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 90
+      - goldCost: 7200
+        damage: 90
         attackInterval: 2.4
         attackRange: 42
         targetCount: 1
@@ -3108,7 +3142,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 125
+      - goldCost: 14400
+        damage: 125
         attackInterval: 2.2
         attackRange: 50
         targetCount: 1
@@ -3131,7 +3166,8 @@ MonoBehaviour:
       footprintHeight: 4
       purchaseCost: 1400
       levels:
-      - damage: 18
+      - goldCost: 1400
+        damage: 18
         attackInterval: 3.2
         attackRange: 36
         targetCount: 1
@@ -3147,7 +3183,8 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - damage: 28
+      - goldCost: 2800
+        damage: 28
         attackInterval: 3
         attackRange: 42
         targetCount: 1
@@ -3163,7 +3200,8 @@ MonoBehaviour:
         projectileInterval: 0.08
         projectileFlightDuration: 1
         brownianStrength: 3.2
-      - damage: 42
+      - goldCost: 5600
+        damage: 42
         attackInterval: 2.8
         attackRange: 48
         targetCount: 1
@@ -3179,7 +3217,8 @@ MonoBehaviour:
         projectileInterval: 0.075
         projectileFlightDuration: 0.95
         brownianStrength: 3.4
-      - damage: 62
+      - goldCost: 11200
+        damage: 62
         attackInterval: 2.6
         attackRange: 54
         targetCount: 1
@@ -3195,7 +3234,8 @@ MonoBehaviour:
         projectileInterval: 0.07
         projectileFlightDuration: 0.9
         brownianStrength: 3.6
-      - damage: 90
+      - goldCost: 22400
+        damage: 90
         attackInterval: 2.4
         attackRange: 60
         targetCount: 1
@@ -3471,6 +3511,8 @@ MonoBehaviour:
     eliteSizeMultiplier: 2
     enemyTypes:
     - displayName: Standard
+      killGold: 1
+      eliteKillGold: 20
       baseHealth: 10
       healthGrowthMultiplier: 1
       baseSpeed: 6
@@ -3481,6 +3523,8 @@ MonoBehaviour:
       spriteAnimationFps: 9
       spriteDeathFrameCount: 2
     - displayName: Swift
+      killGold: 1
+      eliteKillGold: 20
       baseHealth: 10
       healthGrowthMultiplier: 1
       baseSpeed: 6
@@ -3491,6 +3535,8 @@ MonoBehaviour:
       spriteAnimationFps: 9
       spriteDeathFrameCount: 2
     - displayName: Heavy
+      killGold: 1
+      eliteKillGold: 20
       baseHealth: 10
       healthGrowthMultiplier: 1
       baseSpeed: 6

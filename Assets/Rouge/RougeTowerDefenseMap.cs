@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public enum RougeLevelVictoryConditionType
 {
@@ -267,7 +268,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     [SerializeField] private Vector2 origin = new Vector2(-256f, -256f);
 
     [Header("Tiles (index 0 is Empty)")]
-    [SerializeField] private List<TileDefinition> tileDefinitions = new List<TileDefinition>();
+    [FormerlySerializedAs("tileDefinitions"), SerializeField, HideInInspector]
+    private List<TileDefinition> legacyTileDefinitions = new List<TileDefinition>();
     [SerializeField, HideInInspector] private int[] tiles = Array.Empty<int>();
 
     [Header("Map Objects")]
@@ -309,7 +311,16 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public float CellSize => cellSize;
     public float MicroCellSize => cellSize / MicroCellsPerTile;
     public Vector2 Origin => origin;
-    public IReadOnlyList<TileDefinition> TileDefinitions => tileDefinitions;
+    public IReadOnlyList<TileDefinition> TileDefinitions
+    {
+        get
+        {
+            RougeTowerDefenseTilePalette palette = RougeTowerDefenseTilePalette.Shared;
+            return palette != null && palette.TileDefinitions.Count > 0
+                ? palette.TileDefinitions
+                : legacyTileDefinitions;
+        }
+    }
     public IReadOnlyList<EnemySpawn> EnemySpawns => enemySpawns;
     public bool HasMainTower => hasMainTower;
     public Vector2Int MainTowerCell => mainTowerCell;
@@ -357,7 +368,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
 
     public TileDefinition GetDefinition(int tileIndex)
     {
-        return tileIndex >= 0 && tileIndex < tileDefinitions.Count ? tileDefinitions[tileIndex] : null;
+        IReadOnlyList<TileDefinition> definitions = TileDefinitions;
+        return tileIndex >= 0 && tileIndex < definitions.Count ? definitions[tileIndex] : null;
     }
 
     public int GetAutoTileMask(Vector2Int cell, int tileIndex)
@@ -399,7 +411,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     {
         if (!Contains(cell)) return;
         EnsureStorage();
-        tiles[cell.y * width + cell.x] = Mathf.Clamp(tileIndex, 0, Mathf.Max(0, tileDefinitions.Count - 1));
+        tiles[cell.y * width + cell.x] = Mathf.Clamp(tileIndex, 0,
+            Mathf.Max(0, TileDefinitions.Count - 1));
     }
 
     public bool PaintBaseTile(Vector2Int cell, int tileIndex)
@@ -452,9 +465,10 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public float GetMinimumTowerGoldCostMultiplier()
     {
         float minimum = 1f;
-        for (int i = 0; i < tileDefinitions.Count; i++)
+        IReadOnlyList<TileDefinition> definitions = TileDefinitions;
+        for (int i = 0; i < definitions.Count; i++)
         {
-            TileDefinition definition = tileDefinitions[i];
+            TileDefinition definition = definitions[i];
             if (definition == null || !definition.towerPlace) continue;
             minimum = Mathf.Min(minimum,
                 RougeTowerPlaceEffectRules.GetGoldCostMultiplier(definition.towerPlaceEffect));
@@ -641,11 +655,11 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         towerAttackSpeedMultiplier = 1f;
         startingGold = 2000;
         bossEncounters = new List<BossEncounter> { new BossEncounter() };
-        tileDefinitions.Clear();
-        tileDefinitions.Add(new TileDefinition { name = "Empty", editorColor = new Color(0f, 0f, 0f, 0f) });
-        tileDefinitions.Add(new TileDefinition { name = "Ground", editorColor = new Color(0.2f, 0.3f, 0.38f, 0.85f), fallbackHeight = 0.08f });
-        tileDefinitions.Add(new TileDefinition { name = "Wall", editorColor = new Color(0.85f, 0.22f, 0.16f, 0.9f), blocksNavigation = true, fallbackHeight = 3f });
-        tileDefinitions.Add(new TileDefinition { name = "Tower Place", editorColor = new Color(0.18f, 0.8f, 0.42f, 0.9f), towerPlace = true, blocksNavigation = true, fallbackHeight = 0.1f });
+        legacyTileDefinitions.Clear();
+        legacyTileDefinitions.Add(new TileDefinition { name = "Empty", editorColor = new Color(0f, 0f, 0f, 0f) });
+        legacyTileDefinitions.Add(new TileDefinition { name = "Ground", editorColor = new Color(0.2f, 0.3f, 0.38f, 0.85f), fallbackHeight = 0.08f });
+        legacyTileDefinitions.Add(new TileDefinition { name = "Wall", editorColor = new Color(0.85f, 0.22f, 0.16f, 0.9f), blocksNavigation = true, fallbackHeight = 3f });
+        legacyTileDefinitions.Add(new TileDefinition { name = "Tower Place", editorColor = new Color(0.18f, 0.8f, 0.42f, 0.9f), towerPlace = true, blocksNavigation = true, fallbackHeight = 0.1f });
         ResizeGrid(MaxMapCells, MaxMapCells, 8f, true);
     }
 
@@ -657,7 +671,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     private void EnsureStorage()
     {
         if (tiles == null || tiles.Length != width * height) Array.Resize(ref tiles, width * height);
-        tileDefinitions ??= new List<TileDefinition>();
+        legacyTileDefinitions ??= new List<TileDefinition>();
         enemySpawns ??= new List<EnemySpawn>();
         victoryConditions ??= new List<VictoryCondition>();
         disabledTowerTypeIds ??= new List<int>();
@@ -680,7 +694,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         towerAttackSpeedMultiplier = Mathf.Max(0.01f, towerAttackSpeedMultiplier);
         startingGold = Mathf.Max(0, startingGold);
         EnsureStorage();
-        if (tileDefinitions.Count == 0)
+        if (legacyTileDefinitions.Count == 0)
         {
             InitializeDefaults();
         }
@@ -734,9 +748,9 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
             }
             encounter.spawnMinute = Mathf.Max(0f, encounter.spawnMinute);
         }
-        for (int i = 0; i < tileDefinitions.Count; i++)
+        for (int i = 0; i < legacyTileDefinitions.Count; i++)
         {
-            TileDefinition definition = tileDefinitions[i];
+            TileDefinition definition = legacyTileDefinitions[i];
             if (definition == null) continue;
             definition.autoTilePrefabs ??= new GameObject[16];
             if (definition.autoTilePrefabs.Length != 16)
