@@ -308,6 +308,7 @@ public partial class RougeGameManager
         if (!towerDefenseEnabled || _towerDefenseInitialized) return;
 
         _towerDefenseInitialized = true;
+        RougeDefenseTower.PreloadTowerAudio();
         UnityEngine.Random.InitState(TowerDefenseFixedRandomSeed);
         if (RougeTowerDefenseBalanceJson.TryLoad(out RougeTowerDefenseBalanceJsonData jsonBalance))
         {
@@ -423,6 +424,8 @@ public partial class RougeGameManager
     {
         if (!_towerDefenseInitialized) return;
 
+        StopAllTowerAttackSounds();
+        RougeDefenseTower.ShutdownTowerAudio();
         HideTowerDefenseSpawnWarnings();
         if (_debugUnitViewMode) ExitDebugUnitView();
 
@@ -1463,8 +1466,10 @@ public partial class RougeGameManager
         _towerDefenseGold -= cost;
         StopPiercingLaserAttacksForTower(tower);
         StopOrbitSphereAttacksForTower(tower);
+        tower.StopAttackSounds();
         tower.transform.position = destination;
         tower.FinalizeRelocation(destinationEffect);
+        tower.PlayPlacementSound();
         tower.name = tower.DisplayName + " Lv." + tower.Level;
         RefreshReinforcementTowerAuras();
         _towerTargetScheduledCount = 0;
@@ -1773,6 +1778,7 @@ public partial class RougeGameManager
         RougeDefenseTower builtTower = _towerPreview;
         RougeDefenseTower placed = ResolveFusionMerges(builtTower, out bool merged);
         if (!merged) _defenseTowers.Add(builtTower);
+        if (placed != null) placed.PlayPlacementSound();
         RefreshReinforcementTowerAuras();
         SetTowerPlaceVisualsVisible(true);
         _towerPreview = null;
@@ -1824,6 +1830,7 @@ public partial class RougeGameManager
             _defenseTowers.Remove(currentTower);
             StopPiercingLaserAttacksForTower(currentTower);
             StopOrbitSphereAttacksForTower(currentTower);
+            currentTower.StopAttackSounds();
             if (_selectedTower == currentTower) _selectedTower = null;
             Destroy(currentTower.gameObject);
             currentTower = targetTower;
@@ -1860,6 +1867,7 @@ public partial class RougeGameManager
                     _defenseTowers.RemoveAt(newerIndex);
                     StopPiercingLaserAttacksForTower(newerTower);
                     StopOrbitSphereAttacksForTower(newerTower);
+                    newerTower.StopAttackSounds();
                     if (_selectedTower == newerTower) _selectedTower = olderTower;
                     Destroy(newerTower.gameObject);
                     merged = true;
@@ -1893,6 +1901,7 @@ public partial class RougeGameManager
         _previewValid = false;
         _previewCellValidity = null;
         RollChargeTowerEffectChoices();
+        StopAllTowerAttackSounds();
         SetTowerPlaceVisualsVisible(false);
         if (_chargeTowerEffectSelectionPanel != null)
             _chargeTowerEffectSelectionPanel.transform.SetAsLastSibling();
@@ -1917,6 +1926,7 @@ public partial class RougeGameManager
         placed.name = placed.DisplayName;
         _defenseTowers.Add(placed);
         ApplyActivatedEffectToTowersInCell(_pendingChargeTowerCell, effect);
+        placed.PlayPlacementSound();
         _pendingChargeTower = null;
         _pendingChargeTowerEscrow = 0;
         _chargeTowerEffectSelectionActive = false;
@@ -2042,6 +2052,8 @@ public partial class RougeGameManager
         _defenseTowers.Remove(tower);
         StopPiercingLaserAttacksForTower(tower);
         StopOrbitSphereAttacksForTower(tower);
+        tower.StopAttackSounds();
+        tower.PlaySellSound();
         SetTowerPlaceVisualsVisible(_towerPlacementMode);
         _towerTargetScheduledCount = 0;
         if (_selectedTower == tower) _selectedTower = null;
@@ -2089,6 +2101,7 @@ public partial class RougeGameManager
         if (_towerDefenseGold < cost) return;
         if (!_selectedTower.Upgrade()) return;
         _towerDefenseGold -= cost;
+        _selectedTower.PlayUpgradeSound();
         _selectedTower.name = _selectedTower.DisplayName + " Lv." + _selectedTower.Level;
         _selectedTower.SetRangeVisibility(_towerPlacementMode);
         RefreshTowerDefenseUi(true);
@@ -2305,6 +2318,7 @@ public partial class RougeGameManager
     {
         if (_bossDeathSequenceActive || _towerDefenseVictory) return;
         _bossDeathSequenceActive = true;
+        StopAllTowerAttackSounds();
         _bossDeathSequenceTimer = 0f;
         _bossDeathShockwaveStep = 0;
         _bossDeathExplosionTriggered = false;
@@ -2441,6 +2455,7 @@ public partial class RougeGameManager
         _towerDefenseGameOver = true;
         _towerDefenseGameOverReason = string.IsNullOrWhiteSpace(reason) ? "胜利条件已达成" : reason;
         HideTowerDefenseSpawnWarnings();
+        StopAllTowerAttackSounds();
         Time.timeScale = 0f;
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetCinematicShake(0f);
@@ -2938,6 +2953,11 @@ public partial class RougeGameManager
         return kind;
     }
 
+    private void StopAllTowerAttackSounds()
+    {
+        RougeDefenseTower.StopAllTowerCombatSounds();
+    }
+
     private void ApplyPendingMainTowerAoe()
     {
         if (!_pendingMainTowerAoe || mainTower == null) return;
@@ -3181,15 +3201,22 @@ public partial class RougeGameManager
 
     private void UpdateContinuousLaserTower(RougeDefenseTower tower, int towerListIndex, float dt)
     {
+        if (_chargeTowerEffectSelectionActive)
+        {
+            return;
+        }
+
         bool focusedBossMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
         int requestedTargets = focusedBossMode ? 1 : tower.AttackTargetCount;
         int count = CollectTowerTargets(tower, towerListIndex, requestedTargets);
         if (count <= 0)
         {
+            tower.SetContinuousAttackSound(false);
             tower.HideLaserBeams();
             return;
         }
 
+        tower.SetContinuousAttackSound(true);
         Vector3 start = GetTowerMuzzlePosition(tower);
         // Laser damage is authored per attack tick (for example 10 damage every 0.02s).
         // Convert that tick damage to this frame's share so the continuous beam remains
@@ -3938,6 +3965,7 @@ public partial class RougeGameManager
         if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(false);
         UpdatePiercingLaserChargeVisual(ref beam, 0f);
         _towerBeamVisuals.Add(beam);
+        tower.PlayPiercingChargeSound();
     }
 
     private GameObject CreatePiercingLaserPrimitive(PrimitiveType primitiveType, string objectName,
@@ -4282,6 +4310,7 @@ public partial class RougeGameManager
         _towerDefenseGameOver = true;
         _towerDefenseGameOverReason = reason;
         HideTowerDefenseSpawnWarnings();
+        StopAllTowerAttackSounds();
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         ClearTowerRelocationState();
@@ -5413,6 +5442,7 @@ public partial class RougeGameManager
             ShotTimer = 0f,
             RandomState = seed
         });
+        tower.PlayAttackSound();
     }
 
     private void UpdateRocketBarrageSystem(float dt)

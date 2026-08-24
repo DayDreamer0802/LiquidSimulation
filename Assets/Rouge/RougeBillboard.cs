@@ -143,12 +143,22 @@ public sealed class RougeBillboard : MonoBehaviour
     /// </summary>
     public void PlayShootAnimation(Action onShotFired)
     {
+        PlayShootAnimation(null, onShotFired);
+    }
+
+    /// <summary>
+    /// Plays the prefab-authored firing motion, then invokes an optional presentation cue and
+    /// gameplay callback independently at the release frame. An exception in either callback is
+    /// logged without preventing the other callback from running.
+    /// </summary>
+    public void PlayShootAnimation(Action onReleaseCue, Action onShotFired)
+    {
         CacheAnimationBases();
         bool hasMove = shootMoveContent != null;
         bool hasScale = shootScaleContent != null;
         if (!hasMove && !hasScale)
         {
-            InvokeShot(onShotFired);
+            InvokeReleaseCallbacks(onReleaseCue, onShotFired);
             return;
         }
 
@@ -156,13 +166,15 @@ public sealed class RougeBillboard : MonoBehaviour
         // discard those shots: only the first one owns the visual, later shots keep the DPS timing.
         if (_shootAnimation != null)
         {
-            InvokeShot(onShotFired);
+            InvokeReleaseCallbacks(onReleaseCue, onShotFired);
             return;
         }
-        _shootAnimation = StartCoroutine(PlayShootAnimationRoutine(onShotFired, hasMove, hasScale));
+        _shootAnimation = StartCoroutine(PlayShootAnimationRoutine(
+            onReleaseCue, onShotFired, hasMove, hasScale));
     }
 
-    private IEnumerator PlayShootAnimationRoutine(Action onShotFired, bool hasMove, bool hasScale)
+    private IEnumerator PlayShootAnimationRoutine(Action onReleaseCue, Action onShotFired,
+        bool hasMove, bool hasScale)
     {
         Vector3 recoilPosition = _shootMoveBasePosition + Vector3.up * shootMoveY;
         Vector3 scaleOne = GetScaledShootScale(shootScale1);
@@ -178,7 +190,7 @@ public sealed class RougeBillboard : MonoBehaviour
 
         // A recoil-only tower fires at the end of its recoil. Scale-driven towers fire after the
         // second squash phase, when the authored vertical scale reaches its minimum.
-        if (!hasScale) InvokeShot(onShotFired);
+        if (!hasScale) InvokeReleaseCallbacks(onReleaseCue, onShotFired);
 
         // Keep the authored recoil pose before restoring it. A zero value preserves the
         // previous behaviour for every prefab that has not opted into a hold duration.
@@ -193,7 +205,7 @@ public sealed class RougeBillboard : MonoBehaviour
             if (hasScale) shootScaleContent.localScale = Vector3.LerpUnclamped(scaleOne, scaleTwo, t);
         });
 
-        if (hasScale) InvokeShot(onShotFired);
+        if (hasScale) InvokeReleaseCallbacks(onReleaseCue, onShotFired);
 
         if (hasScale)
         {
@@ -263,6 +275,12 @@ public sealed class RougeBillboard : MonoBehaviour
         {
             Debug.LogException(exception);
         }
+    }
+
+    internal static void InvokeReleaseCallbacks(Action onReleaseCue, Action onShotFired)
+    {
+        InvokeShot(onReleaseCue);
+        InvokeShot(onShotFired);
     }
 
     private void OnDisable()

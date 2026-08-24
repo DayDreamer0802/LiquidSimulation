@@ -113,7 +113,7 @@ internal enum RougeTowerBuffSource
 }
 
 [DisallowMultipleComponent]
-public sealed class RougeDefenseTower : MonoBehaviour
+public sealed partial class RougeDefenseTower : MonoBehaviour
 {
     private const int DefaultChargeTowerPlacementCost = 4000;
     private const int DefaultReinforcementTowerPlacementCost = 6000;
@@ -137,6 +137,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal float projectileBurstTimer;
     [System.NonSerialized] internal int projectileBurstPrimaryTargetIndex = -1;
     [System.NonSerialized] internal Vector3 projectileBurstPrimaryTarget;
+    [System.NonSerialized] private System.Action playAttackSoundReleaseCue;
     [System.NonSerialized] private bool echoAttackCycleActive;
     [System.NonSerialized] private int echoAttackRepeatsRemaining;
     [System.NonSerialized] private Vector3 echoAttackTarget;
@@ -697,8 +698,24 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     internal void PlayAttackAnimation(System.Action onShotFired)
     {
-        if (billboard != null) billboard.PlayShootAnimation(onShotFired);
-        else onShotFired?.Invoke();
+        // Rocket barrage plays one longer cue when the whole salvo starts. Its per-missile
+        // animation calls pass null and retain the original allocation profile.
+        if (towerType == RougeTowerType.RocketBarrage && onShotFired == null)
+        {
+            if (billboard != null) billboard.PlayShootAnimation(null);
+            return;
+        }
+
+        System.Action releaseCue = null;
+        if (towerType != RougeTowerType.RocketBarrage)
+        {
+            if (playAttackSoundReleaseCue == null)
+                playAttackSoundReleaseCue = PlayAttackSound;
+            releaseCue = playAttackSoundReleaseCue;
+        }
+
+        if (billboard != null) billboard.PlayShootAnimation(releaseCue, onShotFired);
+        else RougeBillboard.InvokeReleaseCallbacks(releaseCue, onShotFired);
     }
 
     internal void UpdatePresentation(float dt)
@@ -1052,6 +1069,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
 
     private void OnDestroy()
     {
+        StopAttackSounds();
         ReleaseLaserBeamMesh();
         if (overclockParticleMaterial != null)
         {
