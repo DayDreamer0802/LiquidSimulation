@@ -218,8 +218,8 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public int PlacementCost => IsChargeTower
         ? Mathf.Max(0, chargeTowerPlacementCost)
         : IsReinforcementTower
-            ? ScaleGoldCost(reinforcementTowerPlacementCost)
-            : ScaleGoldCost(purchaseCost);
+            ? Mathf.Max(0, reinforcementTowerPlacementCost)
+            : Mathf.Max(0, purchaseCost);
     public int InvestedGold => investedGold;
     public bool IsChargeTower => chargeTower || towerType == RougeTowerType.ChargeTower;
     public bool IsReinforcementTower => reinforcementTower ||
@@ -241,7 +241,7 @@ public sealed class RougeDefenseTower : MonoBehaviour
     public bool CanRelocate => RougeTowerPlaceEffectRules.EnablesRelocation(towerPlaceEffect);
     public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
     public int UpgradeCost => CanUpgrade
-        ? ScaleGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
+        ? ScaleUpgradeGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
         : 0;
     public string DisplayName => IsChargeTower
         ? "充能塔"
@@ -915,10 +915,10 @@ public sealed class RougeDefenseTower : MonoBehaviour
         targetIndex = -1;
     }
 
-    private int ScaleGoldCost(int baseCost)
+    private int ScaleUpgradeGoldCost(int baseCost)
     {
         return Mathf.Max(0, Mathf.RoundToInt(Mathf.Max(0, baseCost) *
-            RougeTowerPlaceEffectRules.GetGoldCostMultiplier(towerPlaceEffect)));
+            RougeTowerPlaceEffectRules.GetUpgradeGoldCostMultiplier(towerPlaceEffect)));
     }
 
     private void InitializePrefabVisuals(bool preview)

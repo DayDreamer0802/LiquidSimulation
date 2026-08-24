@@ -128,20 +128,32 @@ Shader "Rouge/GroundZone"
                     // tower AOE a hotter core and moving ember cells.
                     if (_ZoneType >= 2.5)
                     {
-                        float swirl = sin(angle * 7.0 - time * (_FlowSpeed * 2.4) +
-                            radial * 13.0 + flowNoise * 2.6) * 0.5 + 0.5;
-                        float emberCells = sin(uv.x * 31.0 + time * _FlowSpeed * 2.1) *
-                            cos(uv.y * 27.0 - time * _FlowSpeed * 1.7) * 0.5 + 0.5;
-                        emberCells = smoothstep(0.84, 0.98, emberCells) * bodyMask;
-                        heat = saturate(coreMask * _CoreStrength + embers * 0.48 +
-                            tongues * 0.18 + swirl * 0.16);
-                        color = lerp(_SecondaryColor.rgb, _Color.rgb, heat);
-                        float hotCore = saturate(coreMask * 0.72 + emberCells * 0.9) *
-                            (0.72 + pulse * 0.28);
-                        color = lerp(color, _HotColor.rgb, hotCore);
-                        color += _Color.rgb * rimMask * _RimStrength * 0.22;
-                        alpha = _Color.a * bodyMask *
-                            (0.68 + heat * 0.34 + emberCells * 0.18) * pulse;
+                        // Persistent tower fire reads more clearly as a restrained hazard
+                        // perimeter than as an opaque pool. Two rails preserve the damage
+                        // radius while the transparent centre keeps enemies and build pads
+                        // legible when several zones overlap.
+                        float outerRail =
+                            smoothstep(irregularRadius - 0.15, irregularRadius - 0.09, radial) *
+                            (1.0 - smoothstep(irregularRadius - 0.035, irregularRadius + 0.018, radial));
+                        float innerRail =
+                            smoothstep(irregularRadius - 0.29, irregularRadius - 0.245, radial) *
+                            (1.0 - smoothstep(irregularRadius - 0.19, irregularRadius - 0.145, radial));
+                        float interior = bodyMask * (1.0 - outerRail) * (1.0 - innerRail);
+
+                        float sweep = sin(angle * 2.0 - time * _FlowSpeed * 1.8 +
+                            flowNoise * 0.45) * 0.5 + 0.5;
+                        float hotSweep = outerRail * smoothstep(0.72, 0.98, sweep);
+                        float lowHeat = interior * saturate(0.46 + flowNoise * 0.32);
+
+                        color = lerp(_SecondaryColor.rgb, _Color.rgb,
+                            saturate(outerRail + innerRail * 0.72 + lowHeat * 0.22));
+                        color = lerp(color, _HotColor.rgb,
+                            saturate(hotSweep * 0.72));
+                        color += _Color.rgb * outerRail * _RimStrength * 0.12;
+
+                        alpha = _Color.a * pulse *
+                            (outerRail * 0.68 + innerRail * 0.22 +
+                             lowHeat * 0.075 + hotSweep * 0.14);
                     }
                 }
 

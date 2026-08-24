@@ -586,18 +586,12 @@ public partial class RougeGameManager
         if (IsTowerTypeDisabled(type)) return false;
         if (type == RougeTowerType.ChargeTower)
             return !_chargeTowerEffectSelectionActive &&
-                   _towerDefenseGold >= GetMinimumChargeTowerGoldCost();
+                   _towerDefenseGold >= GetChargeTowerGoldCost();
         if (type == RougeTowerType.ReinforcementTower)
             return !_chargeTowerEffectSelectionActive &&
-                   _towerDefenseGold >= GetMinimumReinforcementTowerGoldCost();
+                   _towerDefenseGold >= GetReinforcementTowerGoldCost();
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
-        float minimumMultiplier = loader != null
-            ? loader.GetMinimumEffectiveTowerGoldCostMultiplier()
-            : _towerDefenseLevel != null
-                ? _towerDefenseLevel.GetMinimumTowerGoldCostMultiplier()
-                : 1f;
-        return _towerDefenseGold >= Mathf.Max(0, Mathf.RoundToInt(cost * minimumMultiplier));
+        return _towerDefenseGold >= Mathf.Max(0, cost);
     }
 
     private bool CanAffordAnyTowerType()
@@ -608,11 +602,6 @@ public partial class RougeGameManager
         }
         return CanAffordTowerType(RougeTowerType.ChargeTower) ||
                CanAffordTowerType(RougeTowerType.ReinforcementTower);
-    }
-
-    private int GetMinimumChargeTowerGoldCost()
-    {
-        return CalculateChargeTowerGoldCost();
     }
 
     private int GetChargeTowerGoldCost()
@@ -635,18 +624,6 @@ public partial class RougeGameManager
         double multiplier = 1d + existingChargeTowers * countMultiplier;
         return (int)System.Math.Min(int.MaxValue,
             System.Math.Ceiling(baseCost * multiplier));
-    }
-
-    private int GetMinimumReinforcementTowerGoldCost()
-    {
-        int baseCost = CalculateReinforcementTowerGoldCost();
-        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
-        float minimumMultiplier = loader != null
-            ? loader.GetMinimumEffectiveTowerGoldCostMultiplier()
-            : _towerDefenseLevel != null
-                ? _towerDefenseLevel.GetMinimumTowerGoldCostMultiplier()
-                : 1f;
-        return Mathf.Max(0, Mathf.RoundToInt(baseCost * minimumMultiplier));
     }
 
     private int GetReinforcementTowerGoldCost()
@@ -1803,7 +1780,7 @@ public partial class RougeGameManager
         if (placedReinforcementTower)
         {
             bool canRepeatReinforcement =
-                _towerDefenseGold >= GetMinimumReinforcementTowerGoldCost();
+                _towerDefenseGold >= GetReinforcementTowerGoldCost();
             if (canRepeatReinforcement)
                 BeginReinforcementTowerBuild();
             else
@@ -3806,10 +3783,9 @@ public partial class RougeGameManager
         {
             renderer.sharedMaterial = GetTowerFireZoneMaterial();
             ConfigureGroundAoEVisual(renderer, _towerFireZoneMaterial);
-            // GroundZone is transparent. The shared ground helper uses an early
-            // queue for the older opaque-looking zones, which lets map tiles
-            // cover this effect on some URP/camera configurations.
-            _towerFireZoneMaterial.renderQueue = 3020;
+            // Draw after the opaque floor but before the transparent build grid.
+            // The cyan/yellow placement rails remain readable across the hazard.
+            _towerFireZoneMaterial.renderQueue = 2990;
             properties.SetFloat("_TimeOffset", visualPhase * 8f);
             // The zone is created after UpdateTowerFireZones for this frame, so
             // starting at zero made the freshly spawned AOE entirely invisible.
@@ -3842,18 +3818,18 @@ public partial class RougeGameManager
             "Rouge/GroundZone", "Tower Fire Zone", false);
         ConfigureGroundZoneMaterial(
             _towerFireZoneMaterial,
-            new Color(1f, 0.32f, 0.025f, 0.78f),
-            new Color(0.22f, 0.012f, 0.002f, 0.28f),
+            new Color(1f, 0.26f, 0.025f, 0.46f),
+            new Color(0.18f, 0.01f, 0.002f, 0.12f),
             3f,
-            2.8f,
-            0.14f,
-            4.1f,
-            1.65f,
-            1.7f,
-            1.25f,
-            1.1f);
+            2.2f,
+            0.045f,
+            2.4f,
+            0.85f,
+            0.85f,
+            0.65f,
+            1f);
         if (_towerFireZoneMaterial.HasProperty("_HotColor"))
-            _towerFireZoneMaterial.SetColor("_HotColor", new Color(1.6f, 0.72f, 0.06f, 1f));
+            _towerFireZoneMaterial.SetColor("_HotColor", new Color(1.35f, 0.65f, 0.08f, 1f));
         _towerFireZoneMaterial.enableInstancing = true;
         return _towerFireZoneMaterial;
     }
@@ -4592,13 +4568,10 @@ public partial class RougeGameManager
         if (text != null) text.color = available ? Color.white : new Color(0.48f, 0.5f, 0.54f, 1f);
     }
 
-    private static string GetTowerBuildLabel(int hotkey, RougeTowerType type,
-        RougeTowerPlaceEffect placeEffect = RougeTowerPlaceEffect.None)
+    private static string GetTowerBuildLabel(int hotkey, RougeTowerType type)
     {
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
-        int actualCost = Mathf.Max(0, Mathf.RoundToInt(cost *
-            RougeTowerPlaceEffectRules.GetGoldCostMultiplier(placeEffect)));
-        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{actualCost} 金币";
+        return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{Mathf.Max(0, cost)} 金币";
     }
 
     private string GetBossScheduleStatus()
@@ -4655,11 +4628,6 @@ public partial class RougeGameManager
             SetUiBarFill(_mainTowerHealthFill, mainTower != null ? mainTower.HealthNormalized : 0f);
         if (_mainTowerHealthText != null)
             _mainTowerHealthText.text = $"主塔  {mainTowerHp:0} / {mainTowerMaxHp:0}";
-        RougeTowerPlaceEffect buildPreviewEffect = !_towerRelocationActive &&
-            _towerBuildSelectionActive && _towerPreview != null &&
-            _towerPreview.gameObject.activeInHierarchy
-                ? _towerPreview.TowerPlaceEffect
-                : RougeTowerPlaceEffect.None;
         for (int typeIndex = 0; typeIndex < _towerBuildButtons.Length; typeIndex++)
         {
             RougeTowerType type = (RougeTowerType)typeIndex;
@@ -4670,7 +4638,7 @@ public partial class RougeGameManager
             if (_towerBuildButtonTexts[typeIndex] != null)
                 _towerBuildButtonTexts[typeIndex].text = disabled
                     ? $"{TowerDefenseVisuals.GetTowerName(type)}\n未解锁"
-                    : GetTowerBuildLabel(typeIndex + 1, type, buildPreviewEffect);
+                    : GetTowerBuildLabel(typeIndex + 1, type);
         }
         SetPurchaseButtonAvailability(_chargeTowerBuildButton, _chargeTowerBuildButtonText,
             !_towerDefenseGameOver && CanAffordTowerType(RougeTowerType.ChargeTower));
@@ -5215,7 +5183,7 @@ public partial class RougeGameManager
         int cost = _towerPreview != null && _towerPreview.IsChargeTower &&
                    _towerPreview.gameObject.activeInHierarchy
             ? _towerPreview.PlacementCost
-            : GetMinimumChargeTowerGoldCost();
+            : GetChargeTowerGoldCost();
         return $"[C] 充能塔\n{cost} 金币";
     }
 
@@ -5224,7 +5192,7 @@ public partial class RougeGameManager
         int cost = _towerPreview != null && _towerPreview.IsReinforcementTower &&
                    _towerPreview.gameObject.activeInHierarchy
             ? _towerPreview.PlacementCost
-            : GetMinimumReinforcementTowerGoldCost();
+            : GetReinforcementTowerGoldCost();
         return $"[V] 强化塔\n{cost} 金币";
     }
 
