@@ -2,6 +2,7 @@ Shader "Rouge/Hologram"
 {
     Properties
     {
+        [PerRendererData] _MainTex("Sprite Texture", 2D) = "white" {}
         _BaseColor("Base Color", Color) = (0.15, 0.85, 1.0, 1.0)
         _AccentColor("Accent Color", Color) = (0.95, 1.0, 1.0, 1.0)
         _Alpha("Alpha", Range(0, 1)) = 0.7
@@ -14,6 +15,7 @@ Shader "Rouge/Hologram"
         _GridDensity("Grid Density", Range(2, 40)) = 9
         _DissolveEdgeWidth("Dissolve Edge Width", Range(0.01, 0.45)) = 0.14
         _DissolveGlow("Dissolve Glow", Range(0, 4)) = 1.45
+        [HideInInspector] _LifecycleAlpha("Lifecycle Alpha", Range(0, 1)) = 1
     }
 
     SubShader
@@ -34,6 +36,9 @@ Shader "Rouge/Hologram"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            TEXTURE2D(_MainTex);
+            SAMPLER(sampler_MainTex);
+
             CBUFFER_START(UnityPerMaterial)
             float4 _BaseColor;
             float4 _AccentColor;
@@ -47,6 +52,7 @@ Shader "Rouge/Hologram"
             float _GridDensity;
             float _DissolveEdgeWidth;
             float _DissolveGlow;
+            float _LifecycleAlpha;
             CBUFFER_END
 
             struct Attributes
@@ -54,6 +60,7 @@ Shader "Rouge/Hologram"
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
+                float4 color : COLOR;
             };
 
             struct Varyings
@@ -63,6 +70,7 @@ Shader "Rouge/Hologram"
                 float3 normalWS : TEXCOORD1;
                 float3 positionOS : TEXCOORD2;
                 float2 uv : TEXCOORD3;
+                float4 color : COLOR;
             };
 
             float Hash21(float2 p)
@@ -79,12 +87,15 @@ Shader "Rouge/Hologram"
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 output.positionOS = input.positionOS.xyz;
                 output.uv = input.uv;
+                output.color = input.color;
                 output.positionHCS = TransformWorldToHClip(output.positionWS);
                 return output;
             }
 
             half4 Frag(Varyings input) : SV_Target
             {
+                half4 authoredShape = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv);
+                clip(authoredShape.a * input.color.a - 0.02h);
                 float3 normalWS = normalize(input.normalWS);
                 float3 viewDirWS = SafeNormalize(_WorldSpaceCameraPos.xyz - input.positionWS);
                 float fresnel = pow(saturate(1.0 - dot(normalWS, viewDirWS)), _FresnelPower);
@@ -111,10 +122,11 @@ Shader "Rouge/Hologram"
                 float glow = (0.35 + fresnel * _GlowStrength) * scanlines * rimPulse * noise;
                 float3 color = lerp(_BaseColor.rgb, _AccentColor.rgb, saturate(fresnel * 0.85 + scanlines * 0.25));
                 color += _AccentColor.rgb * (lattice * 0.32 + dissolveEdge * _DissolveGlow * (0.45 + lattice * 0.55));
-                color *= glow;
+                color *= glow * lerp(1.0h.xxx, authoredShape.rgb, 0.28h);
 
                 float alpha = _Alpha * saturate(0.25 + fresnel * 0.85) * saturate(0.75 + scanlines * 0.25);
-                alpha *= dissolve * saturate(0.82 + lattice * 0.18);
+                alpha *= dissolve * saturate(0.82 + lattice * 0.18) *
+                    authoredShape.a * input.color.a * _LifecycleAlpha;
                 return half4(color, alpha);
             }
             ENDHLSL

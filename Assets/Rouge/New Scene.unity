@@ -23,7 +23,7 @@ RenderSettings:
   m_AmbientSkyColor: {r: 0.212, g: 0.227, b: 0.259, a: 1}
   m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
-  m_AmbientIntensity: 1
+  m_AmbientIntensity: 0.68
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
   m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
@@ -35,9 +35,9 @@ RenderSettings:
   m_DefaultReflectionMode: 0
   m_DefaultReflectionResolution: 128
   m_ReflectionBounces: 1
-  m_ReflectionIntensity: 1
+  m_ReflectionIntensity: 0.78
   m_CustomReflection: {fileID: 0}
-  m_Sun: {fileID: 0}
+  m_Sun: {fileID: 288212302}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -148,8 +148,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
   m_BlockingMask:
@@ -165,8 +165,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   m_UiScaleMode: 0
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
@@ -432,8 +432,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 11
   m_Type: 1
-  m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
-  m_Intensity: 1
+  m_Color: {r: 1, g: 0.94, b: 0.84, a: 1}
+  m_Intensity: 1.05
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -442,9 +442,9 @@ Light:
     m_Type: 2
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
+    m_Strength: 0.92
     m_Bias: 0.05
-    m_NormalBias: 0.4
+    m_NormalBias: 0.24
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -495,13 +495,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 288212301}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
+  m_LocalRotation: {x: 0.3417816, y: -0.28073305, z: 0.10776332, w: 0.8903715}
   m_LocalPosition: {x: 0, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+  m_LocalEulerAnglesHint: {x: 42, y: -35, z: 0}
 --- !u!114 &288212304
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -579,6 +579,15 @@ MonoBehaviour:
   ownedCellCornerWidth: 0.024
   ownedCellCornerInset: 0.045
   ownedCellPulseSpeed: 1.6
+  buildArenaPresentation: 1
+  arenaBackdropSize: 2048
+  arenaRailWidthInCells: 0.22
+  arenaFoundationHeight: 1.35
+  arenaBackdropBaseColor: {r: 0.025, g: 0.06, b: 0.095, a: 1}
+  arenaBackdropOuterColor: {r: 0.009, g: 0.023, b: 0.042, a: 1}
+  arenaFrameBaseColor: {r: 0.035, g: 0.075, b: 0.11, a: 1}
+  arenaFramePanelColor: {r: 0.07, g: 0.14, b: 0.19, a: 1}
+  arenaEnergyColor: {r: 0.08, g: 0.82, b: 1.2, a: 1}
 --- !u!4 &613537617
 Transform:
   m_ObjectHideFlags: 0
@@ -716,6 +725,8 @@ MonoBehaviour:
   techPanelShader: {fileID: 4800000, guid: b4ba5ac408e2f8c438946b210d667e04, type: 3}
   laserBeamShader: {fileID: 4800000, guid: e021425b141e2b74c9ac24c0919cd339, type: 3}
   urpLitShader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
+  enemyContactShadowShader: {fileID: 4800000, guid: 8da18d7cda894ef09f1340e11f8a4087, type: 3}
+  contactShadowShader: {fileID: 4800000, guid: d229ebae89ef4bddab51682247d08e35, type: 3}
   enemyCount: 100000
   enemyMaxHealth: 24
   enemyArmor: 1
@@ -2533,7 +2544,6 @@ MonoBehaviour:
       vulnerabilityDamageBonus: 0.5
       vulnerabilityEliteScale: 1
       vulnerabilityBossScale: 1
-      vulnerabilityArmor: -2
     machineGunSpecialization:
       criticalChance: 0.25
       upgradedCriticalChance: 0.5
@@ -2567,6 +2577,19 @@ MonoBehaviour:
       persistentKnockbackForce: 4
       upgradedPersistentExtraTicks: 2
       upgradedPersistentDamageMultiplier: 0.25
+    laserTowerSpecialization:
+      armorBreakNormalDuration: 1
+      armorBreakEliteDuration: 2
+      armorBreakBossDuration: 4
+      acceleratedArmorBreakDurationMultiplier: 0.5
+      refractionRangeMultiplier: 0.25
+      refractionDamageMultiplier: 0.5
+      continuousRefractionCount: 3
+      refractionAttackDamageMultiplier: 5
+      refractionAttackInterval: 1
+      refractionAttackTargetMultiplier: 2
+      refractionAttackDamageFalloffPerTarget: 0.05
+      refractionAttackMaximumDamageFalloff: 0.5
     towers:
     - towerType: 0
       placementRadius: 2.2
@@ -3599,6 +3622,8 @@ GameObject:
   - component: {fileID: 1701847738}
   - component: {fileID: 1701847737}
   - component: {fileID: 1701847740}
+  - component: {fileID: 1701847741}
+  - component: {fileID: 1701847742}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -3637,8 +3662,8 @@ Camera:
   m_GameObject: {fileID: 1701847736}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.018, g: 0.028, b: 0.045, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -3738,6 +3763,41 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &1701847741
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1701847736}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ae70b0d6c5c4471e8f9b2a35d43a6c71, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  effectEnabled: 0
+  focusCenterY: 0.5
+  clearBandHalfHeight: 0.16
+  transitionWidth: 0.2
+  blurRadius: 5.5
+  contrast: 1.01
+  saturation: 1
+--- !u!114 &1701847742
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1701847736}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a8ccbf90abf4b388285432ef04b1a23, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  defaultTier: 1
+  rememberSelection: 1
+  directionalLight: {fileID: 288212302}
+  rendererData: {fileID: 11400000, guid: 5cdd51029796d1b438d6bd917b649d25, type: 2}
 --- !u!1 &1807398523
 GameObject:
   m_ObjectHideFlags: 0

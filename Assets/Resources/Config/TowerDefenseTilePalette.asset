@@ -63,7 +63,7 @@ MonoBehaviour:
     - {fileID: 0}
     - {fileID: 0}
     - {fileID: 0}
-    editorColor: {r: 0.345279, g: 0.45158416, b: 0.54088044, a: 0.85}
+    editorColor: {r: 0.089540705, g: 0.059511032, b: 0.37106913, a: 0.85}
     blocksNavigation: 0
     towerPlace: 0
     towerPlaceEffect: 0

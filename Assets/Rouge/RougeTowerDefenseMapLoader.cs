@@ -4,7 +4,7 @@ using UnityEngine;
 [AddComponentMenu("Rouge/Tower Defense Map Loader")]
 [DefaultExecutionOrder(-1000)]
 [DisallowMultipleComponent]
-public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
+public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
 {
     public static RougeTowerDefenseMapLoader Active { get; private set; }
     public static RougeTowerDefenseMap ActiveMap => Active != null ? Active.map : null;
@@ -137,6 +137,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         _runtimeRoot = new GameObject($"Runtime Map - {map.name}");
         if (!Application.isPlaying) _runtimeRoot.hideFlags = HideFlags.DontSaveInEditor;
         _runtimeRoot.transform.SetParent(transform, false);
+        BuildArenaPresentation();
         BuildTileVisuals();
         BuildMergedSurfaces(false);
         BuildMergedSurfaces(true);
@@ -365,9 +366,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 };
                 Color source = definition.editorColor;
                 source.a = 1f;
-                Color baseColor = Color.Lerp(new Color(0.13f, 0.21f, 0.27f, 1f), source, 0.58f);
-                Color panelColor = Color.Lerp(baseColor * 0.72f,
-                    new Color(0.08f, 0.15f, 0.21f, 1f), 0.42f);
+                Color baseColor = Color.Lerp(new Color(0.16f, 0.25f, 0.32f, 1f), source, 0.58f);
+                Color panelColor = Color.Lerp(baseColor * 0.74f,
+                    new Color(0.09f, 0.16f, 0.22f, 1f), 0.42f);
                 panelColor.a = 1f;
                 Color accentColor = Color.Lerp(baseColor,
                     new Color(0.05f, 0.62f, 0.72f, 1f), 0.36f);
@@ -379,7 +380,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 groundMaterial.SetVector("_GridOrigin",
                     new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
                 groundMaterial.SetFloat("_SeamWidth", 0.018f);
-                groundMaterial.SetFloat("_DetailStrength", 0.42f);
+                groundMaterial.SetFloat("_DetailStrength", 0.38f);
                 groundMaterial.enableInstancing = true;
                 return groundMaterial;
             }

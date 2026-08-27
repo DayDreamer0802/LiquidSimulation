@@ -372,6 +372,16 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                     balance.FindPropertyRelative("cannonSpecialization"), true);
             }
         }
+        else if (type == RougeTowerType.Laser)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                       GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("激光塔破甲与折射分支配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("laserTowerSpecialization"), true);
+            }
+        }
 
         EditorGUILayout.Space(5f);
         EditorGUILayout.LabelField("Level Parameters", EditorStyles.boldLabel);
@@ -427,6 +437,9 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 break;
             case RougeTowerType.Laser:
                 DrawLevelRow(levels, "targetCount", "Target Count");
+                EditorGUILayout.HelpBox(
+                    "激光塔的破甲时间、折射范围、伤害与攻击间隔统一在上方分支配置中调整。",
+                    MessageType.Info);
                 break;
             case RougeTowerType.Cannon:
                 DrawLevelRow(levels, "projectileCount", "Shell Count");

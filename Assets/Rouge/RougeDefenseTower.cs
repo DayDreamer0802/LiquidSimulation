@@ -117,6 +117,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [SerializeField] private RougeMachineGunAugment machineGunAugment;
     [SerializeField] private RougeCannonBranch cannonBranch;
     [SerializeField] private RougeCannonAugment cannonAugment;
+    [SerializeField] private RougeLaserTowerBranch laserBranch;
+    [SerializeField] private RougeLaserTowerAugment laserAugment;
     [SerializeField] private RougeTowerPlaceEffect towerPlaceEffect;
     [SerializeField] private bool hasChargeTargetCell;
     [SerializeField] private Vector2Int chargeTargetCell;
@@ -143,7 +145,14 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] private float upgradeHintRadius;
     private const float SelectedHintRadiusPadding = 0.2f;
     private const float UpgradeHintRadiusPadding = 2.2f;
-    private const int MaxLaserConnections = 45;
+    private const int MaxLaserConnections = FindTowerTargetsJob.MaxTargetsPerTower * 4;
+    private readonly int[] laserArmorBreakTargetIndices =
+        new int[FindTowerTargetsJob.MaxTargetsPerTower];
+    private readonly float[] laserArmorBreakProgress =
+        new float[FindTowerTargetsJob.MaxTargetsPerTower];
+    private readonly bool[] laserArmorBreakTargetSeen =
+        new bool[FindTowerTargetsJob.MaxTargetsPerTower];
+    private bool laserArmorBreakTrackingInitialized;
     private const float OrbitLaserBeamWidth = 0.86f;
     private readonly Vector3[] laserVertices = new Vector3[MaxLaserConnections * 4];
     private readonly Vector2[] laserRibbonUvs = new Vector2[MaxLaserConnections * 4];
@@ -167,9 +176,14 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int Level => level;
     public int MaxLevel => TowerDefenseVisuals.MaxTowerLevel;
     public bool CanUpgrade => !IsSpecialTower && level < MaxLevel;
-    public float Damage => Stats.Damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
-    public float AttackInterval => Stats.AttackInterval;
-    public float EffectiveAttackInterval => Stats.AttackInterval /
+    public float Damage => Stats.Damage * GetBuffMultiplier(RougeTowerBuffStat.Damage) *
+        (UsesLaserRefractionAttack
+            ? TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackDamageMultiplier
+            : 1f);
+    public float AttackInterval => UsesLaserRefractionAttack
+        ? TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackInterval
+        : Stats.AttackInterval;
+    public float EffectiveAttackInterval => AttackInterval /
         Mathf.Max(0.01f, GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed));
     public float AttackRange => Stats.AttackRadius * GetBuffMultiplier(RougeTowerBuffStat.Range);
     public Vector2Int FootprintCells => Vector2Int.one;
@@ -230,8 +244,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         iceAugment == RougeIceTowerAugment.PermanentFrostTiles;
     public bool AmplifiesVulnerableDamage => UsesIceVulnerability &&
         iceAugment == RougeIceTowerAugment.VulnerabilityDamage;
-    public bool ReducesVulnerableArmor => UsesIceVulnerability &&
-        iceAugment == RougeIceTowerAugment.VulnerabilityArmor;
+    public bool AddsVulnerableArmorPenetration => UsesIceVulnerability &&
+        iceAugment == RougeIceTowerAugment.VulnerabilityArmorPenetration;
     public RougeMachineGunBranch MachineGunBranch => towerType == RougeTowerType.MachineGun
         ? machineGunBranch
         : RougeMachineGunBranch.None;
@@ -240,7 +254,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         : RougeMachineGunAugment.None;
     public bool RequiresUpgradeChoice => CanUpgrade &&
         (towerType == RougeTowerType.Ice || towerType == RougeTowerType.MachineGun ||
-         towerType == RougeTowerType.Cannon);
+         towerType == RougeTowerType.Cannon || towerType == RougeTowerType.Laser);
     public bool NeedsMachineGunBranchChoice => towerType == RougeTowerType.MachineGun &&
                                                machineGunBranch == RougeMachineGunBranch.None;
     public bool UsesMachineGunCritical => towerType == RougeTowerType.MachineGun &&
@@ -275,6 +289,31 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         cannonAugment == RougeCannonAugment.PersistentKnockback;
     public bool HasUpgradedPersistentCannonTicks => UsesPersistentCannonShell &&
         cannonAugment == RougeCannonAugment.PersistentExtraTicks;
+    public RougeLaserTowerBranch LaserBranch => towerType == RougeTowerType.Laser
+        ? laserBranch
+        : RougeLaserTowerBranch.None;
+    public RougeLaserTowerAugment LaserAugment => towerType == RougeTowerType.Laser
+        ? laserAugment
+        : RougeLaserTowerAugment.None;
+    public bool NeedsLaserBranchChoice => towerType == RougeTowerType.Laser &&
+                                          laserBranch == RougeLaserTowerBranch.None;
+    public bool UsesLaserArmorBreak => towerType == RougeTowerType.Laser &&
+                                       laserBranch == RougeLaserTowerBranch.ArmorBreak;
+    public bool HasAcceleratedLaserArmorBreak => UsesLaserArmorBreak &&
+        laserAugment == RougeLaserTowerAugment.AcceleratedArmorBreak;
+    public bool IgnoresFocusedLaserPenalty => UsesLaserArmorBreak &&
+        laserAugment == RougeLaserTowerAugment.StrongFocus;
+    public bool UsesLaserRefraction => towerType == RougeTowerType.Laser &&
+                                      laserBranch == RougeLaserTowerBranch.Refraction;
+    public bool UsesContinuousLaserRefraction => UsesLaserRefraction &&
+        laserAugment == RougeLaserTowerAugment.ContinuousRefraction;
+    public bool UsesLaserRefractionAttack => UsesLaserRefraction &&
+        laserAugment == RougeLaserTowerAugment.RefractionAttack;
+    public float LaserRefractionRange => AttackRange *
+        TowerDefenseVisuals.GetLaserSpecializationConfig().refractionRangeMultiplier;
+    public int LaserRefractionAttackCount => Mathf.Clamp(AttackTargetCount *
+        TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackTargetMultiplier,
+        1, FindTowerTargetsJob.MaxTargetsPerTower * 2);
     public float AttackSpeedMultiplier => GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed);
     public bool IsOverclocked => overclockRemaining > 0f;
     public int ReinforcementAuraBuffLevel => IsReinforcementTower
@@ -300,7 +339,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
     public int UpgradeCost => CanUpgrade
         ? level >= 2 && (NeedsIceBranchChoice || NeedsMachineGunBranchChoice ||
-                         NeedsCannonBranchChoice)
+                         NeedsCannonBranchChoice || NeedsLaserBranchChoice)
             ? 0
             : ScaleUpgradeGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
         : 0;
@@ -559,7 +598,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                         : RougeIceTowerAugment.PermanentFrostTiles
                     : choiceIndex == 0
                         ? RougeIceTowerAugment.VulnerabilityDamage
-                        : RougeIceTowerAugment.VulnerabilityArmor;
+                        : RougeIceTowerAugment.VulnerabilityArmorPenetration;
                 level++;
             }
         }
@@ -581,6 +620,27 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                     : choiceIndex == 0
                         ? RougeMachineGunAugment.FragmentCount
                         : RougeMachineGunAugment.EmbeddedFragments;
+                level++;
+            }
+        }
+        else if (towerType == RougeTowerType.Laser)
+        {
+            if (NeedsLaserBranchChoice)
+            {
+                laserBranch = choiceIndex == 0
+                    ? RougeLaserTowerBranch.ArmorBreak
+                    : RougeLaserTowerBranch.Refraction;
+                if (level < 2) level++;
+            }
+            else
+            {
+                laserAugment = laserBranch == RougeLaserTowerBranch.ArmorBreak
+                    ? choiceIndex == 0
+                        ? RougeLaserTowerAugment.AcceleratedArmorBreak
+                        : RougeLaserTowerAugment.StrongFocus
+                    : choiceIndex == 0
+                        ? RougeLaserTowerAugment.ContinuousRefraction
+                        : RougeLaserTowerAugment.RefractionAttack;
                 level++;
             }
         }
@@ -608,6 +668,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         investedGold += cost;
         iceSpikeTimer = 0f;
         ResetCombatAfterLevelChange();
+        RefreshFocusedModeBuff();
         return true;
     }
 
@@ -625,6 +686,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         projectileBurstShotIndex = 0;
         projectileBurstTimer = 0f;
         projectileBurstPrimaryTargetIndex = -1;
+        ResetLaserArmorBreakTracking();
         ResetEchoAttackCycle();
         if (attackRing != null && attackRing.enabled) SetRangeVisibility(true);
     }
@@ -794,6 +856,109 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
         laserBeamMesh.SetIndices(laserLineIndices, 0, vertexCount, MeshTopology.Lines, 0, true);
         laserBeamObject.SetActive(true);
+    }
+
+    internal void ShowLaserSegments(Vector3[] starts, Vector3[] ends, int count)
+    {
+        int connectionCount = Mathf.Min(count, MaxLaserConnections);
+        if (connectionCount <= 0)
+        {
+            HideLaserBeams();
+            return;
+        }
+
+        EnsureLaserBeamMesh();
+        for (int i = 0; i < connectionCount; i++)
+        {
+            int vertex = i * 2;
+            laserVertices[vertex] = transform.InverseTransformPoint(starts[i]);
+            laserVertices[vertex + 1] = transform.InverseTransformPoint(
+                ends[i] + Vector3.up * 0.08f);
+        }
+
+        int vertexCount = connectionCount * 2;
+        laserBeamMesh.Clear(false);
+        laserBeamMesh.SetVertices(laserVertices, 0, vertexCount);
+        laserBeamMesh.SetIndices(laserLineIndices, 0, vertexCount,
+            MeshTopology.Lines, 0, true);
+        laserBeamObject.SetActive(true);
+    }
+
+    internal void BeginLaserArmorBreakFrame()
+    {
+        EnsureLaserArmorBreakTrackingInitialized();
+        for (int i = 0; i < laserArmorBreakTargetSeen.Length; i++)
+            laserArmorBreakTargetSeen[i] = false;
+    }
+
+    internal int TrackLaserArmorBreakTarget(int enemyIndex, float deltaTime,
+        float requiredDuration)
+    {
+        if (enemyIndex < 0 || deltaTime <= 0f || requiredDuration <= 0f) return 0;
+        EnsureLaserArmorBreakTrackingInitialized();
+        int freeSlot = -1;
+        for (int i = 0; i < laserArmorBreakTargetIndices.Length; i++)
+        {
+            if (laserArmorBreakTargetIndices[i] == enemyIndex)
+            {
+                laserArmorBreakTargetSeen[i] = true;
+                laserArmorBreakProgress[i] += deltaTime;
+                int reductions = Mathf.FloorToInt(laserArmorBreakProgress[i] /
+                    requiredDuration);
+                if (reductions > 0)
+                    laserArmorBreakProgress[i] -= reductions * requiredDuration;
+                return reductions;
+            }
+            if (freeSlot < 0 && laserArmorBreakTargetIndices[i] < 0) freeSlot = i;
+        }
+
+        if (freeSlot < 0)
+        {
+            for (int i = 0; i < laserArmorBreakTargetIndices.Length; i++)
+            {
+                if (laserArmorBreakTargetSeen[i]) continue;
+                freeSlot = i;
+                break;
+            }
+        }
+        if (freeSlot < 0) return 0;
+        laserArmorBreakTargetIndices[freeSlot] = enemyIndex;
+        laserArmorBreakTargetSeen[freeSlot] = true;
+        laserArmorBreakProgress[freeSlot] = deltaTime;
+        int initialReductions = Mathf.FloorToInt(deltaTime / requiredDuration);
+        if (initialReductions > 0)
+            laserArmorBreakProgress[freeSlot] -= initialReductions * requiredDuration;
+        return initialReductions;
+    }
+
+    internal void EndLaserArmorBreakFrame()
+    {
+        if (!laserArmorBreakTrackingInitialized) return;
+        for (int i = 0; i < laserArmorBreakTargetIndices.Length; i++)
+        {
+            if (laserArmorBreakTargetIndices[i] < 0 || laserArmorBreakTargetSeen[i]) continue;
+            laserArmorBreakTargetIndices[i] = -1;
+            laserArmorBreakProgress[i] = 0f;
+        }
+    }
+
+    internal void ResetLaserArmorBreakTracking()
+    {
+        if (!laserArmorBreakTrackingInitialized) return;
+        for (int i = 0; i < laserArmorBreakTargetIndices.Length; i++)
+        {
+            laserArmorBreakTargetIndices[i] = -1;
+            laserArmorBreakProgress[i] = 0f;
+            laserArmorBreakTargetSeen[i] = false;
+        }
+    }
+
+    private void EnsureLaserArmorBreakTrackingInitialized()
+    {
+        if (laserArmorBreakTrackingInitialized) return;
+        laserArmorBreakTrackingInitialized = true;
+        for (int i = 0; i < laserArmorBreakTargetIndices.Length; i++)
+            laserArmorBreakTargetIndices[i] = -1;
     }
 
     internal void HideLaserBeams()
@@ -1056,6 +1221,25 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 cannonAugment < RougeCannonAugment.PersistentKnockback)
                 cannonAugment = RougeCannonAugment.None;
         }
+
+        if (towerType != RougeTowerType.Laser)
+        {
+            laserBranch = RougeLaserTowerBranch.None;
+            laserAugment = RougeLaserTowerAugment.None;
+        }
+        else
+        {
+            if (laserBranch == RougeLaserTowerBranch.None && level >= 3) level = 2;
+            if (level < 2) laserBranch = RougeLaserTowerBranch.None;
+            if (level < 3) laserAugment = RougeLaserTowerAugment.None;
+            if (laserBranch == RougeLaserTowerBranch.ArmorBreak &&
+                laserAugment > RougeLaserTowerAugment.StrongFocus)
+                laserAugment = RougeLaserTowerAugment.None;
+            if (laserBranch == RougeLaserTowerBranch.Refraction &&
+                laserAugment != RougeLaserTowerAugment.None &&
+                laserAugment < RougeLaserTowerAugment.ContinuousRefraction)
+                laserAugment = RougeLaserTowerAugment.None;
+        }
     }
 
     private void SyncSpecialTowerType()
@@ -1082,7 +1266,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         int attackSpeedLevel = 0;
         if (focused)
         {
-            if (towerType == RougeTowerType.Laser)
+            if (towerType == RougeTowerType.Laser && !IgnoresFocusedLaserPenalty)
             {
                 damageLevel = -1;
                 attackSpeedLevel = -1;

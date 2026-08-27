@@ -37,6 +37,7 @@ public class RougeCameraFollow : MonoBehaviour
     private float _cinematicShakeIntensity;
     private bool _debugFreeViewActive;
     private bool _debugLookActive;
+    private bool _topDownViewActive;
     private float _debugFreeYaw;
     private float _debugFreePitch;
     private Vector3 _debugRestorePosition;
@@ -46,6 +47,9 @@ public class RougeCameraFollow : MonoBehaviour
     private float _debugRestoreNearClip;
     private CursorLockMode _debugRestoreCursorLock;
     private bool _debugRestoreCursorVisible;
+    private Vector3 _topDownRestoreOffsetFromGround;
+    private Quaternion _topDownRestoreRotation;
+    private float _topDownRestoreFocusDistance;
     private float _minimumZoomScale = 0.5f;
     private float _maximumZoomScale = 5f;
 
@@ -100,6 +104,7 @@ public class RougeCameraFollow : MonoBehaviour
     private void OnDisable()
     {
         if (_debugFreeViewActive) EndDebugFreeView();
+        if (_topDownViewActive) EndTopDownView();
         if (s_primaryCamera == _camera)
         {
             s_primaryCamera = null;
@@ -252,6 +257,50 @@ public class RougeCameraFollow : MonoBehaviour
         }
         Cursor.lockState = _debugRestoreCursorLock;
         Cursor.visible = _debugRestoreCursorVisible;
+    }
+
+    public void BeginTopDownView()
+    {
+        Camera camera = _camera != null ? _camera : GetComponent<Camera>();
+        if (camera == null || _topDownViewActive) return;
+
+        float groundPlaneY = GetGroundPlaneY();
+        if (!TryGetViewportGroundCenter(camera, groundPlaneY, out Vector3 groundCenter))
+        {
+            groundCenter = new Vector3(transform.position.x, groundPlaneY, transform.position.z);
+        }
+
+        _topDownRestoreOffsetFromGround = transform.position - groundCenter;
+        _topDownRestoreRotation = transform.rotation;
+        _topDownRestoreFocusDistance = Mathf.Max(0.01f, _topDownRestoreOffsetFromGround.magnitude);
+
+        transform.SetPositionAndRotation(
+            groundCenter + Vector3.up * _topDownRestoreFocusDistance,
+            Quaternion.Euler(90f, 0f, 0f));
+        _topDownViewActive = true;
+        _panDragButton = 0;
+        if (_movementClampEnabled) ClampToMovementBounds();
+    }
+
+    public void EndTopDownView()
+    {
+        if (!_topDownViewActive) return;
+
+        Camera camera = _camera != null ? _camera : GetComponent<Camera>();
+        float groundPlaneY = GetGroundPlaneY();
+        Vector3 groundCenter = new Vector3(transform.position.x, groundPlaneY, transform.position.z);
+        if (camera != null && TryGetViewportGroundCenter(camera, groundPlaneY, out Vector3 visibleGroundCenter))
+        {
+            groundCenter = visibleGroundCenter;
+        }
+
+        float currentFocusDistance = Mathf.Max(0.01f, transform.position.y - groundPlaneY);
+        float zoomRatio = currentFocusDistance / Mathf.Max(0.01f, _topDownRestoreFocusDistance);
+        Vector3 restoredOffset = _topDownRestoreOffsetFromGround * zoomRatio;
+        transform.SetPositionAndRotation(groundCenter + restoredOffset, _topDownRestoreRotation);
+        _topDownViewActive = false;
+        _panDragButton = 0;
+        if (_movementClampEnabled) ClampToMovementBounds();
     }
 
     private void UpdateDebugFreeView()
@@ -467,6 +516,11 @@ public class RougeCameraFollow : MonoBehaviour
             maxZ = fallbackBoundsCenter.y + halfSize.y;
             groundPlaneY = 0f;
         }
+    }
+
+    private float GetGroundPlaneY()
+    {
+        return movementBounds != null ? movementBounds.WorldBounds.center.y : 0f;
     }
 
     private static bool TryGetViewportGroundCenter(Camera camera, float groundPlaneY,

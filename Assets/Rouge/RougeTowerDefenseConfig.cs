@@ -110,10 +110,6 @@ public sealed class RougeIceTowerSpecializationConfig
     [Range(0f, 1f), Tooltip("B2-a：Boss 增伤倍率；1 表示同样为 +100%。")]
     public float vulnerabilityBossScale = 1f;
 
-    [Header("B2-b - 强化脆弱")]
-    [Tooltip("B2-b：脆弱敌人的护甲变为这个值。")]
-    public float vulnerabilityArmor = -2f;
-
     public void EnsureDefaults()
     {
         slowPercent = Mathf.Clamp(slowPercent, 0f, 100f);
@@ -258,6 +254,59 @@ public sealed class RougeCannonSpecializationConfig
 }
 
 [Serializable]
+public sealed class RougeLaserTowerSpecializationConfig
+{
+    [Header("A - 破甲")]
+    [Min(0.01f), Tooltip("普通敌人每次永久削减 1 点护甲所需的持续照射时间。")]
+    public float armorBreakNormalDuration = 1f;
+    [Min(0.01f), Tooltip("精英敌人每次永久削减 1 点护甲所需的持续照射时间。")]
+    public float armorBreakEliteDuration = 2f;
+    [Min(0.01f), Tooltip("Boss 每次永久削减 1 点护甲所需的持续照射时间。")]
+    public float armorBreakBossDuration = 4f;
+    [Range(0.01f, 1f), Tooltip("A1：破甲所需时间的倍率。")]
+    public float acceleratedArmorBreakDurationMultiplier = 0.5f;
+
+    [Header("B - 折射")]
+    [Range(0.01f, 1f), Tooltip("折射搜索范围相对激光塔攻击范围的倍率。")]
+    public float refractionRangeMultiplier = 0.25f;
+    [Range(0f, 1f), Tooltip("B 路线基础折射的伤害倍率。")]
+    public float refractionDamageMultiplier = 0.5f;
+    [Min(1), Tooltip("B1：每条直连激光最多连续折射的次数。")]
+    public int continuousRefractionCount = 3;
+
+    [Header("B2 - 折射攻击")]
+    [Min(0f), Tooltip("B2：基础伤害倍率。")]
+    public float refractionAttackDamageMultiplier = 5f;
+    [Min(0.01f), Tooltip("B2：基础攻击间隔。")]
+    public float refractionAttackInterval = 1f;
+    [Min(1), Tooltip("B2：最大折射敌人数相对弹幕数的倍率。")]
+    public int refractionAttackTargetMultiplier = 2;
+    [Range(0f, 1f), Tooltip("B2：每多命中一个敌人的伤害衰减。")]
+    public float refractionAttackDamageFalloffPerTarget = 0.05f;
+    [Range(0f, 1f), Tooltip("B2：伤害衰减上限。")]
+    public float refractionAttackMaximumDamageFalloff = 0.5f;
+
+    public void EnsureDefaults()
+    {
+        armorBreakNormalDuration = Mathf.Max(0.01f, armorBreakNormalDuration);
+        armorBreakEliteDuration = Mathf.Max(0.01f, armorBreakEliteDuration);
+        armorBreakBossDuration = Mathf.Max(0.01f, armorBreakBossDuration);
+        acceleratedArmorBreakDurationMultiplier = Mathf.Clamp(
+            acceleratedArmorBreakDurationMultiplier, 0.01f, 1f);
+        refractionRangeMultiplier = Mathf.Clamp(refractionRangeMultiplier, 0.01f, 1f);
+        refractionDamageMultiplier = Mathf.Clamp01(refractionDamageMultiplier);
+        continuousRefractionCount = Mathf.Max(1, continuousRefractionCount);
+        refractionAttackDamageMultiplier = Mathf.Max(0f, refractionAttackDamageMultiplier);
+        refractionAttackInterval = Mathf.Max(0.01f, refractionAttackInterval);
+        refractionAttackTargetMultiplier = Mathf.Max(1, refractionAttackTargetMultiplier);
+        refractionAttackDamageFalloffPerTarget = Mathf.Clamp01(
+            refractionAttackDamageFalloffPerTarget);
+        refractionAttackMaximumDamageFalloff = Mathf.Clamp01(
+            refractionAttackMaximumDamageFalloff);
+    }
+}
+
+[Serializable]
 public sealed class RougeTowerBalanceConfig
 {
     [Range(0f, 1f)] public float sellRefundMultiplier = 0.25f;
@@ -267,6 +316,8 @@ public sealed class RougeTowerBalanceConfig
         new RougeMachineGunSpecializationConfig();
     public RougeCannonSpecializationConfig cannonSpecialization =
         new RougeCannonSpecializationConfig();
+    public RougeLaserTowerSpecializationConfig laserTowerSpecialization =
+        new RougeLaserTowerSpecializationConfig();
     public List<RougeTowerTypeConfig> towers = new List<RougeTowerTypeConfig>();
 
     public void EnsureDefaults()
@@ -277,6 +328,8 @@ public sealed class RougeTowerBalanceConfig
         machineGunSpecialization.EnsureDefaults();
         cannonSpecialization ??= new RougeCannonSpecializationConfig();
         cannonSpecialization.EnsureDefaults();
+        laserTowerSpecialization ??= new RougeLaserTowerSpecializationConfig();
+        laserTowerSpecialization.EnsureDefaults();
         foreach (RougeTowerType type in Enum.GetValues(typeof(RougeTowerType)))
         {
             RougeTowerTypeConfig config = Find(type);
@@ -416,7 +469,7 @@ public sealed class RougeEnemyArchetypeConfig
     [Min(0)] public int killGold = 1;
     [Min(0)] public int eliteKillGold = 20;
     [Min(0.01f)] public float baseHealth = 10f;
-    [Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%; final damage is at least 1.")]
+    [Range(RougeArmorRules.MinimumEnemyArmor, RougeArmorRules.MaximumEnemyArmor), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 5%; final damage is at least 1.")]
     public float armor = 1f;
     [Min(0.01f), Tooltip("Scales only the health gained from the global enemy-level curve. 1 keeps the global curve unchanged; values above 1 grow faster without changing level-1 base health.")]
     public float healthGrowthMultiplier = 1f;
@@ -431,7 +484,8 @@ public sealed class RougeEnemyArchetypeConfig
 
     public void EnsureDefaults()
     {
-        armor = Mathf.Max(0f, armor);
+        armor = Mathf.Clamp(armor, RougeArmorRules.MinimumEnemyArmor,
+            RougeArmorRules.MaximumEnemyArmor);
         if (healthGrowthMultiplier <= 0f) healthGrowthMultiplier = 1f;
         bool isStandardSheet = !string.IsNullOrEmpty(spriteResourcePath) &&
             spriteResourcePath.EndsWith("enemy_standard_sheet", StringComparison.OrdinalIgnoreCase);
@@ -647,7 +701,7 @@ public sealed class RougeBossBalanceConfig
     [Min(1f), Tooltip("Desired travel time from Boss spawn to the main tower. Level schedules control the actual spawn minute.")]
     public float targetTravelTimeSeconds = 300f;
     [Min(1f)] public float maxHealth = 1000000f;
-    [Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%; final damage is at least 1.")]
+    [Range(RougeArmorRules.MinimumEnemyArmor, RougeArmorRules.MaximumEnemyArmor), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 5%; final damage is at least 1.")]
     public float armor = 5f;
     [Min(0.1f)] public float moveSpeed = 3.5f; // Fallback when no valid route distance is available.
     [Range(0f, 95f)] public float maximumSlowPercent = 20f;
@@ -677,7 +731,8 @@ public sealed class RougeBossBalanceConfig
         if (targetTravelTimeSeconds <= 0f)
             targetTravelTimeSeconds = Mathf.Max(30f, targetArrivalTimeSeconds - spawnTimeSeconds);
         maxHealth = Mathf.Max(1f, maxHealth);
-        armor = Mathf.Max(0f, armor);
+        armor = Mathf.Clamp(armor, RougeArmorRules.MinimumEnemyArmor,
+            RougeArmorRules.MaximumEnemyArmor);
         moveSpeed = Mathf.Max(0.1f, moveSpeed);
         maximumSlowPercent = Mathf.Clamp(maximumSlowPercent, 0f, 95f);
         radius = Mathf.Max(0.5f, radius);
@@ -780,7 +835,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 12;
+    public int version = 13;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -834,7 +889,6 @@ public sealed class RougeTowerDefenseBalanceJsonData
                 new RougeIceTowerSpecializationConfig();
             towerBalance.iceTowerSpecialization.frostAttackSlowPercent = 20f;
             towerBalance.iceTowerSpecialization.frostDurationBonus = 0.5f;
-            towerBalance.iceTowerSpecialization.vulnerabilityArmor = -2f;
         }
         if (loadedVersion < 10)
         {
@@ -887,6 +941,9 @@ public sealed class RougeTowerDefenseBalanceJsonData
             towerBalance.iceTowerSpecialization.frostAttackSlowPercent = 20f;
             towerBalance.iceTowerSpecialization.frostDurationBonus = 0.5f;
         }
+        if (loadedVersion < 13)
+            towerBalance.laserTowerSpecialization =
+                new RougeLaserTowerSpecializationConfig();
         for (int i = bossBalances.Count - 1; i >= 0; i--)
         {
             if (bossBalances[i] == null)
@@ -908,7 +965,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 12);
+        version = Mathf.Max(version, 13);
     }
 }
 
@@ -951,7 +1008,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 12,
+            version = 13,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,

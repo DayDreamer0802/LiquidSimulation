@@ -39,7 +39,15 @@ public enum RougeIceTowerAugment
     [InspectorName("A2-b - 随机冰地刺")] IceSpikes = 1,
     [InspectorName("A2-a - 相邻格永久变为霜寒格")] PermanentFrostTiles = 2,
     [InspectorName("B2-a - 脆弱单位受到更多伤害")] VulnerabilityDamage = 3,
-    [InspectorName("B2-b - 脆弱敌人 -2 护甲")] VulnerabilityArmor = 4
+    [InspectorName("B2-b - 攻击脆弱单位视为 +4 穿甲")] VulnerabilityArmorPenetration = 4
+}
+
+public static class RougeArmorRules
+{
+    public const float MinimumEnemyArmor = -20f;
+    public const float MaximumEnemyArmor = 15f;
+    public const float DamageReductionPerArmorPoint = 0.05f;
+    public const float VulnerableArmorPenetration = 4f;
 }
 
 public enum RougeMachineGunBranch
@@ -56,6 +64,22 @@ public enum RougeMachineGunAugment
     [InspectorName("A2 - 暴击获得 4 穿甲")] CriticalArmorPenetration = 2,
     [InspectorName("B1 - 破片提升至 6 枚")] FragmentCount = 3,
     [InspectorName("B2 - 破片有 50% 概率嵌入")] EmbeddedFragments = 4
+}
+
+public enum RougeLaserTowerBranch
+{
+    None = 0,
+    [InspectorName("A - 破甲")] ArmorBreak = 1,
+    [InspectorName("B - 折射")] Refraction = 2
+}
+
+public enum RougeLaserTowerAugment
+{
+    None = 0,
+    [InspectorName("A1 - 加速穿甲")] AcceleratedArmorBreak = 1,
+    [InspectorName("A2 - 强力集中")] StrongFocus = 2,
+    [InspectorName("B1 - 连续折射")] ContinuousRefraction = 3,
+    [InspectorName("B2 - 折射攻击")] RefractionAttack = 4
 }
 
 public enum RougeCannonBranch
@@ -300,6 +324,18 @@ internal static class TowerDefenseVisuals
         {
             config = new RougeCannonSpecializationConfig();
             if (s_runtimeBalance != null) s_runtimeBalance.cannonSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
+    }
+
+    public static RougeLaserTowerSpecializationConfig GetLaserSpecializationConfig()
+    {
+        RougeLaserTowerSpecializationConfig config = s_runtimeBalance?.laserTowerSpecialization;
+        if (config == null)
+        {
+            config = new RougeLaserTowerSpecializationConfig();
+            if (s_runtimeBalance != null) s_runtimeBalance.laserTowerSpecialization = config;
         }
         config.EnsureDefaults();
         return config;

@@ -62,6 +62,10 @@ Shader "Rouge/EnemyBillboard"
                 float _RenderHeight;
             CBUFFER_END
 
+            float _RougeSpriteLightingStrength;
+            float4 _RougeLightDirection;
+            float4 _RougeLightColor;
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -212,6 +216,27 @@ Shader "Rouge/EnemyBillboard"
                 half airborneLuminance = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));
                 half airborneGrey = lerp(airborneLuminance, 0.68h, 0.72h);
                 color.rgb = lerp(color.rgb, airborneGrey.xxx, input.airborne * 0.92h);
+                // Project the global sun onto the billboard so the crowd shares the
+                // same warm-lit / cool-shadow direction as the world without paying
+                // for thousands of alpha-cutout shadow casters.
+                float3 cameraRight = normalize(UNITY_MATRIX_I_V[0].xyz);
+                float3 cameraUp = normalize(UNITY_MATRIX_I_V[1].xyz);
+                float2 projectedLight = normalize(float2(
+                    dot(cameraRight, _RougeLightDirection.xyz),
+                    dot(cameraUp, _RougeLightDirection.xyz)) + float2(0.0001, 0.0001));
+                float2 spritePosition = (input.overlayUv - 0.5) * float2(1.2, 0.72);
+                half sunSide = saturate(0.5h + (half)dot(spritePosition, projectedLight));
+                half verticalLight = lerp(0.88h, 1.04h,
+                    smoothstep(0.04h, 0.96h, input.overlayUv.y));
+                half sunPeak = max(max(_RougeLightColor.r, _RougeLightColor.g),
+                    max(_RougeLightColor.b, 0.001h));
+                half3 normalizedSun = _RougeLightColor.rgb / sunPeak;
+                half3 sunTint = lerp(half3(0.90h, 0.96h, 1.04h),
+                    normalizedSun, sunSide);
+                half3 directionalSprite = color.rgb * verticalLight *
+                    lerp(0.86h, 1.08h, sunSide) * lerp(1.0h.xxx, sunTint, 0.22h);
+                color.rgb = lerp(color.rgb, directionalSprite,
+                    (half)_RougeSpriteLightingStrength);
                 // A launch starts with a long hit timer; suppress that white flash while
                 // airborne so it cannot wash the grey state back to pure white.
                 half hitAmount = saturate(input.flash) * (1.0h - input.airborne);

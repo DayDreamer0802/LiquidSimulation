@@ -51,6 +51,8 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private Shader techPanelShader;
     [SerializeField] private Shader laserBeamShader;
     [SerializeField] private Shader urpLitShader;
+    [SerializeField] private Shader enemyContactShadowShader;
+    [SerializeField] private Shader contactShadowShader;
 
     private Mesh _bulletMesh;
     private Material _bulletMaterial;
@@ -59,7 +61,7 @@ public partial class RougeGameManager : MonoBehaviour
     [Header("Population")]
     [SerializeField, Range(1000, 500000)] private int enemyCount = 200000;
     [SerializeField] private float enemyMaxHealth = 10f;
-    [SerializeField, Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%.")]
+    [SerializeField, Range(RougeArmorRules.MinimumEnemyArmor, RougeArmorRules.MaximumEnemyArmor), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 5%.")]
     private float enemyArmor = 1f;
     [SerializeField] private float enemyRadius = 0.3f;
     [SerializeField] private float enemyMaxSpeed = 6f;
@@ -1071,6 +1073,7 @@ public partial class RougeGameManager : MonoBehaviour
         enemyMaterial = CreateRuntimeMaterial("Rouge/EnemyBillboard", "Enemy 2D Billboard", true);
         _ownsEnemyBillboardMaterial = true;
         ApplyEnemySpriteSheetTextures();
+        InitializeLightingVisuals();
         cameraZoomMultiplier = Mathf.Max(0.01f, cameraZoomMultiplier);
         enemySpriteSize.x = Mathf.Max(0.01f, enemySpriteSize.x);
         enemySpriteSize.y = Mathf.Max(0.01f, enemySpriteSize.y);
@@ -2516,6 +2519,7 @@ public partial class RougeGameManager : MonoBehaviour
         int drawCount = Mathf.Clamp(_currentMaxEnemies, 0, enemyCount);
         if (drawCount <= 0)
         {
+            RenderContactShadows(0, default);
             return;
         }
 
@@ -2543,6 +2547,8 @@ public partial class RougeGameManager : MonoBehaviour
 
         _drawArgs[1] = (uint)drawCount;
         _argsBuffer.SetData(_drawArgs);
+
+        RenderContactShadows(drawCount, bounds);
 
         Graphics.DrawMeshInstancedIndirect(
             enemyMesh,
@@ -2762,7 +2768,8 @@ public partial class RougeGameManager : MonoBehaviour
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
             EnemyMaxHealth = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemyHealth() : enemyMaxHealth * (1f + currentLevel * 0.15f),
-            EnemyArmor = Mathf.Max(0f, enemyArmor),
+            EnemyArmor = Mathf.Clamp(enemyArmor, RougeArmorRules.MinimumEnemyArmor,
+                RougeArmorRules.MaximumEnemyArmor),
             EnemyRadius = Mathf.Min(enemyRadius*2f, enemyRadius * (0.8f+ currentLevel * 0.0001f)),
             EnemyMaxSpeed = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemySpeed() : enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
             ArenaHalfExtents = _usesMapArenaBounds ? _mapArenaHalfExtents : new float2(arenaHalfExtent),
@@ -3353,6 +3360,7 @@ public partial class RougeGameManager : MonoBehaviour
         _bulletMaterial = null;
         _ownsBulletMaterial = false;
         _bulletMesh = null;
+        DisposeLightingVisuals();
         if (_ownsEnemyBillboardMaterial && enemyMaterial != null) Destroy(enemyMaterial);
         enemyMaterial = null;
         _ownsEnemyBillboardMaterial = false;
@@ -3493,6 +3501,8 @@ public partial class RougeGameManager : MonoBehaviour
         AssignShaderReferenceIfMissing(ref techPanelShader, "Rouge/TechPanel");
         AssignShaderReferenceIfMissing(ref laserBeamShader, "Rouge/LaserBeam");
         AssignShaderReferenceIfMissing(ref urpLitShader, "Universal Render Pipeline/Lit");
+        AssignShaderReferenceIfMissing(ref enemyContactShadowShader, "Rouge/Enemy Contact Shadow");
+        AssignShaderReferenceIfMissing(ref contactShadowShader, "Rouge/Contact Shadow");
     }
 
     private static void AssignShaderReferenceIfMissing(ref Shader shaderField, string shaderName)
@@ -3583,6 +3593,10 @@ public partial class RougeGameManager : MonoBehaviour
                 return laserBeamShader;
             case "Universal Render Pipeline/Lit":
                 return urpLitShader;
+            case "Rouge/Enemy Contact Shadow":
+                return enemyContactShadowShader;
+            case "Rouge/Contact Shadow":
+                return contactShadowShader;
             default:
                 return null;
         }
@@ -3989,7 +4003,7 @@ public struct RougeSkillArea
     public float EffectVulnerabilityDamageBonus;
     public float EffectVulnerabilityEliteScale;
     public float EffectVulnerabilityBossScale;
-    public float EffectVulnerabilityArmor;
+    public float EffectVulnerabilityArmorPenetration;
     public int EffectVulnerabilityLandingBlast;
     public float EffectVulnerabilityLandingRadiusMultiplier;
     public float EffectVulnerabilityLandingNormalDamageRatio;
@@ -4019,8 +4033,8 @@ public struct RougeEnemyEffectState
     public float VulnerabilityTimer;
     public float VulnerabilityDamageBonus;
     public float VulnerabilityDamageBonusTimer;
-    public float VulnerabilityArmor;
-    public float VulnerabilityArmorTimer;
+    public float VulnerabilityArmorPenetration;
+    public float VulnerabilityArmorPenetrationTimer;
     public float VulnerabilityLandingBlastTimer;
     public int VulnerabilityLandingBlast;
     public int VulnerabilityLandingBlastPending;

@@ -1,5 +1,5 @@
 {
-    "version": 12,
+    "version": 13,
     "towerBalance": {
         "sellRefundMultiplier": 0.33000001311302187,
         "iceTowerSpecialization": {
@@ -20,8 +20,7 @@
             "vulnerabilityDuration": 2.0,
             "vulnerabilityDamageBonus": 0.5,
             "vulnerabilityEliteScale": 0.75,
-            "vulnerabilityBossScale": 0.5,
-            "vulnerabilityArmor": -2.0
+            "vulnerabilityBossScale": 0.5
         },
         "machineGunSpecialization": {
             "criticalChance": 0.25,
@@ -57,6 +56,20 @@
             "persistentKnockbackForce": 1.0,
             "upgradedPersistentExtraTicks": 2,
             "upgradedPersistentDamageMultiplier": 0.25
+        },
+        "laserTowerSpecialization": {
+            "armorBreakNormalDuration": 1.0,
+            "armorBreakEliteDuration": 2.0,
+            "armorBreakBossDuration": 4.0,
+            "acceleratedArmorBreakDurationMultiplier": 0.5,
+            "refractionRangeMultiplier": 0.25,
+            "refractionDamageMultiplier": 0.5,
+            "continuousRefractionCount": 3,
+            "refractionAttackDamageMultiplier": 5.0,
+            "refractionAttackInterval": 1.0,
+            "refractionAttackTargetMultiplier": 2,
+            "refractionAttackDamageFalloffPerTarget": 0.05,
+            "refractionAttackMaximumDamageFalloff": 0.5
         },
         "towers": [
             {

@@ -1823,14 +1823,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     effects.VulnerabilityDamageBonus = 0f;
             }
             else effects.VulnerabilityDamageBonus = 0f;
-            if (effects.VulnerabilityArmorTimer > 0f)
+            if (effects.VulnerabilityArmorPenetrationTimer > 0f)
             {
-                effects.VulnerabilityArmorTimer = math.max(0f,
-                    effects.VulnerabilityArmorTimer - DeltaTime);
-                if (effects.VulnerabilityArmorTimer <= 0f)
-                    effects.VulnerabilityArmor = 0f;
+                effects.VulnerabilityArmorPenetrationTimer = math.max(0f,
+                    effects.VulnerabilityArmorPenetrationTimer - DeltaTime);
+                if (effects.VulnerabilityArmorPenetrationTimer <= 0f)
+                    effects.VulnerabilityArmorPenetration = 0f;
             }
-            else effects.VulnerabilityArmor = 0f;
+            else effects.VulnerabilityArmorPenetration = 0f;
             if (effects.VulnerabilityLandingBlastTimer > 0f)
             {
                 effects.VulnerabilityLandingBlastTimer = math.max(0f,
@@ -3264,7 +3264,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         {
             // Vulnerability components form a strongest-value union. Any new
             // vulnerability application refreshes the whole merged set, so +damage
-            // and negative armor from different Ice towers can coexist.
+            // and armor penetration from different Ice towers can coexist.
             float mergedDuration = math.max(effects.VulnerabilityTimer,
                 skill.EffectVulnerabilityDuration);
             effects.VulnerabilityTimer = mergedDuration;
@@ -3272,12 +3272,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.VulnerabilityDamageBonus,
                 math.max(0f, skill.EffectVulnerabilityDamageBonus));
             effects.VulnerabilityDamageBonusTimer = mergedDuration;
-            if (skill.EffectVulnerabilityArmor < 0f)
+            if (skill.EffectVulnerabilityArmorPenetration > 0f)
             {
-                effects.VulnerabilityArmor = effects.VulnerabilityArmorTimer > 0f
-                    ? math.min(effects.VulnerabilityArmor, skill.EffectVulnerabilityArmor)
-                    : skill.EffectVulnerabilityArmor;
-                effects.VulnerabilityArmorTimer = mergedDuration;
+                effects.VulnerabilityArmorPenetration = math.max(
+                    effects.VulnerabilityArmorPenetration,
+                    skill.EffectVulnerabilityArmorPenetration);
+                effects.VulnerabilityArmorPenetrationTimer = mergedDuration;
             }
             if (skill.EffectVulnerabilityLandingBlast != 0)
             {
@@ -3383,7 +3383,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         state4 = new float4(EnemyMaxHealth, EnemyRadius, EnemyMaxSpeed * speedScale, 0f);
         effects = default;
         effects.MaximumHealth = EnemyMaxHealth;
-        effects.Armor = math.max(0f, EnemyArmor);
+        effects.Armor = math.clamp(EnemyArmor, RougeArmorRules.MinimumEnemyArmor,
+            RougeArmorRules.MaximumEnemyArmor);
     }
 
     private static float ApplyArmor(float rawDamage, RougeEnemyEffectState effects)
@@ -3395,16 +3396,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         }
 
         float armor = effects.Armor;
-        if (effects.VulnerabilityTimer > 0f)
-        {
-            if (effects.VulnerabilityArmorTimer > 0f)
-                armor = effects.VulnerabilityArmor;
-            else if (armor > 0f)
-                armor *= 0.5f;
-        }
-        float resolved = (rawDamage - armor) * (1f - armor * 0.1f);
+        bool vulnerable = effects.VulnerabilityTimer > 0f;
+        if (vulnerable && armor > 0f) armor *= 0.5f;
+        if (vulnerable && effects.VulnerabilityArmorPenetrationTimer > 0f)
+            armor -= math.max(0f, effects.VulnerabilityArmorPenetration);
+        float resolved = (rawDamage - armor) *
+            (1f - armor * RougeArmorRules.DamageReductionPerArmorPoint);
         resolved = math.max(1f, resolved);
-        if (effects.VulnerabilityTimer > 0f)
+        if (vulnerable)
             resolved *= 1f + math.max(0f, effects.VulnerabilityDamageBonus);
         return math.max(1f, resolved);
     }

@@ -113,6 +113,16 @@ public partial class RougeGameManager
     private readonly int[] _towerTargetIndices = new int[FindTowerTargetsJob.MaxTargetsPerTower];
     private readonly float[] _towerTargetDistances = new float[FindTowerTargetsJob.MaxTargetsPerTower];
     private readonly Vector3[] _towerTargetPositions = new Vector3[FindTowerTargetsJob.MaxTargetsPerTower];
+    private const int MaximumLaserRefractionHits = FindTowerTargetsJob.MaxTargetsPerTower * 3;
+    private const int MaximumLaserVisualSegments = FindTowerTargetsJob.MaxTargetsPerTower * 4;
+    private readonly int[] _laserRefractionIndices = new int[MaximumLaserRefractionHits];
+    private readonly Vector3[] _laserRefractionPositions = new Vector3[MaximumLaserRefractionHits];
+    private readonly float[] _laserRefractionDamageMultipliers =
+        new float[MaximumLaserRefractionHits];
+    private readonly Vector3[] _laserVisualSegmentStarts =
+        new Vector3[MaximumLaserVisualSegments];
+    private readonly Vector3[] _laserVisualSegmentEnds =
+        new Vector3[MaximumLaserVisualSegments];
     private readonly int[] _accumulatedWealthPendingGold = new int[TowerDefenseMapCellCapacity];
     private readonly float[] _accumulatedWealthPayoutTimers = new float[TowerDefenseMapCellCapacity];
     private bool _towerDefenseInitialized;
@@ -150,6 +160,8 @@ public partial class RougeGameManager
     private Vector2Int _relocationOriginalAnchor;
     private bool _previewValid;
     private Vector2Int _previewTowerAnchor;
+    private bool _suppressRepeatedPreviewAtPlacedCell;
+    private Vector2Int _lastPlacedTowerAnchor;
     private bool[] _previewCellValidity;
     private bool _towerMiddleClickPending;
     private Vector2 _towerMiddleClickStartPosition;
@@ -158,6 +170,8 @@ public partial class RougeGameManager
     private bool _pendingMainTowerAoe;
     private Canvas _towerDefenseCanvas;
     private Text _towerDefenseStatusText;
+    private Button _visualQualityButton;
+    private Text _visualQualityButtonText;
     private Text _towerDefenseModeText;
     private Text _towerDefenseGameOverText;
     private Image _mainTowerHealthFill;
@@ -491,7 +505,7 @@ public partial class RougeGameManager
         StopAllTowerAttackSounds();
         RougeDefenseTower.ShutdownTowerAudio();
         HideTowerDefenseSpawnWarnings();
-        if (_debugUnitViewMode) ExitDebugUnitView();
+        if (_cameraViewMode != CameraViewMode.Default) ExitDebugUnitView();
 
         DisableBossTowerInterferenceMarkers();
         DestroyBossPhaseVisuals();
@@ -1222,7 +1236,7 @@ public partial class RougeGameManager
             RefreshTowerDefenseUi(true);
         }
 
-        if (UpdateDebugUnitViewInput(keyboard, mouse)) return;
+        if (UpdateCameraViewInput(keyboard)) return;
 
         if (keyboard != null && keyboard.tabKey.wasPressedThisFrame)
         {
@@ -1242,7 +1256,7 @@ public partial class RougeGameManager
             return;
         }
 
-        if (keyboard != null && keyboard.f2Key.wasPressedThisFrame)
+        if (keyboard != null && keyboard.f4Key.wasPressedThisFrame)
         {
             _showAllTowerAttackRanges = !_showAllTowerAttackRanges;
             RefreshTowerEditHints();
@@ -1357,6 +1371,7 @@ public partial class RougeGameManager
         {
             ClearTacticalSkillSelection();
             ClearTowerRelocationState();
+            _suppressRepeatedPreviewAtPlacedCell = false;
             _chargeTowerBuildSelectionActive = false;
             _reinforcementTowerBuildSelectionActive = false;
             if (_towerPreview != null) Destroy(_towerPreview.gameObject);
@@ -1653,6 +1668,7 @@ public partial class RougeGameManager
         tower.transform.position = destination;
         tower.FinalizeRelocation(destinationEffect);
         tower.PlayPlacementSound();
+        PlayTowerConstructionEffect(tower);
         tower.name = tower.DisplayName + " Lv." + tower.Level;
         RefreshReinforcementTowerAuras();
         _towerTargetScheduledCount = 0;
@@ -1676,6 +1692,22 @@ public partial class RougeGameManager
             _previewValid = false;
             SetTowerPlaceVisualsVisible(true);
             return;
+        }
+
+        // Continuous build remains active, but do not immediately draw the next
+        // preview and range circle on top of the tower that just materialized.
+        // Moving to another grid cell reveals the prepared preview again.
+        if (_suppressRepeatedPreviewAtPlacedCell)
+        {
+            if (anchor == _lastPlacedTowerAnchor)
+            {
+                SetTowerPlacementHoveredTower(null);
+                _towerPreview.gameObject.SetActive(false);
+                _previewValid = false;
+                SetTowerPlaceVisualsVisible(true);
+                return;
+            }
+            _suppressRepeatedPreviewAtPlacedCell = false;
         }
 
         _towerPreview.gameObject.SetActive(true);
@@ -1865,8 +1897,11 @@ public partial class RougeGameManager
         _towerPreview.name = _towerPreview.DisplayName + " Lv." + _towerPreview.Level;
         bool placedReinforcementTower = _towerPreview.IsReinforcementTower;
         RougeDefenseTower placed = _towerPreview;
+        _lastPlacedTowerAnchor = _previewTowerAnchor;
+        _suppressRepeatedPreviewAtPlacedCell = true;
         _defenseTowers.Add(placed);
         placed.PlayPlacementSound();
+        PlayTowerConstructionEffect(placed);
         RefreshReinforcementTowerAuras();
         SetTowerPlaceVisualsVisible(true);
         _towerPreview = null;
@@ -1986,6 +2021,7 @@ public partial class RougeGameManager
         _defenseTowers.Add(placed);
         ApplyActivatedEffectToTowersInCell(_pendingChargeTowerCell, effect);
         placed.PlayPlacementSound();
+        PlayTowerConstructionEffect(placed);
         _pendingChargeTower = null;
         _pendingChargeTowerEscrow = 0;
         _pendingChargeTowerTargetValid = false;
@@ -2364,7 +2400,8 @@ public partial class RougeGameManager
         _effectStateA[index] = new RougeEnemyEffectState
         {
             MaximumHealth = GetCurrentBossMaxHealth(),
-            Armor = Mathf.Max(0f, bossBalance.armor)
+            Armor = Mathf.Clamp(bossBalance.armor, RougeArmorRules.MinimumEnemyArmor,
+                RougeArmorRules.MaximumEnemyArmor)
         };
         _effectStateB[index] = _effectStateA[index];
         _towerDefenseEnemyKinds[index] = BossEnemyFlag;
@@ -2860,7 +2897,8 @@ public partial class RougeGameManager
         RougeEnemyEffectState initialEffects = new RougeEnemyEffectState
         {
             MaximumHealth = health,
-            Armor = Mathf.Max(0f, archetype.armor),
+            Armor = Mathf.Clamp(archetype.armor, RougeArmorRules.MinimumEnemyArmor,
+                RougeArmorRules.MaximumEnemyArmor),
             BaseKillGold = Mathf.Max(0, elite ? archetype.eliteKillGold : archetype.killGold)
         };
         _effectStateA[index] = initialEffects;
@@ -3531,12 +3569,15 @@ public partial class RougeGameManager
         }
 
         bool focusedBossMode = tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
-        int requestedTargets = focusedBossMode ? 1 : tower.AttackTargetCount;
+        int requestedTargets = focusedBossMode || tower.UsesLaserRefractionAttack
+            ? 1
+            : tower.AttackTargetCount;
         int count = CollectTowerTargets(tower, towerListIndex, requestedTargets);
         if (count <= 0)
         {
             tower.SetContinuousAttackSound(false);
             tower.HideLaserBeams();
+            tower.ResetLaserArmorBreakTracking();
             return;
         }
 
@@ -3544,7 +3585,15 @@ public partial class RougeGameManager
         Vector3 start = GetTowerMuzzlePosition(tower);
         tower.targetIndex = _towerTargetIndices[0];
         AimTowerAt(tower, _towerTargetPositions[0]);
-        if (focusedBossMode)
+        int refractionCount = 0;
+        if (tower.UsesLaserRefraction)
+        {
+            int visualSegmentCount = BuildLaserRefractionTargets(tower, start, count,
+                focusedBossMode, out refractionCount);
+            tower.ShowLaserSegments(_laserVisualSegmentStarts, _laserVisualSegmentEnds,
+                visualSegmentCount);
+        }
+        else if (focusedBossMode)
         {
             int beamCount = Mathf.Clamp(tower.AttackTargetCount, 1,
                 FindTowerTargetsJob.MaxTargetsPerTower);
@@ -3555,6 +3604,8 @@ public partial class RougeGameManager
             tower.ShowLaserBeams(start, _towerTargetPositions, count);
         }
 
+        UpdateLaserArmorBreak(tower, count, dt);
+
         // Damage is authored per attack tick. Keep the beam presentation continuous,
         // but resolve armor once per complete tick and once per beam. Applying the
         // minimum-one-damage rule to fractional frame shares inflated DPS with frame rate.
@@ -3562,29 +3613,215 @@ public partial class RougeGameManager
         int catchUpTicks = 0;
         while (tower.attackTimer <= 0f && catchUpTicks < 4)
         {
-            if (focusedBossMode)
+            if (tower.UsesLaserRefractionAttack)
+            {
+                AccumulateLaserDamage(tower, _towerTargetIndices[0], tower.Damage);
+            }
+            else if (focusedBossMode)
             {
                 int beamCount = Mathf.Clamp(tower.AttackTargetCount, 1,
                     FindTowerTargetsJob.MaxTargetsPerTower);
                 for (int beamIndex = 0; beamIndex < beamCount; beamIndex++)
                 {
-                    AccumulateTowerTargetDamage(tower.TowerType,
-                        tower.KillGoldPercentBonus, GetTowerWealthCellIndexPlusOne(tower),
-                        (int)tower.TowerPlaceEffect, _towerTargetIndices[0], tower.Damage);
+                    AccumulateLaserDamage(tower, _towerTargetIndices[0], tower.Damage);
                 }
             }
             else
             {
                 for (int i = 0; i < count; i++)
                 {
-                    AccumulateTowerTargetDamage(tower.TowerType,
-                        tower.KillGoldPercentBonus, GetTowerWealthCellIndexPlusOne(tower),
-                        (int)tower.TowerPlaceEffect, _towerTargetIndices[i], tower.Damage);
+                    AccumulateLaserDamage(tower, _towerTargetIndices[i], tower.Damage);
                 }
             }
+            for (int i = 0; i < refractionCount; i++)
+                AccumulateLaserDamage(tower, _laserRefractionIndices[i],
+                    tower.Damage * _laserRefractionDamageMultipliers[i]);
             tower.attackTimer += Mathf.Max(0.001f, tower.AttackInterval);
             catchUpTicks++;
         }
+    }
+
+    private void AccumulateLaserDamage(RougeDefenseTower tower, int enemyIndex, float damage)
+    {
+        AccumulateTowerTargetDamage(tower.TowerType, tower.KillGoldPercentBonus,
+            GetTowerWealthCellIndexPlusOne(tower), (int)tower.TowerPlaceEffect,
+            enemyIndex, damage);
+    }
+
+    private int BuildLaserRefractionTargets(RougeDefenseTower tower, Vector3 towerStart,
+        int directTargetCount, bool focusedBossMode, out int refractionCount)
+    {
+        refractionCount = 0;
+        int visualCount = 0;
+        int directVisualCount = tower.UsesLaserRefractionAttack
+            ? 1
+            : focusedBossMode
+                ? Mathf.Clamp(tower.AttackTargetCount, 1,
+                    FindTowerTargetsJob.MaxTargetsPerTower)
+                : directTargetCount;
+        for (int i = 0; i < directVisualCount && visualCount < MaximumLaserVisualSegments; i++)
+        {
+            int targetSlot = focusedBossMode || tower.UsesLaserRefractionAttack ? 0 : i;
+            _laserVisualSegmentStarts[visualCount] = towerStart;
+            _laserVisualSegmentEnds[visualCount] = _towerTargetPositions[targetSlot];
+            visualCount++;
+        }
+
+        float range = tower.LaserRefractionRange;
+        if (tower.UsesLaserRefractionAttack)
+        {
+            int maximumTargets = Mathf.Min(tower.LaserRefractionAttackCount,
+                MaximumLaserRefractionHits);
+            Vector3 source = _towerTargetPositions[0];
+            RougeLaserTowerSpecializationConfig config =
+                TowerDefenseVisuals.GetLaserSpecializationConfig();
+            for (int i = 0; i < maximumTargets; i++)
+            {
+                int enemyIndex = FindNearestLaserRefractionTarget(source, range,
+                    directTargetCount, refractionCount, out Vector3 targetPosition);
+                if (enemyIndex < 0) break;
+                _laserRefractionIndices[refractionCount] = enemyIndex;
+                _laserRefractionPositions[refractionCount] = targetPosition;
+                float falloff = Mathf.Min(config.refractionAttackMaximumDamageFalloff,
+                    config.refractionAttackDamageFalloffPerTarget * (i + 1));
+                _laserRefractionDamageMultipliers[refractionCount] = 1f - falloff;
+                refractionCount++;
+                if (visualCount < MaximumLaserVisualSegments)
+                {
+                    _laserVisualSegmentStarts[visualCount] = source;
+                    _laserVisualSegmentEnds[visualCount] = targetPosition;
+                    visualCount++;
+                }
+            }
+            return visualCount;
+        }
+
+        RougeLaserTowerSpecializationConfig laserConfig =
+            TowerDefenseVisuals.GetLaserSpecializationConfig();
+        int hops = tower.UsesContinuousLaserRefraction
+            ? Mathf.Min(3, laserConfig.continuousRefractionCount)
+            : 1;
+        for (int direct = 0; direct < directTargetCount; direct++)
+        {
+            Vector3 source = _towerTargetPositions[direct];
+            for (int hop = 0; hop < hops && refractionCount < MaximumLaserRefractionHits; hop++)
+            {
+                int enemyIndex = FindNearestLaserRefractionTarget(source, range,
+                    directTargetCount, refractionCount, out Vector3 targetPosition);
+                if (enemyIndex < 0) break;
+                _laserRefractionIndices[refractionCount] = enemyIndex;
+                _laserRefractionPositions[refractionCount] = targetPosition;
+                _laserRefractionDamageMultipliers[refractionCount] =
+                    tower.UsesContinuousLaserRefraction
+                        ? Mathf.Max(0.25f, 0.75f - hop * 0.25f)
+                        : laserConfig.refractionDamageMultiplier;
+                refractionCount++;
+                if (visualCount < MaximumLaserVisualSegments)
+                {
+                    _laserVisualSegmentStarts[visualCount] = source;
+                    _laserVisualSegmentEnds[visualCount] = targetPosition;
+                    visualCount++;
+                }
+                source = targetPosition;
+            }
+        }
+        return visualCount;
+    }
+
+    private int FindNearestLaserRefractionTarget(Vector3 source, float range,
+        int directTargetCount, int selectedRefractionCount, out Vector3 targetPosition)
+    {
+        targetPosition = default;
+        if (!_enemyTargetCellHeads.IsCreated || !_enemyTargetCellNext.IsCreated ||
+            !_positionsA.IsCreated || !_stateA.IsCreated || range <= 0f)
+            return -1;
+
+        int bestIndex = -1;
+        float bestDistanceSq = range * range;
+        float2 center = new float2(source.x, source.z);
+        float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
+        int2 minCell = RougeMortonGridUtility.WorldToGrid(
+            center - new float2(range), _flowGridOrigin, invCellSize, _flowGridDim);
+        int2 maxCell = RougeMortonGridUtility.WorldToGrid(
+            center + new float2(range), _flowGridOrigin, invCellSize, _flowGridDim);
+        for (int y = minCell.y; y <= maxCell.y; y++)
+        {
+            for (int x = minCell.x; x <= maxCell.x; x++)
+            {
+                int cell = RougeMortonGridUtility.EncodeMorton(x, y);
+                for (int enemyIndex = _enemyTargetCellHeads[cell];
+                     enemyIndex >= 0;
+                     enemyIndex = _enemyTargetCellNext[enemyIndex])
+                {
+                    if ((uint)enemyIndex >= (uint)_currentMaxEnemies ||
+                        (uint)enemyIndex >= (uint)_stateA.Length ||
+                        _stateA[enemyIndex].x <= 0f ||
+                        IsLaserRefractionTargetExcluded(enemyIndex, directTargetCount,
+                            selectedRefractionCount))
+                        continue;
+                    float4 position = _positionsA[enemyIndex];
+                    float distanceSq = math.lengthsq(position.xz - center);
+                    if (distanceSq > bestDistanceSq) continue;
+                    bestDistanceSq = distanceSq;
+                    bestIndex = enemyIndex;
+                    targetPosition = new Vector3(position.x,
+                        Mathf.Max(renderHeight + 0.8f, position.y + 0.8f), position.z);
+                }
+            }
+        }
+        return bestIndex;
+    }
+
+    private bool IsLaserRefractionTargetExcluded(int enemyIndex, int directTargetCount,
+        int selectedRefractionCount)
+    {
+        for (int i = 0; i < directTargetCount; i++)
+            if (_towerTargetIndices[i] == enemyIndex) return true;
+        for (int i = 0; i < selectedRefractionCount; i++)
+            if (_laserRefractionIndices[i] == enemyIndex) return true;
+        return false;
+    }
+
+    private void UpdateLaserArmorBreak(RougeDefenseTower tower, int directTargetCount,
+        float deltaTime)
+    {
+        if (!tower.UsesLaserArmorBreak)
+        {
+            tower.ResetLaserArmorBreakTracking();
+            return;
+        }
+
+        RougeLaserTowerSpecializationConfig config =
+            TowerDefenseVisuals.GetLaserSpecializationConfig();
+        tower.BeginLaserArmorBreakFrame();
+        for (int i = 0; i < directTargetCount; i++)
+        {
+            int enemyIndex = _towerTargetIndices[i];
+            if ((uint)enemyIndex >= (uint)_towerDefenseEnemyKinds.Length) continue;
+            byte kind = _towerDefenseEnemyKinds[enemyIndex];
+            float requiredDuration = (kind & BossEnemyFlag) != 0
+                ? config.armorBreakBossDuration
+                : (kind & EliteEnemyFlag) != 0
+                    ? config.armorBreakEliteDuration
+                    : config.armorBreakNormalDuration;
+            if (tower.HasAcceleratedLaserArmorBreak)
+                requiredDuration *= config.acceleratedArmorBreakDurationMultiplier;
+            int reductions = tower.TrackLaserArmorBreakTarget(enemyIndex,
+                Mathf.Max(0f, deltaTime), requiredDuration);
+            if (reductions > 0) PermanentlyReduceEnemyArmor(enemyIndex, reductions);
+        }
+        tower.EndLaserArmorBreakFrame();
+    }
+
+    private void PermanentlyReduceEnemyArmor(int enemyIndex, int amount)
+    {
+        if (amount <= 0 || !_effectStateA.IsCreated ||
+            (uint)enemyIndex >= (uint)_effectStateA.Length)
+            return;
+        RougeEnemyEffectState effects = _effectStateA[enemyIndex];
+        effects.Armor = Mathf.Clamp(effects.Armor - amount,
+            RougeArmorRules.MinimumEnemyArmor, RougeArmorRules.MaximumEnemyArmor);
+        _effectStateA[enemyIndex] = effects;
     }
 
     private bool AccumulateTowerTargetDamage(RougeTowerType towerType, int killGoldBonus,
@@ -3654,18 +3891,17 @@ public partial class RougeGameManager
             return rawDamage;
         RougeEnemyEffectState effects = _effectStateA[enemyIndex];
         float armor = effects.Armor;
-        if (effects.VulnerabilityTimer > 0f)
-        {
-            if (effects.VulnerabilityArmorTimer > 0f)
-                armor = effects.VulnerabilityArmor;
-        }
-        if (armor > 0f) armor = Mathf.Max(0f, armor - Mathf.Max(0f, armorPenetration));
-        if (effects.VulnerabilityTimer > 0f &&
-            effects.VulnerabilityArmorTimer <= 0f && armor > 0f)
-            armor *= 0.5f;
-        float resolved = (rawDamage - armor) * (1f - armor * 0.1f);
+        bool vulnerable = effects.VulnerabilityTimer > 0f;
+        if (vulnerable && armor > 0f) armor *= 0.5f;
+        float totalPenetration = Mathf.Max(0f, armorPenetration) +
+            (vulnerable && effects.VulnerabilityArmorPenetrationTimer > 0f
+                ? Mathf.Max(0f, effects.VulnerabilityArmorPenetration)
+                : 0f);
+        armor -= totalPenetration;
+        float resolved = (rawDamage - armor) *
+            (1f - armor * RougeArmorRules.DamageReductionPerArmorPoint);
         resolved = Mathf.Max(1f, resolved);
-        if (effects.VulnerabilityTimer > 0f)
+        if (vulnerable)
             resolved *= 1f + Mathf.Max(0f, effects.VulnerabilityDamageBonus);
         return Mathf.Max(1f, resolved * Mathf.Max(0f, postArmorMultiplier));
     }
@@ -3904,9 +4140,10 @@ public partial class RougeGameManager
                                 : 0f,
                         EffectVulnerabilityEliteScale = config.vulnerabilityEliteScale,
                         EffectVulnerabilityBossScale = config.vulnerabilityBossScale,
-                        EffectVulnerabilityArmor = tower.ReducesVulnerableArmor
-                            ? config.vulnerabilityArmor
-                            : 0f,
+                        EffectVulnerabilityArmorPenetration =
+                            tower.AddsVulnerableArmorPenetration
+                                ? RougeArmorRules.VulnerableArmorPenetration
+                                : 0f,
                         SourceTowerTypePlusOne = (int)tower.TowerType + 1,
                         SourceTowerTileEffect = (int)tower.TowerPlaceEffect,
                         SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
@@ -5146,7 +5383,7 @@ public partial class RougeGameManager
             return;
         }
         if (_towerDefenseGameOver) return;
-        if (_debugUnitViewMode) ExitDebugUnitView();
+        if (_cameraViewMode != CameraViewMode.Default) ExitDebugUnitView();
         _towerDefenseGameOver = true;
         _towerDefenseGameOverReason = reason;
         HideTowerDefenseSpawnWarnings();
@@ -5210,11 +5447,23 @@ public partial class RougeGameManager
         statusTitleRect.anchorMin = new Vector2(0f, 1f);
         statusTitleRect.anchorMax = new Vector2(1f, 1f);
         statusTitleRect.pivot = new Vector2(0.5f, 1f);
-        statusTitleRect.anchoredPosition = new Vector2(0f, -7f);
-        statusTitleRect.sizeDelta = new Vector2(-40f, 30f);
+        statusTitleRect.anchoredPosition = new Vector2(-70f, -7f);
+        statusTitleRect.sizeDelta = new Vector2(-180f, 30f);
         statusTitle.text = "基地状态";
         statusTitle.fontStyle = FontStyle.Bold;
         statusTitle.color = new Color(0.72f, 0.92f, 1f, 1f);
+
+        _visualQualityButton = CreateUiButton("Visual Quality", statusPanel.transform,
+            string.Empty, new Color(0.055f, 0.24f, 0.34f, 0.96f));
+        RectTransform qualityRect = _visualQualityButton.GetComponent<RectTransform>();
+        qualityRect.anchorMin = new Vector2(1f, 1f);
+        qualityRect.anchorMax = new Vector2(1f, 1f);
+        qualityRect.pivot = new Vector2(1f, 1f);
+        qualityRect.anchoredPosition = new Vector2(-14f, -8f);
+        qualityRect.sizeDelta = new Vector2(142f, 28f);
+        _visualQualityButtonText = _visualQualityButton.GetComponentInChildren<Text>();
+        if (_visualQualityButtonText != null) _visualQualityButtonText.fontSize = 14;
+        _visualQualityButton.onClick.AddListener(RougeVisualQualityManager.CycleActiveTier);
 
         _towerDefenseStatusText = CreateUiText("Status", statusPanel.transform, 17, TextAnchor.UpperLeft);
         _towerDefenseStatusText.lineSpacing = 1.05f;
@@ -5487,6 +5736,8 @@ public partial class RougeGameManager
         if (!force && Time.unscaledTime < _nextTowerDefenseUiRefreshTime) return;
         _nextTowerDefenseUiRefreshTime = Time.unscaledTime + 0.1f;
         RefreshTowerEditHints();
+        if (_visualQualityButtonText != null)
+            _visualQualityButtonText.text = $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel}";
         float mainTowerHp = mainTower != null ? mainTower.CurrentHealth : 0f;
         float mainTowerMaxHp = mainTower != null ? mainTower.maxHealth : 0f;
         if (_towerDefenseStatusText != null)
@@ -5594,7 +5845,9 @@ public partial class RougeGameManager
                 {
                     _towerTargetPriorityButtonText.text =
                         _selectedTower.TargetPriority == RougeTowerTargetPriority.BossFirst
-                            ? "[中键] 集中模式\n伤害 Lv-1 / 攻速 Lv-1"
+                            ? _selectedTower.IgnoresFocusedLaserPenalty
+                                ? "[中键] 集中模式\n无伤害与攻速减益"
+                                : "[中键] 集中模式\n伤害 Lv-1 / 攻速 Lv-1"
                             : "[中键] 分散模式\n离终点最近";
                 }
                 else
@@ -5640,13 +5893,14 @@ public partial class RougeGameManager
         }
         if (_towerDefenseModeText != null)
         {
-            if (_debugUnitViewMode)
+            string qualityHint = $"F5 光影：{RougeVisualQualityManager.ActiveTierLabel}";
+            if (_cameraViewMode != CameraViewMode.Default)
             {
                 string speedHint = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
                 string modeHint = _towerPlacementMode
                     ? "  |  编辑 ×0.5  |  左键放置/选择  |  Tab 退出编辑"
-                    : $"  |  {speedHint}  |  F10 切换速度  |  Tab 编辑  |  左键选择塔楼";
-                _towerDefenseModeText.text = GetDebugUnitViewStatusText() + modeHint;
+                    : $"  |  {speedHint}  |  F10 切换速度  |  {qualityHint}  |  Tab 编辑  |  左键选择塔楼";
+                _towerDefenseModeText.text = GetCameraViewStatusText() + modeHint;
             }
             else if (_towerPlacementMode)
             {
@@ -5665,7 +5919,7 @@ public partial class RougeGameManager
                         ? GetTowerBuildModeText()
                         : "建造已取消  |  请从下方选择塔楼";
                 string editHint =
-                    $"编辑模式 ×0.5  |  F2 攻击范围：{rangeMode}  |  右键退出 / 取消  |  中键拖动  |  滚轮缩放";
+                    $"编辑模式 ×0.5  |  F4 攻击范围：{rangeMode}  |  {qualityHint}  |  右键退出 / 取消  |  中键拖动  |  滚轮缩放";
                 _towerDefenseModeText.text = string.IsNullOrEmpty(selected)
                     ? editHint
                     : editHint + "\n" + selected;
@@ -5673,7 +5927,7 @@ public partial class RougeGameManager
             else
             {
                 string speed = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
-                _towerDefenseModeText.text = $"{speed}  |  F10 切换速度  |  F1 自由镜头  |  点击塔楼编辑  |  点击按钮建造  |  左键拖动  |  滚轮缩放";
+                _towerDefenseModeText.text = $"{speed}  |  F1 自由  |  F2 移轴  |  F3 俯视  |  {qualityHint}  |  点击塔楼编辑  |  点击按钮建造  |  左键拖动  |  滚轮缩放";
             }
         }
         if (_towerUpgradeButton != null)
@@ -5993,8 +6247,15 @@ public partial class RougeGameManager
         }
         if (tower.TowerType == RougeTowerType.Laser)
         {
+            if (tower.UsesLaserRefractionAttack)
+            {
+                return $"伤害：{tower.Damage:0.##}\n" +
+                       $"折射次数：{tower.LaserRefractionAttackCount}\n" +
+                       $"范围：{tower.AttackRange:0.#}\n" +
+                       $"攻击间隔：{tower.EffectiveAttackInterval:0.00} 秒";
+            }
             dpsPerBarrage = tower.Damage /
-                            Mathf.Max(0.001f, tower.EffectiveAttackInterval);
+                             Mathf.Max(0.001f, tower.EffectiveAttackInterval);
             return $"DPS：{dpsPerBarrage:0.##} × {barrageCount}\n" +
                    $"范围：{tower.AttackRange:0.#}";
         }
@@ -6067,11 +6328,11 @@ public partial class RougeGameManager
                     string text = $"攻击会减速敌人，并使其脆弱 {vulnerabilityDuration:0.##} 秒。";
                     if (tower.IceAugment == RougeIceTowerAugment.VulnerabilityDamage)
                         text += $" 这些敌人还会额外受到 {config.vulnerabilityDamageBonus * 100f:0.#}% 伤害。";
-                    else if (tower.IceAugment == RougeIceTowerAugment.VulnerabilityArmor)
-                        return text + $"\n脆弱的敌人 {config.vulnerabilityArmor:0.##} 护甲。" +
-                               "\n护甲：每 1 护甲使受到的伤害先 -1，再 -10%。";
-                    return text + "\n脆弱：敌人护甲提供的伤害减免效果减半，护甲小于 0 时的增伤效果保持不变。" +
-                           "\n护甲：每 1 护甲使受到的伤害先 -1，再 -10%。";
+                    else if (tower.IceAugment ==
+                             RougeIceTowerAugment.VulnerabilityArmorPenetration)
+                        text += " 攻击脆弱单位视为 +4 穿甲。";
+                    return text + "\n脆弱：若敌人护甲大于 0，敌人护甲减半。\n" +
+                           GetArmorRuleDescription();
                 }
                 float slowDuration = config.slowDuration +
                     (tower.IsOnFrostTile ? config.frostDurationBonus : 0f);
@@ -6087,7 +6348,8 @@ public partial class RougeGameManager
                         ? config.upgradedCriticalChance
                         : config.criticalChance;
                     if (tower.HasCriticalArmorPenetration)
-                        return $"攻击有 {chance * 100f:0.#}% 概率暴击，造成 {config.criticalDamageMultiplier:0.##} 倍伤害，并获得 {config.criticalArmorPenetration:0.#} 穿甲。\n穿甲：无视等量的敌人护甲。\n护甲：每 1 护甲使受到的伤害先 -1，再 -10%。";
+                        return $"攻击有 {chance * 100f:0.#}% 概率暴击，造成 {config.criticalDamageMultiplier:0.##} 倍伤害，并获得 {config.criticalArmorPenetration:0.#} 穿甲。\n" +
+                               GetArmorRuleDescription();
                     return $"攻击有 {chance * 100f:0.#}% 概率暴击，造成 {config.criticalDamageMultiplier:0.##} 倍伤害。";
                 }
                 if (tower.UsesMachineGunFragments)
@@ -6130,7 +6392,27 @@ public partial class RougeGameManager
             case RougeTowerType.Flame:
                 return "投出火球并留下燃烧区域，持续伤害其中的敌人。";
             case RougeTowerType.Laser:
+            {
+                RougeLaserTowerSpecializationConfig config =
+                    TowerDefenseVisuals.GetLaserSpecializationConfig();
+                if (tower.UsesLaserArmorBreak)
+                {
+                    float multiplier = tower.HasAcceleratedLaserArmorBreak
+                        ? config.acceleratedArmorBreakDurationMultiplier
+                        : 1f;
+                    string text = $"持续照射同一目标 {config.armorBreakNormalDuration * multiplier:0.##} 秒，永久削减 1 点护甲；精英需要 {config.armorBreakEliteDuration * multiplier:0.##} 秒，Boss 需要 {config.armorBreakBossDuration * multiplier:0.##} 秒。";
+                    if (tower.IgnoresFocusedLaserPenalty)
+                        text += " 集中模式不再降低自身伤害与攻速。";
+                    return text + "\n" + GetArmorRuleDescription();
+                }
+                if (tower.UsesLaserRefractionAttack)
+                    return $"基础伤害提高至 {config.refractionAttackDamageMultiplier:0.##} 倍，基础攻击间隔变为 {config.refractionAttackInterval:0.##} 秒。激光先连接一个目标，再同时折射至最多弹幕数 × {config.refractionAttackTargetMultiplier} 个敌人；每多命中一个敌人，伤害降低 {config.refractionAttackDamageFalloffPerTarget * 100f:0.#}%，最多降低 {config.refractionAttackMaximumDamageFalloff * 100f:0.#}%。折射范围为攻击范围的四分之一。";
+                if (tower.UsesContinuousLaserRefraction)
+                    return "每条直连激光最多连续折射 3 次，依次造成 75%、50%、25% 伤害。折射范围为攻击范围的四分之一。";
+                if (tower.UsesLaserRefraction)
+                    return $"激光命中敌人时，折射到附近一个未被激光直接连接的单位，造成 {config.refractionDamageMultiplier * 100f:0.#}% 伤害。折射范围为攻击范围的四分之一。";
                 return "持续连接多个敌人；集中模式会把火力集中到首领。";
+            }
             case RougeTowerType.PiercingLaser:
                 return "发射直线激光，伤害路径上的所有敌人。";
             case RougeTowerType.OrbitSphere:
@@ -6147,6 +6429,24 @@ public partial class RougeGameManager
     {
         if (tower == null) return "升级分支";
         string price = tower.UpgradeCost > 0 ? $"{tower.UpgradeCost} 金币" : "免费选择";
+        if (tower.TowerType == RougeTowerType.Laser)
+        {
+            if (tower.NeedsLaserBranchChoice)
+            {
+                return choiceIndex == 0
+                    ? $"A 破甲\n{price}"
+                    : $"B 折射\n{price}";
+            }
+            if (tower.LaserBranch == RougeLaserTowerBranch.ArmorBreak)
+            {
+                return choiceIndex == 0
+                    ? $"A1 加速穿甲\n{price}"
+                    : $"A2 强力集中\n{price}";
+            }
+            return choiceIndex == 0
+                ? $"B1 连续折射\n{price}"
+                : $"B2 折射攻击\n{price}";
+        }
         if (tower.TowerType == RougeTowerType.MachineGun)
         {
             if (tower.NeedsMachineGunBranchChoice)
@@ -6199,7 +6499,12 @@ public partial class RougeGameManager
 
         return choiceIndex == 0
             ? $"额外受伤\n{price}"
-            : $"脆弱敌人 -2 护甲\n{price}";
+            : $"攻击脆弱单位 +4 穿甲\n{price}";
+    }
+
+    private static string GetArmorRuleDescription()
+    {
+        return "护甲：每 1 点护甲使受到的伤害先 -1，再减少 5%。敌人护甲范围为 -20 至 15 点，穿甲可额外叠加。";
     }
 
     private void CreateChargeTowerBuildButton(Transform parent, float x, float y)
