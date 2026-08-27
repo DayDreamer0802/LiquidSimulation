@@ -210,7 +210,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         }
         EditorGUILayout.HelpBox(
             $"世界尺寸：{_map.Width * _map.CellSize:0.#} × {_map.Height * _map.CellSize:0.#}\n" +
-            $"每个地形格包含 {RougeTowerDefenseMap.MicroCellsPerTile} × {RougeTowerDefenseMap.MicroCellsPerTile} 个微格。\n" +
+            "每个塔楼地图格最多只能放置一座塔楼。\n" +
             "地图中心始终位于世界坐标 (0,0)。",
             MessageType.None);
 

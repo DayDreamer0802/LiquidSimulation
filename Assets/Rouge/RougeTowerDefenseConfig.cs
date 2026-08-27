@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [Serializable]
 public sealed class RougeTowerLevelConfig
@@ -44,27 +45,238 @@ public sealed class RougeTowerTypeConfig
 {
     public RougeTowerType towerType;
     [Min(0.1f)] public float placementRadius = 2f;
-    [HideInInspector] public int footprintSize = 4;
-    [Range(1, 16), Tooltip("Tower footprint width in map micro cells.")]
-    public int footprintWidth;
-    [Range(1, 16), Tooltip("Tower footprint height in map micro cells.")]
-    public int footprintHeight;
+    [HideInInspector] public int footprintSize = 1;
+    [HideInInspector] public int footprintWidth = 1;
+    [HideInInspector] public int footprintHeight = 1;
     [Min(0)] public int purchaseCost = 400;
     [Min(0f), Tooltip("Additional base-cost multiplier for every existing tower of this type. Used by special support towers.")]
     public float specialTowerCountCostMultiplier;
-    [Min(1), Tooltip("All-stat buff levels granted by each reinforcement tower to towers in the same map tile.")]
+    [Min(1), Tooltip("All-stat buff levels granted by each reinforcement tower to towers on affected map cells.")]
     public int reinforcementAuraBuffLevel = 1;
+    [Range(1, 8), Tooltip("Map-cell radius affected by a reinforcement tower. Overlapping areas stack.")]
+    public int reinforcementAuraRangeCells = 1;
     public List<RougeTowerLevelConfig> levels = new List<RougeTowerLevelConfig>();
+}
+
+[Serializable]
+public sealed class RougeIceTowerSpecializationConfig
+{
+    [Header("基础 - 减速")]
+    [Range(0f, 100f), Tooltip("冰霜塔基础攻击附加的减速百分比。")]
+    public float slowPercent = 50f;
+    [Min(0f), Tooltip("冰霜塔基础减速持续时间（秒）。")]
+    public float slowDuration = 1.5f;
+
+    [Header("A路线 - 主冻结")]
+    [Min(0f), Tooltip("A路线：普通敌人的冻结时间（秒）。")]
+    public float freezeNormalDuration = 1f;
+    [Min(0f), Tooltip("A路线：精英敌人的冻结时间（秒）。")]
+    public float freezeEliteDuration = 0.75f;
+    [Min(0f), Tooltip("A路线：Boss 的冻结时间（秒）。")]
+    public float freezeBossDuration = 0.5f;
+    [Min(0f), Tooltip("A路线：Boss 解冻后的冻结免疫时间（秒）。")]
+    public float freezeBossImmunityDuration = 0.5f;
+
+    [Header("霜寒格")]
+    [FormerlySerializedAs("frostSlowPercent")]
+    [Range(0f, 100f), Tooltip("非冰塔位于霜寒格时，攻击附加的减速百分比。")]
+    public float frostAttackSlowPercent = 20f;
+    [FormerlySerializedAs("frostNormalFreezeBonus")]
+    [Min(0f), Tooltip("冰塔位于霜寒格时，按当前升级路线增加的减速、冻结或脆弱持续时间（秒）；同时作为非冰塔附加减速的持续时间。")]
+    public float frostDurationBonus = 0.5f;
+
+    [Header("A2-b - 随机冰地刺")]
+    [Min(1), Tooltip("A2-b：每次触发冰刺的最少随机地块数。")]
+    public int iceSpikeMinCells = 3;
+    [Min(1), Tooltip("A2-b：每次触发冰刺的最多随机地块数。")]
+    public int iceSpikeMaxCells = 5;
+    [Min(0.01f), Tooltip("A2-b：两次冰刺触发之间的最短时间（秒）。")]
+    public float iceSpikeIntervalMin = 0.8f;
+    [Min(0.01f), Tooltip("A2-b：两次冰刺触发之间的最长时间（秒）。")]
+    public float iceSpikeIntervalMax = 1.2f;
+    [Min(0f), Tooltip("A2-b：冰刺伤害相对冰霜塔本次伤害的倍率。")]
+    public float iceSpikeDamageMultiplier = 0.5f;
+    [Min(0f), Tooltip("A2-b：冰刺冻结时间相对主冻结效果的倍率。")]
+    public float iceSpikeFreezeDurationMultiplier = 0.5f;
+    [Header("B路线 - 脆弱基础")]
+    [Min(0f), Tooltip("B路线：让敌人护甲效果减半的持续时间（秒）。")]
+    public float vulnerabilityDuration = 2f;
+
+    [Header("B2-a - 该塔施加的脆弱增伤")]
+    [Min(0f), Tooltip("B2-a：该分支塔楼施加脆弱时的基础易伤；0.5 表示受到伤害 +50%。")]
+    public float vulnerabilityDamageBonus = 0.5f;
+    [Range(0f, 1f), Tooltip("B2-a：精英敌人易伤倍率。")]
+    public float vulnerabilityEliteScale = 1f;
+    [Range(0f, 1f), Tooltip("B2-a：Boss 增伤倍率；1 表示同样为 +100%。")]
+    public float vulnerabilityBossScale = 1f;
+
+    [Header("B2-b - 强化脆弱")]
+    [Tooltip("B2-b：脆弱敌人的护甲变为这个值。")]
+    public float vulnerabilityArmor = -2f;
+
+    public void EnsureDefaults()
+    {
+        slowPercent = Mathf.Clamp(slowPercent, 0f, 100f);
+        slowDuration = Mathf.Max(0f, slowDuration);
+        freezeNormalDuration = Mathf.Max(0f, freezeNormalDuration);
+        freezeEliteDuration = Mathf.Max(0f, freezeEliteDuration);
+        freezeBossDuration = Mathf.Max(0f, freezeBossDuration);
+        freezeBossImmunityDuration = Mathf.Max(0f, freezeBossImmunityDuration);
+        frostAttackSlowPercent = Mathf.Clamp(frostAttackSlowPercent, 0f, 100f);
+        frostDurationBonus = Mathf.Max(0f, frostDurationBonus);
+        iceSpikeMinCells = Mathf.Max(1, iceSpikeMinCells);
+        iceSpikeMaxCells = Mathf.Max(iceSpikeMinCells, iceSpikeMaxCells);
+        iceSpikeIntervalMin = Mathf.Max(0.01f, iceSpikeIntervalMin);
+        iceSpikeIntervalMax = Mathf.Max(iceSpikeIntervalMin, iceSpikeIntervalMax);
+        iceSpikeDamageMultiplier = Mathf.Max(0f, iceSpikeDamageMultiplier);
+        iceSpikeFreezeDurationMultiplier = Mathf.Max(0f, iceSpikeFreezeDurationMultiplier);
+        vulnerabilityDuration = Mathf.Max(0f, vulnerabilityDuration);
+        vulnerabilityDamageBonus = Mathf.Max(0f, vulnerabilityDamageBonus);
+        vulnerabilityEliteScale = Mathf.Clamp01(vulnerabilityEliteScale);
+        vulnerabilityBossScale = Mathf.Clamp01(vulnerabilityBossScale);
+    }
+}
+
+[Serializable]
+public sealed class RougeMachineGunSpecializationConfig
+{
+    [Header("A路线 - 暴击")]
+    [Range(0f, 1f), Tooltip("A路线：每次攻击触发暴击的概率。")]
+    public float criticalChance = 0.25f;
+    [Range(0f, 1f), Tooltip("A1：强化后的暴击概率。")]
+    public float upgradedCriticalChance = 0.5f;
+    [Min(1f), Tooltip("暴击在护甲结算后造成的伤害倍率。")]
+    public float criticalDamageMultiplier = 2f;
+    [Min(0f), Tooltip("A2：暴击结算护甲时忽略的护甲点数。")]
+    public float criticalArmorPenetration = 4f;
+
+    [Header("B路线 - 破片")]
+    [Range(0f, 1f), Tooltip("B路线：弹幕击杀敌人后生成破片的概率。")]
+    public float fragmentTriggerChance = 0.5f;
+    [Min(1), Tooltip("B路线：一次生成的破片数量。")]
+    public int fragmentCount = 3;
+    [Min(1), Tooltip("B1：强化后一次生成的破片数量。")]
+    public int upgradedFragmentCount = 6;
+    [Min(0f), Tooltip("B路线：普通破片相对原攻击的伤害倍率。")]
+    public float fragmentDamageMultiplier = 0.3f;
+    [Range(0f, 1f), Tooltip("B2：主弹命中敌人时嵌入一枚破片的概率。")]
+    public float embeddedFragmentChance = 0.5f;
+    [Min(0f), Tooltip("B2：每枚嵌入破片记录的原攻击伤害倍率。")]
+    public float embeddedFragmentDamageMultiplier = 0.5f;
+    [Min(0.01f), Tooltip("破片直线飞行的速度。")]
+    public float fragmentSpeed = 70f;
+    [Min(0.01f), Tooltip("破片命中路径上敌人的判定半径。")]
+    public float fragmentHitRadius = 1.5f;
+
+    public void EnsureDefaults()
+    {
+        criticalChance = Mathf.Clamp01(criticalChance);
+        upgradedCriticalChance = Mathf.Clamp01(upgradedCriticalChance);
+        criticalDamageMultiplier = Mathf.Max(1f, criticalDamageMultiplier);
+        criticalArmorPenetration = Mathf.Max(0f, criticalArmorPenetration);
+        fragmentTriggerChance = Mathf.Clamp01(fragmentTriggerChance);
+        fragmentCount = Mathf.Max(1, fragmentCount);
+        upgradedFragmentCount = Mathf.Max(fragmentCount, upgradedFragmentCount);
+        fragmentDamageMultiplier = Mathf.Max(0f, fragmentDamageMultiplier);
+        embeddedFragmentChance = Mathf.Clamp01(embeddedFragmentChance);
+        embeddedFragmentDamageMultiplier = Mathf.Max(0f, embeddedFragmentDamageMultiplier);
+        fragmentSpeed = Mathf.Max(0.01f, fragmentSpeed);
+        fragmentHitRadius = Mathf.Max(0.01f, fragmentHitRadius);
+    }
+}
+
+[Serializable]
+public sealed class RougeCannonSpecializationConfig
+{
+    [Header("A路线 - 内圈爆破")]
+    [Range(0.01f, 1f), Tooltip("A路线：内圈半径相对完整爆炸半径的比例。")]
+    public float innerRadiusMultiplier = 1f / 3f;
+    [Min(1f), Tooltip("A路线：内圈受到的总伤害倍率。")]
+    public float innerDamageMultiplier = 2f;
+    [Min(1f), Tooltip("A1：完整爆炸范围倍率。")]
+    public float upgradedAoeRadiusMultiplier = 1.25f;
+    [Range(0.01f, 1f), Tooltip("A1：强化后的内圈半径比例。")]
+    public float upgradedInnerRadiusMultiplier = 0.5f;
+    [Min(1f), Tooltip("A1：强化后的内圈总伤害倍率。")]
+    public float upgradedInnerDamageMultiplier = 3f;
+
+    [Header("A2 - 小炮弹")]
+    [Range(0f, 1f), Tooltip("A2：主炮落地后生成小炮弹的概率。")]
+    public float secondaryTriggerChance = 0.25f;
+    [Min(1), Tooltip("A2：触发时生成的小炮弹数量。")]
+    public int secondaryProjectileCount = 3;
+    [Min(0f), Tooltip("A2：小炮弹伤害相对主炮伤害的倍率。")]
+    public float secondaryDamageMultiplier = 0.25f;
+    [Min(0.01f), Tooltip("A2：小爆炸范围相对主爆炸范围的倍率。")]
+    public float secondaryRadiusMultiplier = 0.25f;
+    [Min(0.01f), Tooltip("A2：小炮弹的飞行时间（秒）。")]
+    public float secondaryFlightDuration = 1f;
+    [Min(0f), Tooltip("A2：小炮弹水平位移相对主爆炸半径的倍率。")]
+    public float secondaryTravelDistanceMultiplier = 0.25f;
+    [Min(0f), Tooltip("A2：小炮弹抛物线高度相对主爆炸半径的倍率。")]
+    public float secondaryArcHeightMultiplier = 0.35f;
+
+    [Header("B路线 - 持续炮弹")]
+    [Min(0f), Tooltip("B路线：炮弹落地伤害相对主炮伤害的倍率。")]
+    public float persistentLandingDamageMultiplier = 0.25f;
+    [Min(0.01f), Tooltip("B路线：两次持续爆炸之间的时间（秒）。")]
+    public float persistentTickInterval = 0.5f;
+    [Min(0f), Tooltip("B路线：每次持续爆炸的伤害倍率。")]
+    public float persistentTickDamageMultiplier = 0.2f;
+    [Min(1), Tooltip("B路线：落地后持续爆炸的次数。")]
+    public int persistentTickCount = 5;
+    [Min(0f), Tooltip("B1：每次爆炸施加的轻微击退强度。")]
+    public float persistentKnockbackForce = 4f;
+    [Min(0), Tooltip("B2：额外增加的持续爆炸次数。")]
+    public int upgradedPersistentExtraTicks = 2;
+    [Min(0f), Tooltip("B2：每次持续爆炸的伤害倍率。")]
+    public float upgradedPersistentDamageMultiplier = 0.25f;
+
+    public void EnsureDefaults()
+    {
+        innerRadiusMultiplier = Mathf.Clamp(innerRadiusMultiplier, 0.01f, 1f);
+        innerDamageMultiplier = Mathf.Max(1f, innerDamageMultiplier);
+        upgradedAoeRadiusMultiplier = Mathf.Max(1f, upgradedAoeRadiusMultiplier);
+        upgradedInnerRadiusMultiplier = Mathf.Clamp(upgradedInnerRadiusMultiplier, 0.01f, 1f);
+        upgradedInnerDamageMultiplier = Mathf.Max(1f, upgradedInnerDamageMultiplier);
+        secondaryTriggerChance = Mathf.Clamp01(secondaryTriggerChance);
+        secondaryProjectileCount = Mathf.Max(1, secondaryProjectileCount);
+        secondaryDamageMultiplier = Mathf.Max(0f, secondaryDamageMultiplier);
+        secondaryRadiusMultiplier = Mathf.Max(0.01f, secondaryRadiusMultiplier);
+        secondaryFlightDuration = Mathf.Max(0.01f, secondaryFlightDuration);
+        secondaryTravelDistanceMultiplier = Mathf.Max(0f, secondaryTravelDistanceMultiplier);
+        secondaryArcHeightMultiplier = Mathf.Max(0f, secondaryArcHeightMultiplier);
+        persistentLandingDamageMultiplier = Mathf.Max(0f, persistentLandingDamageMultiplier);
+        persistentTickInterval = Mathf.Max(0.01f, persistentTickInterval);
+        persistentTickDamageMultiplier = Mathf.Max(0f, persistentTickDamageMultiplier);
+        persistentTickCount = Mathf.Max(1, persistentTickCount);
+        persistentKnockbackForce = Mathf.Max(0f, persistentKnockbackForce);
+        upgradedPersistentExtraTicks = Mathf.Max(0, upgradedPersistentExtraTicks);
+        upgradedPersistentDamageMultiplier = Mathf.Max(0f,
+            upgradedPersistentDamageMultiplier);
+    }
 }
 
 [Serializable]
 public sealed class RougeTowerBalanceConfig
 {
     [Range(0f, 1f)] public float sellRefundMultiplier = 0.25f;
+    public RougeIceTowerSpecializationConfig iceTowerSpecialization =
+        new RougeIceTowerSpecializationConfig();
+    public RougeMachineGunSpecializationConfig machineGunSpecialization =
+        new RougeMachineGunSpecializationConfig();
+    public RougeCannonSpecializationConfig cannonSpecialization =
+        new RougeCannonSpecializationConfig();
     public List<RougeTowerTypeConfig> towers = new List<RougeTowerTypeConfig>();
 
     public void EnsureDefaults()
     {
+        iceTowerSpecialization ??= new RougeIceTowerSpecializationConfig();
+        iceTowerSpecialization.EnsureDefaults();
+        machineGunSpecialization ??= new RougeMachineGunSpecializationConfig();
+        machineGunSpecialization.EnsureDefaults();
+        cannonSpecialization ??= new RougeCannonSpecializationConfig();
+        cannonSpecialization.EnsureDefaults();
         foreach (RougeTowerType type in Enum.GetValues(typeof(RougeTowerType)))
         {
             RougeTowerTypeConfig config = Find(type);
@@ -73,13 +285,16 @@ public sealed class RougeTowerBalanceConfig
                 config = CreateDefault(type);
                 towers.Add(config);
             }
-            int legacySize = Mathf.Clamp(config.footprintSize <= 0 ? 4 : config.footprintSize, 1, 16);
-            config.footprintWidth = Mathf.Clamp(config.footprintWidth <= 0 ? legacySize : config.footprintWidth, 1, 16);
-            config.footprintHeight = Mathf.Clamp(config.footprintHeight <= 0 ? legacySize : config.footprintHeight, 1, 16);
+            config.footprintSize = 1;
+            config.footprintWidth = 1;
+            config.footprintHeight = 1;
             config.specialTowerCountCostMultiplier = Mathf.Max(0f,
                 config.specialTowerCountCostMultiplier);
             config.reinforcementAuraBuffLevel = Mathf.Max(1,
                 config.reinforcementAuraBuffLevel);
+            config.reinforcementAuraRangeCells = Mathf.Clamp(
+                config.reinforcementAuraRangeCells <= 0 ? 1 : config.reinforcementAuraRangeCells,
+                1, 8);
             while (config.levels.Count < TowerDefenseVisuals.MaxTowerLevel)
             {
                 config.levels.Add(CreateDefaultLevel(type, config.levels.Count));
@@ -128,18 +343,15 @@ public sealed class RougeTowerBalanceConfig
             case RougeTowerType.OrbitSphere: config.placementRadius = 2.5f; config.purchaseCost = 900; break;
             case RougeTowerType.ChargeTower:
                 config.placementRadius = 2.8f;
-                config.footprintWidth = 4;
-                config.footprintHeight = 4;
                 config.purchaseCost = 4000;
                 config.specialTowerCountCostMultiplier = 0.25f;
                 break;
             case RougeTowerType.ReinforcementTower:
                 config.placementRadius = 3.1f;
-                config.footprintWidth = 5;
-                config.footprintHeight = 5;
                 config.purchaseCost = 6000;
                 config.specialTowerCountCostMultiplier = 0.5f;
                 config.reinforcementAuraBuffLevel = 1;
+                config.reinforcementAuraRangeCells = 1;
                 break;
             default: config.placementRadius = 2.8f; config.purchaseCost = 1400; break;
         }
@@ -183,8 +395,8 @@ public sealed class RougeTowerBalanceConfig
             targetCount = fallback.TargetCount,
             projectileCount = fallback.ProjectileCount,
             aoeRadius = fallback.AoeRadius,
-            effectPercent = type == RougeTowerType.Ice ? 25f : fallback.EffectPercent,
-            effectDuration = fallback.EffectDuration,
+            effectPercent = type == RougeTowerType.Ice ? 50f : fallback.EffectPercent,
+            effectDuration = type == RougeTowerType.Ice ? 2f : fallback.EffectDuration,
             tickInterval = fallback.TickInterval,
             orbitSphereRadius = fallback.OrbitSphereRadius,
             orbitRadialSpeed = fallback.OrbitRadialSpeed,
@@ -204,6 +416,8 @@ public sealed class RougeEnemyArchetypeConfig
     [Min(0)] public int killGold = 1;
     [Min(0)] public int eliteKillGold = 20;
     [Min(0.01f)] public float baseHealth = 10f;
+    [Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%; final damage is at least 1.")]
+    public float armor = 1f;
     [Min(0.01f), Tooltip("Scales only the health gained from the global enemy-level curve. 1 keeps the global curve unchanged; values above 1 grow faster without changing level-1 base health.")]
     public float healthGrowthMultiplier = 1f;
     [Min(0.01f)] public float baseSpeed = 6f;
@@ -217,6 +431,7 @@ public sealed class RougeEnemyArchetypeConfig
 
     public void EnsureDefaults()
     {
+        armor = Mathf.Max(0f, armor);
         if (healthGrowthMultiplier <= 0f) healthGrowthMultiplier = 1f;
         bool isStandardSheet = !string.IsNullOrEmpty(spriteResourcePath) &&
             spriteResourcePath.EndsWith("enemy_standard_sheet", StringComparison.OrdinalIgnoreCase);
@@ -432,13 +647,15 @@ public sealed class RougeBossBalanceConfig
     [Min(1f), Tooltip("Desired travel time from Boss spawn to the main tower. Level schedules control the actual spawn minute.")]
     public float targetTravelTimeSeconds = 300f;
     [Min(1f)] public float maxHealth = 1000000f;
+    [Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%; final damage is at least 1.")]
+    public float armor = 5f;
     [Min(0.1f)] public float moveSpeed = 3.5f; // Fallback when no valid route distance is available.
     [Range(0f, 95f)] public float maximumSlowPercent = 20f;
     [Min(0.5f)] public float radius = 5f;
     [Min(0.1f)] public float navigationRadius = 1.25f;
     public Vector3 fallbackSpawnPosition = new Vector3(0f, 0.25f, 135f);
     [Min(0f)] public float interferenceRadius = 20f;
-    [Tooltip("Tower attack-speed Buff level applied by interference. Raw levels stack without a limit; the effect is capped to -3..+3.")]
+    [Tooltip("Tower attack-speed Buff level applied by interference. Raw levels stack without a limit; the effect is capped to -3..+5.")]
     public int interferenceAttackSpeedBuffLevel = -2;
     [Min(0f)] public float shieldRadius = 30f;
     [Range(0.01f, 1f)] public float shieldDamageMultiplier = 0.5f;
@@ -460,6 +677,7 @@ public sealed class RougeBossBalanceConfig
         if (targetTravelTimeSeconds <= 0f)
             targetTravelTimeSeconds = Mathf.Max(30f, targetArrivalTimeSeconds - spawnTimeSeconds);
         maxHealth = Mathf.Max(1f, maxHealth);
+        armor = Mathf.Max(0f, armor);
         moveSpeed = Mathf.Max(0.1f, moveSpeed);
         maximumSlowPercent = Mathf.Clamp(maximumSlowPercent, 0f, 95f);
         radius = Mathf.Max(0.5f, radius);
@@ -519,11 +737,11 @@ public sealed class RougeOverclockTacticalSkillConfig
     [Min(1f)] public float costMultiplier = 1.5f;
     [Min(0f)] public float cooldown = 15f;
     [Min(0.05f)] public float duration = 7f;
-    [Tooltip("Raw damage Buff levels. Effective level is capped to -3..+3.")]
+    [Tooltip("Raw damage Buff levels. Effective level is capped to -3..+5; each level is 20%.")]
     public int damageBuffLevel = 2;
-    [Tooltip("Raw range Buff levels. Effective level is capped to -3..+3.")]
+    [Tooltip("Raw range Buff levels. Effective level is capped to -3..+5; each level is 20%.")]
     public int rangeBuffLevel;
-    [Tooltip("Raw attack-speed Buff levels. Effective level is capped to -3..+3.")]
+    [Tooltip("Raw attack-speed Buff levels. Effective level is capped to -3..+5; each level is 20%.")]
     public int attackSpeedBuffLevel = 2;
 }
 
@@ -562,7 +780,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 5;
+    public int version = 12;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -578,6 +796,97 @@ public sealed class RougeTowerDefenseBalanceJsonData
         bossBalance ??= new RougeBossBalanceConfig();
         bossBalances ??= new List<RougeBossBalanceConfig>();
         if (bossBalances.Count == 0) bossBalances.Add(bossBalance);
+        if (loadedVersion < 6)
+        {
+            if (towerBalance.towers != null)
+            {
+                for (int i = 0; i < towerBalance.towers.Count; i++)
+                {
+                    RougeTowerTypeConfig tower = towerBalance.towers[i];
+                    if (tower != null) tower.reinforcementAuraRangeCells = 1;
+                }
+            }
+            if (enemyBalance.enemyTypes != null)
+            {
+                for (int i = 0; i < enemyBalance.enemyTypes.Count; i++)
+                {
+                    RougeEnemyArchetypeConfig enemy = enemyBalance.enemyTypes[i];
+                    if (enemy != null) enemy.armor = 1f;
+                }
+            }
+            for (int i = 0; i < bossBalances.Count; i++)
+            {
+                if (bossBalances[i] != null) bossBalances[i].armor = 5f;
+            }
+            bossBalance.armor = 5f;
+        }
+        if (loadedVersion < 8)
+        {
+            towerBalance.iceTowerSpecialization ??=
+                new RougeIceTowerSpecializationConfig();
+            towerBalance.iceTowerSpecialization.vulnerabilityDamageBonus = 0.5f;
+            towerBalance.iceTowerSpecialization.vulnerabilityEliteScale = 1f;
+            towerBalance.iceTowerSpecialization.vulnerabilityBossScale = 1f;
+        }
+        if (loadedVersion < 9)
+        {
+            towerBalance.iceTowerSpecialization ??=
+                new RougeIceTowerSpecializationConfig();
+            towerBalance.iceTowerSpecialization.frostAttackSlowPercent = 20f;
+            towerBalance.iceTowerSpecialization.frostDurationBonus = 0.5f;
+            towerBalance.iceTowerSpecialization.vulnerabilityArmor = -2f;
+        }
+        if (loadedVersion < 10)
+        {
+            towerBalance.machineGunSpecialization =
+                new RougeMachineGunSpecializationConfig
+                {
+                    criticalChance = 0.25f,
+                    upgradedCriticalChance = 0.5f,
+                    criticalDamageMultiplier = 2f,
+                    criticalArmorPenetration = 4f,
+                    fragmentTriggerChance = 0.5f,
+                    fragmentCount = 3,
+                    upgradedFragmentCount = 6,
+                    fragmentDamageMultiplier = 0.3f,
+                    embeddedFragmentChance = 0.5f,
+                    embeddedFragmentDamageMultiplier = 0.5f,
+                    fragmentSpeed = 70f,
+                    fragmentHitRadius = 1.5f
+                };
+        }
+        if (loadedVersion < 11)
+        {
+            towerBalance.cannonSpecialization = new RougeCannonSpecializationConfig
+            {
+                innerRadiusMultiplier = 1f / 3f,
+                innerDamageMultiplier = 2f,
+                upgradedAoeRadiusMultiplier = 1.25f,
+                upgradedInnerRadiusMultiplier = 0.5f,
+                upgradedInnerDamageMultiplier = 3f,
+                secondaryTriggerChance = 0.25f,
+                secondaryProjectileCount = 3,
+                secondaryDamageMultiplier = 0.25f,
+                secondaryRadiusMultiplier = 0.25f,
+                secondaryFlightDuration = 1f,
+                secondaryTravelDistanceMultiplier = 0.25f,
+                secondaryArcHeightMultiplier = 0.35f,
+                persistentLandingDamageMultiplier = 0.25f,
+                persistentTickInterval = 0.5f,
+                persistentTickDamageMultiplier = 0.2f,
+                persistentTickCount = 5,
+                persistentKnockbackForce = 4f,
+                upgradedPersistentExtraTicks = 2,
+                upgradedPersistentDamageMultiplier = 0.25f
+            };
+        }
+        if (loadedVersion < 12)
+        {
+            towerBalance.iceTowerSpecialization ??=
+                new RougeIceTowerSpecializationConfig();
+            towerBalance.iceTowerSpecialization.frostAttackSlowPercent = 20f;
+            towerBalance.iceTowerSpecialization.frostDurationBonus = 0.5f;
+        }
         for (int i = bossBalances.Count - 1; i >= 0; i--)
         {
             if (bossBalances[i] == null)
@@ -599,7 +908,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 5);
+        version = Mathf.Max(version, 12);
     }
 }
 
@@ -642,7 +951,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 5,
+            version = 12,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,

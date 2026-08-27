@@ -59,6 +59,8 @@ public partial class RougeGameManager : MonoBehaviour
     [Header("Population")]
     [SerializeField, Range(1000, 500000)] private int enemyCount = 200000;
     [SerializeField] private float enemyMaxHealth = 10f;
+    [SerializeField, Min(0f), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 10%.")]
+    private float enemyArmor = 1f;
     [SerializeField] private float enemyRadius = 0.3f;
     [SerializeField] private float enemyMaxSpeed = 6f;
     [SerializeField, Tooltip("Enemy sprite width and height multipliers.")]
@@ -249,6 +251,7 @@ public partial class RougeGameManager : MonoBehaviour
     private NativeArray<int> _towerLaserDamageFrames;
     private NativeArray<int> _towerKillGoldBonus;
     private NativeArray<int> _towerWealthCellIndexPlusOne;
+    private NativeArray<int> _towerKillTileEffects;
     private NativeArray<byte> _towerDefenseEnemyKinds;
     private NativeArray<int> _enemyRenderKinds;
     private NativeArray<int> _towerDefenseGoldEarned;
@@ -737,7 +740,10 @@ public partial class RougeGameManager : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.Plus))
         {
-            _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + 10000);
+            if (UsesTowerDefenseSpawners())
+                TriggerAllTowerDefenseSpawnPointsOnce();
+            else
+                _currentMaxEnemies = Mathf.Min(enemyCount, _currentMaxEnemies + 10000);
         }
 
         if (Input.GetKeyDown(KeyCode.Minus))
@@ -853,6 +859,66 @@ public partial class RougeGameManager : MonoBehaviour
 
                 case RougeSkillEventType.EnemyDeathBurst:
                     SpawnDeathBurstVFX(new Vector3(skillEvent.Position.x, renderHeight + 0.35f, skillEvent.Position.y), math.max(0.8f, skillEvent.Radius * 2.4f));
+                    break;
+
+                case RougeSkillEventType.TowerTileExplosion:
+                    if (_skillAreaCount < _skillAreasDb.Length)
+                    {
+                        // Deliberately carries no source-tile marker: kills caused by this
+                        // area can never roll another explosion-tile proc.
+                        _skillAreasDb[_skillAreaCount++] = new RougeSkillArea
+                        {
+                            Type = 13,
+                            Position = skillEvent.Position,
+                            Radius = skillEvent.Radius,
+                            Damage = skillEvent.Damage
+                        };
+                    }
+
+                    SpawnExplosionVFX(
+                        new Vector3(skillEvent.Position.x, renderHeight + 1f,
+                            skillEvent.Position.y),
+                        math.max(2.5f, skillEvent.Radius * 0.55f));
+                    SpawnAOERing(
+                        new Vector3(skillEvent.Position.x, renderHeight,
+                            skillEvent.Position.y),
+                        skillEvent.Radius,
+                        0.4f,
+                        new Color(1f, 0.22f, 0.08f, 1f));
+                    break;
+
+                case RougeSkillEventType.VulnerabilityLandingBlast:
+                    if (_skillAreaCount < _skillAreasDb.Length)
+                    {
+                        _skillAreasDb[_skillAreaCount++] = new RougeSkillArea
+                        {
+                            Type = 20,
+                            Position = skillEvent.Position,
+                            Radius = skillEvent.Radius,
+                            // Damage stores the normal max-health ratio; AuxA stores the
+                            // reduced elite/Boss ratio for this event type.
+                            Damage = skillEvent.Damage,
+                            AuxA = skillEvent.Duration
+                        };
+                    }
+                    SpawnVulnerabilityLandingBlastVfx(
+                        new Vector3(skillEvent.Position.x, renderHeight,
+                            skillEvent.Position.y), skillEvent.Radius);
+                    SpawnAOERing(
+                        new Vector3(skillEvent.Position.x, renderHeight,
+                            skillEvent.Position.y),
+                        skillEvent.Radius, 0.32f,
+                            new Color(0.28f, 0.82f, 1f, 1f));
+                    break;
+
+                case RougeSkillEventType.MachineGunEmbeddedFragments:
+                    SpawnMachineGunFragments(skillEvent.Position,
+                        math.max(1, skillEvent.Count), skillEvent.Damage,
+                        math.max(0.1f, skillEvent.Duration),
+                        MachineGunProjectileFragment, 0f,
+                        skillEvent.KillGoldBonus,
+                        skillEvent.WealthCellIndexPlusOne,
+                        skillEvent.TileEffect);
                     break;
             }
         }
@@ -1061,6 +1127,7 @@ public partial class RougeGameManager : MonoBehaviour
         _towerLaserDamageFrames = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerKillGoldBonus = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerWealthCellIndexPlusOne = new NativeArray<int>(enemyCount, Allocator.Persistent);
+        _towerKillTileEffects = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseEnemyKinds = new NativeArray<byte>(enemyCount, Allocator.Persistent);
         _enemyRenderKinds = new NativeArray<int>(enemyCount, Allocator.Persistent);
         _towerDefenseGoldEarned = new NativeArray<int>(1, Allocator.Persistent);
@@ -2679,6 +2746,7 @@ public partial class RougeGameManager : MonoBehaviour
             TowerLaserDamageFrames = _towerLaserDamageFrames,
             TowerKillGoldBonus = _towerKillGoldBonus,
             TowerWealthCellIndexPlusOne = _towerWealthCellIndexPlusOne,
+            TowerKillTileEffects = _towerKillTileEffects,
             TowerLaserDamageFrame = _towerLaserDamageFrame,
             TowerDamageByType = _towerDamageByType,
             TowerDamageByTypeFrames = _towerDamageByTypeFrames,
@@ -2694,6 +2762,7 @@ public partial class RougeGameManager : MonoBehaviour
             ExplosionQueue = _explosionQueue.AsParallelWriter(),
             SkillEventQueue = _skillEventQueue.AsParallelWriter(),
             EnemyMaxHealth = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemyHealth() : enemyMaxHealth * (1f + currentLevel * 0.15f),
+            EnemyArmor = Mathf.Max(0f, enemyArmor),
             EnemyRadius = Mathf.Min(enemyRadius*2f, enemyRadius * (0.8f+ currentLevel * 0.0001f)),
             EnemyMaxSpeed = UsesTowerDefenseSpawners() ? GetTowerDefenseEnemySpeed() : enemyMaxSpeed * math.min(1f + currentLevel * 0.02f, 1.8f),
             ArenaHalfExtents = _usesMapArenaBounds ? _mapArenaHalfExtents : new float2(arenaHalfExtent),
@@ -3340,6 +3409,7 @@ public partial class RougeGameManager : MonoBehaviour
         ReleaseNative(ref _towerLaserDamageFrames);
         ReleaseNative(ref _towerKillGoldBonus);
         ReleaseNative(ref _towerWealthCellIndexPlusOne);
+        ReleaseNative(ref _towerKillTileEffects);
         ReleaseNative(ref _towerDefenseEnemyKinds);
         ReleaseNative(ref _enemyRenderKinds);
         ReleaseNative(ref _towerDefenseGoldEarned);
@@ -3912,17 +3982,32 @@ public struct RougeSkillArea
     public float EffectSlowPercent;
     public float EffectSlowDuration;
     public float EffectFreezeDuration;
+    public float EffectEliteFreezeDuration;
+    public float EffectBossFreezeDuration;
+    public float EffectBossFreezeImmunityDuration;
+    public float EffectVulnerabilityDuration;
+    public float EffectVulnerabilityDamageBonus;
+    public float EffectVulnerabilityEliteScale;
+    public float EffectVulnerabilityBossScale;
+    public float EffectVulnerabilityArmor;
+    public int EffectVulnerabilityLandingBlast;
+    public float EffectVulnerabilityLandingRadiusMultiplier;
+    public float EffectVulnerabilityLandingNormalDamageRatio;
+    public float EffectVulnerabilityLandingEliteBossDamageRatio;
     public float EffectCurseExplosionDamage;
     public float EffectCurseExplosionRadius;
     public float EffectBurnDamage;
     public float EffectBurnDuration;
     public int SourceTowerTypePlusOne;
+    public int SourceTowerTileEffect;
     public int SourceTowerKillGoldBonus;
     public int SourceTowerWealthCellIndexPlusOne;
 }
 
 public struct RougeEnemyEffectState
 {
+    public float MaximumHealth;
+    public float Armor;
     public float PoisonTimer;
     public float PoisonTickTimer;
     public float PoisonSpreadRadius;
@@ -3930,6 +4015,18 @@ public struct RougeEnemyEffectState
     public float SlowTimer;
     public float SlowStacks;
     public float FreezeTimer;
+    public float BossFreezeImmunityTimer;
+    public float VulnerabilityTimer;
+    public float VulnerabilityDamageBonus;
+    public float VulnerabilityDamageBonusTimer;
+    public float VulnerabilityArmor;
+    public float VulnerabilityArmorTimer;
+    public float VulnerabilityLandingBlastTimer;
+    public int VulnerabilityLandingBlast;
+    public int VulnerabilityLandingBlastPending;
+    public float VulnerabilityLandingRadiusMultiplier;
+    public float VulnerabilityLandingNormalDamageRatio;
+    public float VulnerabilityLandingEliteBossDamageRatio;
     public float BurnTimer;
     public float BurnTickTimer;
     public float BurnDamage;
@@ -3943,6 +4040,13 @@ public struct RougeEnemyEffectState
     public float BurnDuration;
     public int TowerKillGoldBonus;
     public int TowerWealthCellIndexPlusOne;
+    public int TowerSourceTileEffect;
+    public int EmbeddedMachineGunFragmentCount;
+    public float EmbeddedMachineGunFragmentDamage;
+    public float EmbeddedMachineGunFragmentRange;
+    public int EmbeddedMachineGunKillGoldBonus;
+    public int EmbeddedMachineGunWealthCellIndexPlusOne;
+    public int EmbeddedMachineGunTileEffect;
     public int BaseKillGold;
     public float NavigationDirectionX;
     public float NavigationDirectionY;
@@ -3956,7 +4060,10 @@ public enum RougeSkillEventType
     PoisonSpread = 2,
     CurseExplosion = 3,
     BurnGround = 4,
-    EnemyDeathBurst = 5
+    EnemyDeathBurst = 5,
+    TowerTileExplosion = 6,
+    VulnerabilityLandingBlast = 7,
+    MachineGunEmbeddedFragments = 8
 }
 
 public struct RougeSkillEvent
@@ -3966,6 +4073,10 @@ public struct RougeSkillEvent
     public float Radius;
     public float Damage;
     public float Duration;
+    public int Count;
+    public int KillGoldBonus;
+    public int WealthCellIndexPlusOne;
+    public int TileEffect;
 }
 
 public struct RougeBullet

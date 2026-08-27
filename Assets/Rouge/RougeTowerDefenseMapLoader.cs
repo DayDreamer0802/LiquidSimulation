@@ -14,10 +14,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     [SerializeField] private bool clearOnDisable = true;
 
     [Header("Tower Placement Preview")]
-    [SerializeField] private Color placedTowerGridColor = new Color(0.12f, 0.74f, 1f, 0.98f);
+    [SerializeField] private Color placedTowerGridColor = new Color(0.9f, 1f, 0.98f, 0.78f);
     [SerializeField] private Color validTowerGridColor = new Color(0.12f, 1f, 0.34f, 0.98f);
     [SerializeField] private Color invalidTowerGridColor = new Color(1f, 0.23f, 0.18f, 0.9f);
-    [SerializeField] private Color ownedCellCornerColor = new Color(1f, 0.76f, 0.08f, 1f);
     [SerializeField, Range(0.12f, 0.4f)] private float ownedCellCornerLength = 0.23f;
     [SerializeField, Range(0.01f, 0.06f)] private float ownedCellCornerWidth = 0.024f;
     [SerializeField, Range(0.01f, 0.12f)] private float ownedCellCornerInset = 0.045f;
@@ -28,16 +27,16 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     private readonly List<Renderer> _towerPlaceGridRenderers = new List<Renderer>();
     private Material _towerPlaceGridMaterial;
     private Material _towerFootprintGridMaterial;
-    private Material _towerOwnedCellHighlightMaterial;
     private readonly Dictionary<Vector2Int, RougeTowerPlaceEffect> _runtimeTowerPlaceEffects =
+        new Dictionary<Vector2Int, RougeTowerPlaceEffect>();
+    private readonly Dictionary<Vector2Int, RougeTowerPlaceEffect> _permanentTowerPlaceEffects =
         new Dictionary<Vector2Int, RougeTowerPlaceEffect>();
     private readonly Dictionary<Vector2Int, TileVisualState> _tileVisuals =
         new Dictionary<Vector2Int, TileVisualState>();
-    private readonly HashSet<Vector2Int> _bluePlacedTowerGridCells = new HashSet<Vector2Int>();
+    private readonly HashSet<Vector2Int> _placedTowerPulseCells = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> _greenValidTowerGridCells = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> _redInvalidTowerGridCells = new HashSet<Vector2Int>();
     private TowerFootprintGridOverlay _towerFootprintGridOverlay;
-    private TowerFootprintGridOverlay _towerOwnedCellHighlightOverlay;
 
     private sealed class TowerFootprintGridOverlay
     {
@@ -46,7 +45,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         public MeshRenderer renderer;
         public Vector2Int anchor = new Vector2Int(int.MinValue, int.MinValue);
         public Vector2Int size;
-        public readonly HashSet<Vector2Int> blueCells = new HashSet<Vector2Int>();
+        public readonly HashSet<Vector2Int> placedCells = new HashSet<Vector2Int>();
         public readonly HashSet<Vector2Int> greenCells = new HashSet<Vector2Int>();
         public readonly HashSet<Vector2Int> redCells = new HashSet<Vector2Int>();
     }
@@ -61,9 +60,11 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
 
     public RougeTowerPlaceEffect GetEffectiveTowerPlaceEffect(Vector2Int cell)
     {
-        return _runtimeTowerPlaceEffects.TryGetValue(cell, out RougeTowerPlaceEffect effect)
-            ? effect
-            : map != null ? map.GetTowerPlaceEffect(cell) : RougeTowerPlaceEffect.None;
+        if (_runtimeTowerPlaceEffects.TryGetValue(cell, out RougeTowerPlaceEffect runtimeEffect))
+            return RougeTowerPlaceEffectRules.NormalizeLegacy(runtimeEffect);
+        if (_permanentTowerPlaceEffects.TryGetValue(cell, out RougeTowerPlaceEffect permanentEffect))
+            return RougeTowerPlaceEffectRules.NormalizeLegacy(permanentEffect);
+        return map != null ? map.GetTowerPlaceEffect(cell) : RougeTowerPlaceEffect.None;
     }
 
     public bool TryGetRuntimeTowerPlaceEffect(Vector2Int cell, out RougeTowerPlaceEffect effect)
@@ -73,8 +74,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
 
     public bool TrySetRuntimeTowerPlaceEffect(Vector2Int cell, RougeTowerPlaceEffect effect)
     {
+        effect = RougeTowerPlaceEffectRules.NormalizeLegacy(effect);
         if (map == null || _runtimeRoot == null || effect == RougeTowerPlaceEffect.None ||
-            !map.IsTowerPlace(cell) || GetEffectiveTowerPlaceEffect(cell) != RougeTowerPlaceEffect.None)
+            !map.IsTowerPlace(cell) || _runtimeTowerPlaceEffects.ContainsKey(cell))
             return false;
         _runtimeTowerPlaceEffects[cell] = effect;
         ApplyTileEffectColor(cell, effect);
@@ -84,8 +86,23 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     public bool ClearRuntimeTowerPlaceEffect(Vector2Int cell)
     {
         if (!_runtimeTowerPlaceEffects.Remove(cell)) return false;
-        RestoreTileColor(cell);
+        if (_permanentTowerPlaceEffects.TryGetValue(cell, out RougeTowerPlaceEffect permanentEffect))
+            ApplyTileEffectColor(cell, permanentEffect);
+        else
+            RestoreTileColor(cell);
         return true;
+    }
+
+    public bool SetPermanentTowerPlaceEffect(Vector2Int cell, RougeTowerPlaceEffect effect)
+    {
+        effect = RougeTowerPlaceEffectRules.NormalizeLegacy(effect);
+        if (map == null || _runtimeRoot == null || effect == RougeTowerPlaceEffect.None ||
+            !map.IsTowerPlace(cell)) return false;
+        bool changed = !_permanentTowerPlaceEffects.TryGetValue(cell,
+                           out RougeTowerPlaceEffect previous) || previous != effect;
+        _permanentTowerPlaceEffects[cell] = effect;
+        if (!_runtimeTowerPlaceEffects.ContainsKey(cell)) ApplyTileEffectColor(cell, effect);
+        return changed;
     }
 
     private void OnEnable()
@@ -131,6 +148,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     {
         ClearTowerFootprintGridOverlays();
         _runtimeTowerPlaceEffects.Clear();
+        _permanentTowerPlaceEffects.Clear();
         _tileVisuals.Clear();
         if (_runtimeRoot != null)
         {
@@ -148,7 +166,6 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         _towerPlaceGridRenderers.Clear();
         _towerPlaceGridMaterial = null;
         _towerFootprintGridMaterial = null;
-        _towerOwnedCellHighlightMaterial = null;
     }
 
     private void RegisterTileVisual(Vector2Int cell, GameObject instance)
@@ -222,9 +239,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         for (int i = 0; i < definitions.Count; i++)
         {
             RougeTowerDefenseMap.TileDefinition definition = definitions[i];
-            if (definition != null && definition.towerPlace &&
-                definition.towerPlaceEffect == effect && definition.towerPlaceIcon != null)
-                return definition.towerPlaceIcon;
+            if (definition == null || !definition.towerPlace ||
+                definition.towerPlaceIcon == null) continue;
+            if (definition.towerPlaceEffect == effect) return definition.towerPlaceIcon;
         }
         return null;
     }
@@ -479,7 +496,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         if (_towerPlaceGridMaterial.HasProperty("_LineColor"))
             _towerPlaceGridMaterial.SetColor("_LineColor", new Color(0.32f, 0.84f, 0.92f, 0.82f));
         if (_towerPlaceGridMaterial.HasProperty("_CellSize"))
-            _towerPlaceGridMaterial.SetFloat("_CellSize", map.MicroCellSize);
+            _towerPlaceGridMaterial.SetFloat("_CellSize", map.CellSize);
         if (_towerPlaceGridMaterial.HasProperty("_LineWidth"))
             _towerPlaceGridMaterial.SetFloat("_LineWidth", 0.03f);
         if (_towerPlaceGridMaterial.HasProperty("_InnerRailDistance"))
@@ -493,7 +510,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     }
 
     public void SetTowerPlaceGridState(bool visible, IReadOnlyList<RougeDefenseTower> towers,
-        RougeDefenseTower previewTower, IReadOnlyList<bool> previewCellValidity, bool previewValid)
+        RougeDefenseTower previewTower, IReadOnlyList<bool> previewCellValidity, bool previewValid,
+        bool targetSelectionActive, Vector2Int targetCell, bool targetCellValid,
+        IReadOnlyList<Vector2Int> linkedCells = null)
     {
         for (int i = _towerPlaceGridRenderers.Count - 1; i >= 0; i--)
         {
@@ -503,113 +522,23 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 _towerPlaceGridRenderers.RemoveAt(i);
                 continue;
             }
-            renderer.enabled = visible;
+            // Buildable cells no longer draw a full grid. Placement feedback is rendered
+            // only by the animated corner markers below.
+            renderer.enabled = false;
         }
 
         if (map == null || _runtimeRoot == null) return;
-        SyncTowerFootprintGridOverlays(visible, towers, previewTower, previewCellValidity, previewValid);
-        SyncTowerOwnedCellHighlight(visible, previewTower);
-    }
-
-    private void SyncTowerOwnedCellHighlight(bool visible, RougeDefenseTower previewTower)
-    {
-        Vector2Int ownedCell = default;
-        bool show = visible && previewTower != null && previewTower.gameObject.activeInHierarchy &&
-            map.WorldToCell(previewTower.transform.position, out ownedCell) && map.IsTowerPlace(ownedCell);
-        if (!show)
-        {
-            if (_towerOwnedCellHighlightOverlay != null)
-                _towerOwnedCellHighlightOverlay.renderer.enabled = false;
-            return;
-        }
-
-        if (_towerOwnedCellHighlightOverlay == null)
-        {
-            _towerOwnedCellHighlightOverlay = CreateTowerFootprintGridOverlay(
-                "Tower Owned Cell Highlight");
-            _towerOwnedCellHighlightOverlay.renderer.sharedMaterial =
-                GetTowerOwnedCellHighlightMaterial();
-            BuildTowerOwnedCellHighlightMesh(_towerOwnedCellHighlightOverlay.mesh);
-            _towerOwnedCellHighlightOverlay.renderer.sortingOrder = 4;
-        }
-
-        Vector2Int microAnchor = ownedCell * RougeTowerDefenseMap.MicroCellsPerTile;
-        Vector2Int microSize = Vector2Int.one * RougeTowerDefenseMap.MicroCellsPerTile;
-        float y = GetTowerFootprintGridHeight(microAnchor, microSize) + 0.006f;
-        _towerOwnedCellHighlightOverlay.root.transform.position = map.CellCenter(ownedCell, y);
-        _towerOwnedCellHighlightOverlay.root.transform.rotation = Quaternion.identity;
-        _towerOwnedCellHighlightOverlay.root.transform.localScale = Vector3.one;
-        _towerOwnedCellHighlightOverlay.anchor = ownedCell;
-        _towerOwnedCellHighlightOverlay.size = Vector2Int.one;
-        _towerOwnedCellHighlightOverlay.renderer.enabled = true;
-    }
-
-    private void BuildTowerOwnedCellHighlightMesh(Mesh mesh)
-    {
-        const int quadCount = 8;
-        Vector3[] vertices = new Vector3[quadCount * 4];
-        Color32[] colors = new Color32[quadCount * 4];
-        int[] triangles = new int[quadCount * 6];
-        float halfSize = map.CellSize * 0.5f;
-        float inset = map.CellSize * ownedCellCornerInset;
-        float length = map.CellSize * ownedCellCornerLength;
-        float width = Mathf.Max(map.CellSize * ownedCellCornerWidth, map.MicroCellSize * 0.2f);
-        float edge = halfSize - inset;
-        float innerEdge = edge - width;
-        float armEnd = edge - length;
-        Color32 cornerColor = ownedCellCornerColor;
-        int quadIndex = 0;
-        AppendTowerOwnedCellHighlightQuad(-edge, -armEnd, innerEdge, edge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(-edge, -innerEdge, armEnd, edge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(armEnd, edge, innerEdge, edge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(innerEdge, edge, armEnd, edge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(-edge, -armEnd, -edge, -innerEdge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(-edge, -innerEdge, -edge, -armEnd, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(armEnd, edge, -edge, -innerEdge, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-        AppendTowerOwnedCellHighlightQuad(innerEdge, edge, -edge, -armEnd, cornerColor,
-            vertices, colors, triangles, ref quadIndex);
-
-        mesh.Clear();
-        mesh.vertices = vertices;
-        mesh.colors32 = colors;
-        mesh.triangles = triangles;
-        mesh.RecalculateBounds();
-    }
-
-    private static void AppendTowerOwnedCellHighlightQuad(float x0, float x1, float z0, float z1,
-        Color32 color, Vector3[] vertices, Color32[] colors, int[] triangles, ref int quadIndex)
-    {
-        int vertex = quadIndex * 4;
-        int triangle = quadIndex * 6;
-        vertices[vertex] = new Vector3(x0, 0f, z0);
-        vertices[vertex + 1] = new Vector3(x0, 0f, z1);
-        vertices[vertex + 2] = new Vector3(x1, 0f, z1);
-        vertices[vertex + 3] = new Vector3(x1, 0f, z0);
-        colors[vertex] = color;
-        colors[vertex + 1] = color;
-        colors[vertex + 2] = color;
-        colors[vertex + 3] = color;
-        triangles[triangle] = vertex;
-        triangles[triangle + 1] = vertex + 1;
-        triangles[triangle + 2] = vertex + 2;
-        triangles[triangle + 3] = vertex;
-        triangles[triangle + 4] = vertex + 2;
-        triangles[triangle + 5] = vertex + 3;
-        quadIndex++;
+        SyncTowerFootprintGridOverlays(visible, towers, previewTower, previewCellValidity,
+            previewValid, targetSelectionActive, targetCell, targetCellValid, linkedCells);
     }
 
     private void SyncTowerFootprintGridOverlays(bool visible,
         IReadOnlyList<RougeDefenseTower> towers, RougeDefenseTower previewTower,
-        IReadOnlyList<bool> previewCellValidity, bool previewValid)
+        IReadOnlyList<bool> previewCellValidity, bool previewValid,
+        bool targetSelectionActive, Vector2Int targetCell, bool targetCellValid,
+        IReadOnlyList<Vector2Int> linkedCells)
     {
-        _bluePlacedTowerGridCells.Clear();
+        _placedTowerPulseCells.Clear();
         _greenValidTowerGridCells.Clear();
         _redInvalidTowerGridCells.Clear();
         bool previewIsPlaced = false;
@@ -620,19 +549,9 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
                 RougeDefenseTower tower = towers[i];
                 if (tower == null) continue;
                 if (tower == previewTower) previewIsPlaced = true;
-                Vector2Int size = tower.FootprintCells;
-                Vector2Int anchor = map.WorldToMicroFootprintAnchor(tower.transform.position, size);
-                for (int y = 0; y < size.y; y++)
-                {
-                    for (int x = 0; x < size.x; x++)
-                    {
-                        Vector2Int cell = anchor + new Vector2Int(x, y);
-                        // The occupied overlay is a state of the white build grid,
-                        // so it must never render beyond that grid's actual cells.
-                        if (map.IsTowerPlaceMicroCell(cell))
-                            _bluePlacedTowerGridCells.Add(cell);
-                    }
-                }
+                if (map.WorldToCell(tower.transform.position, out Vector2Int cell) &&
+                    map.IsTowerPlace(cell))
+                    _placedTowerPulseCells.Add(cell);
             }
         }
 
@@ -640,56 +559,50 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
             previewTower.gameObject.activeInHierarchy;
         if (previewActive)
         {
-            Vector2Int previewSize = previewTower.FootprintCells;
-            Vector2Int previewAnchor = map.WorldToMicroFootprintAnchor(
-                previewTower.transform.position, previewSize);
-            int expectedValidityCount = previewSize.x * previewSize.y;
-            bool hasExplicitValidity = previewCellValidity != null &&
-                previewCellValidity.Count == expectedValidityCount;
-            bool previewTouchesTowerPlace = false;
-            for (int y = 0; y < previewSize.y; y++)
+            if (map.WorldToCell(previewTower.transform.position, out Vector2Int previewCell))
             {
-                for (int x = 0; x < previewSize.x; x++)
+                bool isTowerPlaceCell = map.IsTowerPlace(previewCell);
+                bool cellIsValid = previewValid && previewCellValidity != null &&
+                    previewCellValidity.Count == 1 && previewCellValidity[0];
+                if (cellIsValid)
                 {
-                    Vector2Int cell = previewAnchor + new Vector2Int(x, y);
-                    bool isTowerPlaceCell = map.IsTowerPlaceMicroCell(cell);
-                    previewTouchesTowerPlace |= isTowerPlaceCell;
-                    int validityIndex = y * previewSize.x + x;
-                    bool cellIsValid = previewValid && (hasExplicitValidity
-                        ? previewCellValidity[validityIndex]
-                        : isTowerPlaceCell && !_bluePlacedTowerGridCells.Contains(cell));
-                    if (cellIsValid)
-                    {
-                        // During relocation, a tower may legally overlap its own old
-                        // footprint. Keep those cells blue; only newly occupied free
-                        // cells should be painted green.
-                        if (!_bluePlacedTowerGridCells.Contains(cell))
-                            _greenValidTowerGridCells.Add(cell);
-                    }
-                    else
-                    {
-                        _redInvalidTowerGridCells.Add(cell);
-                    }
+                    if (!_placedTowerPulseCells.Contains(previewCell))
+                        _greenValidTowerGridCells.Add(previewCell);
                 }
-            }
-
-            // Keep out-of-bounds cells visible in red while any part of the
-            // footprint still touches the white build grid. Hide the footprint once
-            // it has moved completely outside the buildable area.
-            if (!previewTouchesTowerPlace)
-            {
-                _greenValidTowerGridCells.Clear();
-                _redInvalidTowerGridCells.Clear();
+                else
+                {
+                    // An invalid current cell replaces any passive placed-cell pulse
+                    // with the authoritative red placement marker.
+                    _placedTowerPulseCells.Remove(previewCell);
+                    _redInvalidTowerGridCells.Add(previewCell);
+                }
             }
         }
 
-        // A placed footprint remains in the persistent blue layer. Invalid preview
-        // cells are allowed to overlap it and are appended after blue in the mesh,
-        // producing a temporary red overlay without mutating the occupied state.
-        _greenValidTowerGridCells.ExceptWith(_bluePlacedTowerGridCells);
+        if (visible && targetSelectionActive && map.Contains(targetCell))
+        {
+            _placedTowerPulseCells.Remove(targetCell);
+            if (targetCellValid) _greenValidTowerGridCells.Add(targetCell);
+            else _redInvalidTowerGridCells.Add(targetCell);
+        }
+
+        if (visible && linkedCells != null)
+        {
+            for (int i = 0; i < linkedCells.Count; i++)
+            {
+                Vector2Int linkedCell = linkedCells[i];
+                if (!map.Contains(linkedCell)) continue;
+                _placedTowerPulseCells.Remove(linkedCell);
+                _greenValidTowerGridCells.Add(linkedCell);
+            }
+        }
+
+        // Placed cells use a subtle neutral pulse. Green and red are reserved for the
+        // current placement/target cell so those states stay unambiguous.
+        _greenValidTowerGridCells.ExceptWith(_placedTowerPulseCells);
         _greenValidTowerGridCells.ExceptWith(_redInvalidTowerGridCells);
 
-        int renderedCellCount = _bluePlacedTowerGridCells.Count + _greenValidTowerGridCells.Count +
+        int renderedCellCount = _placedTowerPulseCells.Count + _greenValidTowerGridCells.Count +
             _redInvalidTowerGridCells.Count;
         if (visible && renderedCellCount > 0)
         {
@@ -712,6 +625,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         filter.sharedMesh = mesh;
         MeshRenderer renderer = root.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = GetTowerFootprintGridMaterial();
+        renderer.sortingOrder = 4;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         renderer.receiveShadows = false;
         return new TowerFootprintGridOverlay
@@ -729,18 +643,14 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         _towerFootprintGridMaterial = new Material(shader) { name = "Runtime Tower Footprint Grid" };
         if (_towerFootprintGridMaterial.HasProperty("_UseVertexColor"))
             _towerFootprintGridMaterial.SetFloat("_UseVertexColor", 1f);
-        if (_towerFootprintGridMaterial.HasProperty("_BaseColor"))
-            _towerFootprintGridMaterial.SetColor("_BaseColor", new Color(0f, 0f, 0f, 0f));
-        if (_towerFootprintGridMaterial.HasProperty("_LineColor"))
-            _towerFootprintGridMaterial.SetColor("_LineColor", new Color(0.55f, 0.96f, 1f, 1f));
+        if (_towerFootprintGridMaterial.HasProperty("_OwnershipHighlight"))
+            _towerFootprintGridMaterial.SetFloat("_OwnershipHighlight", 1f);
+        if (_towerFootprintGridMaterial.HasProperty("_CornerScalePulse"))
+            _towerFootprintGridMaterial.SetFloat("_CornerScalePulse", 1f);
         if (_towerFootprintGridMaterial.HasProperty("_CellSize"))
-            _towerFootprintGridMaterial.SetFloat("_CellSize", map.MicroCellSize);
-        if (_towerFootprintGridMaterial.HasProperty("_LineWidth"))
-            _towerFootprintGridMaterial.SetFloat("_LineWidth", 0.022f);
-        if (_towerFootprintGridMaterial.HasProperty("_InnerRailDistance"))
-            _towerFootprintGridMaterial.SetFloat("_InnerRailDistance", 0.085f);
+            _towerFootprintGridMaterial.SetFloat("_CellSize", map.CellSize);
         if (_towerFootprintGridMaterial.HasProperty("_FlowSpeed"))
-            _towerFootprintGridMaterial.SetFloat("_FlowSpeed", 0.9f);
+            _towerFootprintGridMaterial.SetFloat("_FlowSpeed", ownedCellPulseSpeed);
         if (_towerFootprintGridMaterial.HasProperty("_GridOrigin"))
             _towerFootprintGridMaterial.SetVector("_GridOrigin",
                 new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
@@ -748,44 +658,29 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         return _towerFootprintGridMaterial;
     }
 
-    private Material GetTowerOwnedCellHighlightMaterial()
-    {
-        if (_towerOwnedCellHighlightMaterial != null) return _towerOwnedCellHighlightMaterial;
-        Shader shader = Shader.Find("Rouge/Tower Place Grid") ?? Shader.Find("Sprites/Default");
-        _towerOwnedCellHighlightMaterial = new Material(shader)
-        {
-            name = "Runtime Tower Owned Cell Highlight"
-        };
-        if (_towerOwnedCellHighlightMaterial.HasProperty("_UseVertexColor"))
-            _towerOwnedCellHighlightMaterial.SetFloat("_UseVertexColor", 1f);
-        if (_towerOwnedCellHighlightMaterial.HasProperty("_OwnershipHighlight"))
-            _towerOwnedCellHighlightMaterial.SetFloat("_OwnershipHighlight", 1f);
-        if (_towerOwnedCellHighlightMaterial.HasProperty("_FlowSpeed"))
-            _towerOwnedCellHighlightMaterial.SetFloat("_FlowSpeed", ownedCellPulseSpeed);
-        _runtimeMaterials.Add(_towerOwnedCellHighlightMaterial);
-        return _towerOwnedCellHighlightMaterial;
-    }
-
     private void UpdateTowerGridStateOverlay(TowerFootprintGridOverlay overlay)
     {
         Vector2Int min = new Vector2Int(int.MaxValue, int.MaxValue);
         Vector2Int max = new Vector2Int(int.MinValue, int.MinValue);
-        IncludeTowerCellSetBounds(_bluePlacedTowerGridCells, ref min, ref max);
+        IncludeTowerCellSetBounds(_placedTowerPulseCells, ref min, ref max);
         IncludeTowerCellSetBounds(_greenValidTowerGridCells, ref min, ref max);
         IncludeTowerCellSetBounds(_redInvalidTowerGridCells, ref min, ref max);
         Vector2Int size = max - min + Vector2Int.one;
         float y = GetTowerFootprintGridHeight(min, size);
-        overlay.root.transform.position = map.MicroFootprintCenter(min, size, y);
+        overlay.root.transform.position = new Vector3(
+            map.Origin.x + (min.x + size.x * 0.5f) * map.CellSize,
+            y,
+            map.Origin.y + (min.y + size.y * 0.5f) * map.CellSize);
         overlay.root.transform.rotation = Quaternion.identity;
         overlay.root.transform.localScale = Vector3.one;
-        bool cellsUnchanged = overlay.blueCells.SetEquals(_bluePlacedTowerGridCells) &&
+        bool cellsUnchanged = overlay.placedCells.SetEquals(_placedTowerPulseCells) &&
             overlay.greenCells.SetEquals(_greenValidTowerGridCells) &&
             overlay.redCells.SetEquals(_redInvalidTowerGridCells);
         if (overlay.anchor == min && overlay.size == size && cellsUnchanged) return;
 
         overlay.anchor = min;
         overlay.size = size;
-        CopyTowerCellSet(_bluePlacedTowerGridCells, overlay.blueCells);
+        CopyTowerCellSet(_placedTowerPulseCells, overlay.placedCells);
         CopyTowerCellSet(_greenValidTowerGridCells, overlay.greenCells);
         CopyTowerCellSet(_redInvalidTowerGridCells, overlay.redCells);
         BuildTowerGridStateMesh(overlay.mesh, min, size);
@@ -809,22 +704,23 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
 
     private void BuildTowerGridStateMesh(Mesh mesh, Vector2Int anchor, Vector2Int boundsSize)
     {
-        int cellCount = _bluePlacedTowerGridCells.Count + _greenValidTowerGridCells.Count +
+        int cellCount = _placedTowerPulseCells.Count + _greenValidTowerGridCells.Count +
             _redInvalidTowerGridCells.Count;
-        Vector3[] vertices = new Vector3[cellCount * 4];
-        Color32[] colors = new Color32[cellCount * 4];
-        int[] triangles = new int[cellCount * 6];
-        float cellSize = map.MicroCellSize;
+        const int quadsPerCell = 8;
+        Vector3[] vertices = new Vector3[cellCount * quadsPerCell * 4];
+        Color32[] colors = new Color32[cellCount * quadsPerCell * 4];
+        int[] triangles = new int[cellCount * quadsPerCell * 6];
+        float cellSize = map.CellSize;
         float originX = boundsSize.x * cellSize * -0.5f;
         float originZ = boundsSize.y * cellSize * -0.5f;
 
-        int cellIndex = 0;
-        AppendTowerCellSet(_bluePlacedTowerGridCells, placedTowerGridColor, anchor,
-            cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_greenValidTowerGridCells, validTowerGridColor, anchor,
-            cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
-        AppendTowerCellSet(_redInvalidTowerGridCells, invalidTowerGridColor, anchor,
-            cellSize, originX, originZ, vertices, colors, triangles, ref cellIndex);
+        int quadIndex = 0;
+        AppendTowerCornerCellSet(_placedTowerPulseCells, placedTowerGridColor, anchor,
+            cellSize, originX, originZ, vertices, colors, triangles, ref quadIndex);
+        AppendTowerCornerCellSet(_greenValidTowerGridCells, validTowerGridColor, anchor,
+            cellSize, originX, originZ, vertices, colors, triangles, ref quadIndex);
+        AppendTowerCornerCellSet(_redInvalidTowerGridCells, invalidTowerGridColor, anchor,
+            cellSize, originX, originZ, vertices, colors, triangles, ref quadIndex);
 
         mesh.Clear();
         mesh.vertices = vertices;
@@ -833,46 +729,79 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
         mesh.RecalculateBounds();
     }
 
-    private static void AppendTowerCellSet(HashSet<Vector2Int> cells, Color32 color,
+    private void AppendTowerCornerCellSet(HashSet<Vector2Int> cells, Color32 color,
         Vector2Int anchor, float cellSize, float originX, float originZ,
-        Vector3[] vertices, Color32[] colors, int[] triangles, ref int cellIndex)
+        Vector3[] vertices, Color32[] colors, int[] triangles, ref int quadIndex)
     {
+        float inset = cellSize * ownedCellCornerInset;
+        float length = cellSize * ownedCellCornerLength;
+        float width = Mathf.Max(cellSize * ownedCellCornerWidth, 0.025f);
         foreach (Vector2Int cell in cells)
         {
             int x = cell.x - anchor.x;
             int y = cell.y - anchor.y;
-            int vertex = cellIndex * 4;
-            int triangle = cellIndex * 6;
-            float inset = cellSize * 0.11f;
-            float x0 = originX + x * cellSize + inset;
-            float x1 = originX + (x + 1) * cellSize - inset;
-            float z0 = originZ + y * cellSize + inset;
-            float z1 = originZ + (y + 1) * cellSize - inset;
-            vertices[vertex] = new Vector3(x0, 0f, z0);
-            vertices[vertex + 1] = new Vector3(x0, 0f, z1);
-            vertices[vertex + 2] = new Vector3(x1, 0f, z1);
-            vertices[vertex + 3] = new Vector3(x1, 0f, z0);
-            colors[vertex] = color;
-            colors[vertex + 1] = color;
-            colors[vertex + 2] = color;
-            colors[vertex + 3] = color;
-            triangles[triangle] = vertex;
-            triangles[triangle + 1] = vertex + 1;
-            triangles[triangle + 2] = vertex + 2;
-            triangles[triangle + 3] = vertex;
-            triangles[triangle + 4] = vertex + 2;
-            triangles[triangle + 5] = vertex + 3;
-            cellIndex++;
+            float left = originX + x * cellSize + inset;
+            float right = originX + (x + 1) * cellSize - inset;
+            float bottom = originZ + y * cellSize + inset;
+            float top = originZ + (y + 1) * cellSize - inset;
+            float leftInner = left + width;
+            float rightInner = right - width;
+            float bottomInner = bottom + width;
+            float topInner = top - width;
+            float leftArmEnd = left + length;
+            float rightArmStart = right - length;
+            float bottomArmEnd = bottom + length;
+            float topArmStart = top - length;
+
+            AppendTowerCornerQuad(left, leftArmEnd, topInner, top, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(left, leftInner, topArmStart, top, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(rightArmStart, right, topInner, top, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(rightInner, right, topArmStart, top, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(left, leftArmEnd, bottom, bottomInner, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(left, leftInner, bottom, bottomArmEnd, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(rightArmStart, right, bottom, bottomInner, color,
+                vertices, colors, triangles, ref quadIndex);
+            AppendTowerCornerQuad(rightInner, right, bottom, bottomArmEnd, color,
+                vertices, colors, triangles, ref quadIndex);
         }
+    }
+
+    private static void AppendTowerCornerQuad(float x0, float x1, float z0, float z1,
+        Color32 color, Vector3[] vertices, Color32[] colors, int[] triangles,
+        ref int quadIndex)
+    {
+        int vertex = quadIndex * 4;
+        int triangle = quadIndex * 6;
+        vertices[vertex] = new Vector3(x0, 0f, z0);
+        vertices[vertex + 1] = new Vector3(x0, 0f, z1);
+        vertices[vertex + 2] = new Vector3(x1, 0f, z1);
+        vertices[vertex + 3] = new Vector3(x1, 0f, z0);
+        colors[vertex] = color;
+        colors[vertex + 1] = color;
+        colors[vertex + 2] = color;
+        colors[vertex + 3] = color;
+        triangles[triangle] = vertex;
+        triangles[triangle + 1] = vertex + 1;
+        triangles[triangle + 2] = vertex + 2;
+        triangles[triangle + 3] = vertex;
+        triangles[triangle + 4] = vertex + 2;
+        triangles[triangle + 5] = vertex + 3;
+        quadIndex++;
     }
 
     private float GetTowerFootprintGridHeight(Vector2Int anchor, Vector2Int size)
     {
-        float minX = map.Origin.x + anchor.x * map.MicroCellSize;
-        float minZ = map.Origin.y + anchor.y * map.MicroCellSize;
-        float maxX = minX + size.x * map.MicroCellSize;
-        float maxZ = minZ + size.y * map.MicroCellSize;
-        float height = 0.04f;
+        float minX = map.Origin.x + anchor.x * map.CellSize;
+        float minZ = map.Origin.y + anchor.y * map.CellSize;
+        float maxX = minX + size.x * map.CellSize;
+        float maxZ = minZ + size.y * map.CellSize;
+        float height = 0.12f;
         for (int i = 0; i < _towerPlaceGridRenderers.Count; i++)
         {
             Renderer renderer = _towerPlaceGridRenderers[i];
@@ -889,9 +818,7 @@ public sealed class RougeTowerDefenseMapLoader : MonoBehaviour
     {
         DestroyTowerFootprintGridOverlay(_towerFootprintGridOverlay);
         _towerFootprintGridOverlay = null;
-        DestroyTowerFootprintGridOverlay(_towerOwnedCellHighlightOverlay);
-        _towerOwnedCellHighlightOverlay = null;
-        _bluePlacedTowerGridCells.Clear();
+        _placedTowerPulseCells.Clear();
         _greenValidTowerGridCells.Clear();
         _redInvalidTowerGridCells.Clear();
     }

@@ -325,10 +325,6 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 EditorGUILayout.PropertyField(typeProperty, new GUIContent("Tower Type"));
             EditorGUILayout.PropertyField(tower.FindPropertyRelative("placementRadius"),
                 new GUIContent("Placement Radius"));
-            EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintWidth"),
-                new GUIContent("Footprint Width (Micro Cells)"));
-            EditorGUILayout.PropertyField(tower.FindPropertyRelative("footprintHeight"),
-                new GUIContent("Footprint Height (Micro Cells)"));
             if (IsSpecialTowerType(type))
             {
                 EditorGUILayout.PropertyField(
@@ -340,7 +336,40 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             {
                 EditorGUILayout.PropertyField(
                     tower.FindPropertyRelative("reinforcementAuraBuffLevel"),
-                    new GUIContent("Same-Tile Buff Level"));
+                    new GUIContent("Buff Level Per Tower"));
+                EditorGUILayout.PropertyField(
+                    tower.FindPropertyRelative("reinforcementAuraRangeCells"),
+                    new GUIContent("Aura Range (Map Cells)"));
+            }
+        }
+
+        if (type == RougeTowerType.Ice)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("冰霜塔分支与地块联动配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("iceTowerSpecialization"), true);
+            }
+        }
+        else if (type == RougeTowerType.MachineGun)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                       GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("机枪塔暴击与破片分支配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("machineGunSpecialization"), true);
+            }
+        }
+        else if (type == RougeTowerType.Cannon)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                       GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("加农炮内圈爆破与持续炮弹配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("cannonSpecialization"), true);
             }
         }
 
@@ -386,11 +415,15 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         switch (type)
         {
             case RougeTowerType.Ice:
-                DrawLevelRow(levels, "effectPercent", "Slow %");
-                DrawLevelRow(levels, "effectDuration", "Slow Duration");
+                EditorGUILayout.HelpBox(
+                    "冰霜塔的减速、冻结、脆弱、冰刺和特殊地块参数统一在上方分支配置中调整。",
+                    MessageType.Info);
                 break;
             case RougeTowerType.MachineGun:
                 DrawLevelRow(levels, "targetCount", "Pellet Count");
+                EditorGUILayout.HelpBox(
+                    "机枪塔的暴击率、暴击倍率、穿甲与破片参数统一在上方分支配置中调整。",
+                    MessageType.Info);
                 break;
             case RougeTowerType.Laser:
                 DrawLevelRow(levels, "targetCount", "Target Count");
@@ -398,6 +431,9 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             case RougeTowerType.Cannon:
                 DrawLevelRow(levels, "projectileCount", "Shell Count");
                 DrawLevelRow(levels, "aoeRadius", "Explosion Radius");
+                EditorGUILayout.HelpBox(
+                    "加农炮的内圈倍率、小炮弹与持续爆炸参数统一在上方分支配置中调整。",
+                    MessageType.Info);
                 break;
             case RougeTowerType.Flame:
                 DrawLevelRow(levels, "projectileCount", "Fireball Count");
@@ -484,6 +520,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("eliteKillGold"),
                     new GUIContent("Elite Kill Gold"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("baseHealth"), new GUIContent("Health"));
+                EditorGUILayout.PropertyField(enemy.FindPropertyRelative("armor"), new GUIContent("Armor"));
                 EditorGUILayout.PropertyField(enemy.FindPropertyRelative("healthGrowthMultiplier"),
                     new GUIContent("HP Growth Multiplier",
                         "1 uses the global HP curve unchanged. Values above 1 grow faster; level-1 base health stays unchanged."));

@@ -129,7 +129,7 @@ MonoBehaviour:
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: Dmg+2
+  - name: Dmg+3 / Rng-2
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -158,7 +158,7 @@ MonoBehaviour:
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: Rng+2
+  - name: Rng+3 / Dmg-1 / Spd-1
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -187,7 +187,7 @@ MonoBehaviour:
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: Spd+2
+  - name: Spd+3 / Rng-2
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -216,7 +216,7 @@ MonoBehaviour:
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: All+1
+  - name: All+2
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -390,7 +390,7 @@ MonoBehaviour:
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: Small
+  - name: Explosion
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -411,15 +411,15 @@ MonoBehaviour:
     - {fileID: 0}
     - {fileID: 0}
     - {fileID: 0}
-    editorColor: {r: 0.5144179, g: 0.6415094, b: 0.6216112, a: 0.7921569}
+    editorColor: {r: 1, g: 0.184, b: 0.04, a: 0.82}
     blocksNavigation: 0
     towerPlace: 1
-    towerPlaceEffect: 10
+    towerPlaceEffect: 13
     towerPlaceIcon: {fileID: 0}
     fallbackHeight: 0.1
     yOffset: 0
     prefabEulerAngles: {x: 0, y: 0, z: 0}
-  - name: Combine
+  - name: Frost Tile
     prefab: {fileID: 0}
     useAutoTile: 0
     autoTileGroup: 
@@ -440,10 +440,10 @@ MonoBehaviour:
     - {fileID: 0}
     - {fileID: 0}
     - {fileID: 0}
-    editorColor: {r: 0.4853921, g: 0.34929392, b: 0.5471698, a: 0.7921569}
+    editorColor: {r: 0.12, g: 0.72, b: 1, a: 0.82}
     blocksNavigation: 0
     towerPlace: 1
-    towerPlaceEffect: 11
+    towerPlaceEffect: 14
     towerPlaceIcon: {fileID: 0}
     fallbackHeight: 0.1
     yOffset: 0

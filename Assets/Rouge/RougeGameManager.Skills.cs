@@ -83,6 +83,7 @@ public partial class RougeGameManager
 
     private bool TryAddSkillArea(RougeSkillArea area)
     {
+        ApplyFrostTowerTileEffect(ref area);
         if (UsesTowerDefenseSpawners() && _simulationResultBackBufferReady)
         {
             return TryQueuePendingSkillArea(area);
@@ -95,6 +96,22 @@ public partial class RougeGameManager
 
         _skillAreasDb[_skillAreaCount++] = area;
         return true;
+    }
+
+    private static void ApplyFrostTowerTileEffect(ref RougeSkillArea area)
+    {
+        if (area.SourceTowerTileEffect != (int)RougeTowerPlaceEffect.Frost ||
+            area.SourceTowerTypePlusOne <= 0 ||
+            area.SourceTowerTypePlusOne == (int)RougeTowerType.Ice + 1)
+            return;
+
+        RougeIceTowerSpecializationConfig config =
+            TowerDefenseVisuals.GetIceSpecializationConfig();
+        area.EffectFlags |= (int)SkillHitEffectTag.Slow;
+        area.EffectSlowPercent = Mathf.Max(area.EffectSlowPercent,
+            config.frostAttackSlowPercent);
+        area.EffectSlowDuration = Mathf.Max(area.EffectSlowDuration,
+            config.frostDurationBonus);
     }
 
     private bool TryQueuePendingSkillArea(RougeSkillArea area)

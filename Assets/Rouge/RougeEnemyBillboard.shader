@@ -6,6 +6,7 @@ Shader "Rouge/EnemyBillboard"
         _EnemySheet0("Enemy Sheet 0", 2D) = "white" {}
         _EnemySheet1("Enemy Sheet 1", 2D) = "white" {}
         _EnemySheet2("Enemy Sheet 2", 2D) = "white" {}
+        _FrozenOverlay("Frozen Overlay", 2D) = "black" {}
         [HideInInspector] _EnemySheetAnimation0("Enemy Sheet Animation 0", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation1("Enemy Sheet Animation 1", Vector) = (3,2,9,0)
         [HideInInspector] _EnemySheetAnimation2("Enemy Sheet Animation 2", Vector) = (3,2,9,0)
@@ -47,6 +48,8 @@ Shader "Rouge/EnemyBillboard"
             SAMPLER(sampler_EnemySheet1);
             TEXTURE2D(_EnemySheet2);
             SAMPLER(sampler_EnemySheet2);
+            TEXTURE2D(_FrozenOverlay);
+            SAMPLER(sampler_FrozenOverlay);
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _MainTex_ST;
@@ -76,6 +79,8 @@ Shader "Rouge/EnemyBillboard"
                 float slow : TEXCOORD4;
                 nointerpolation float enemyKind : TEXCOORD5;
                 float airborne : TEXCOORD6;
+                float2 overlayUv : TEXCOORD7;
+                float frozen : TEXCOORD8;
             };
 
             Varyings Vert(Attributes input)
@@ -104,6 +109,7 @@ Shader "Rouge/EnemyBillboard"
 
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 float slowed = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
+                float frozen = step(0.5, fmod(floor(visualFlags * 0.015625), 2.0));
                 float4 positionHCS = TransformWorldToHClip(positionWS);
                 float4 feetHCS = TransformWorldToHClip(positionScale.xyz);
                 // A camera-facing quad normally has a depth gradient across its plane,
@@ -143,7 +149,7 @@ Shader "Rouge/EnemyBillboard"
                 int instancePhase = (int)(phaseHash % (uint)movementFrameCount);
                 // Translation is already reduced by the simulation. Slowing the walk cycle
                 // as well makes the effect readable inside a dense crowd.
-                float movementAnimationSpeed = lerp(1.0, 0.42, slowed);
+                float movementAnimationSpeed = lerp(lerp(1.0, 0.42, slowed), 0.0, frozen);
                 int movementFrame = (((int)floor(_Time.y * animationFps * movementAnimationSpeed)) + instancePhase) % movementFrameCount;
                 int firstDeathFrame = min(movementFrameCount, totalFrameCount - 1);
                 int finalDeathFrame = max(firstDeathFrame, totalFrameCount - 1);
@@ -161,10 +167,12 @@ Shader "Rouge/EnemyBillboard"
                 frameUv.x = (frameUv.x + column) / (float)atlasColumns;
                 frameUv.y = (frameUv.y + (atlasRows - 1 - topRow)) / (float)atlasRows;
                 output.uv = frameUv;
+                output.overlayUv = input.uv;
                 output.flash = frac(max(state.w, 0.0));
                 output.curse = step(0.5, fmod(visualFlags, 2.0));
                 output.dead = dead;
                 output.slow = slowed;
+                output.frozen = frozen;
                 output.enemyKind = enemyKind;
                 float launchBuffered = step(0.5, fmod(floor(visualFlags * 0.25), 2.0));
                 float aboveGround = step(_RenderHeight + 0.05, positionScale.y);
@@ -186,13 +194,19 @@ Shader "Rouge/EnemyBillboard"
                 else
                     color = SAMPLE_TEXTURE2D(_EnemySheet2, sampler_EnemySheet2, input.uv);
                 color *= _BaseColor;
-                clip(color.a - 0.08);
+                half4 frozenOverlay = SAMPLE_TEXTURE2D(_FrozenOverlay,
+                    sampler_FrozenOverlay, input.overlayUv);
+                frozenOverlay.a *= input.frozen;
+                clip(max(color.a, frozenOverlay.a) - 0.08);
                 half luminance = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));
                 color.rgb = lerp(color.rgb, luminance.xxx * half3(0.42, 0.48, 0.6), input.curse);
                 color.rgb = lerp(color.rgb, luminance.xxx * 0.45, input.dead);
                 color.rgb = lerp(color.rgb,
                     color.rgb * half3(0.55, 0.78, 1.35) + half3(0.02, 0.08, 0.2),
                     input.slow * 0.68);
+                color.rgb = lerp(color.rgb, frozenOverlay.rgb,
+                    saturate(frozenOverlay.a * 0.92h));
+                color.a = max(color.a, frozenOverlay.a);
                 // Keep airborne units visibly desaturated, but retain enough texture
                 // contrast to read as light grey instead of a flat white silhouette.
                 half airborneLuminance = dot(color.rgb, half3(0.2126, 0.7152, 0.0722));

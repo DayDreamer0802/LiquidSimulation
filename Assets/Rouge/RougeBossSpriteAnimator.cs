@@ -19,6 +19,8 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
     private readonly List<Sprite> _shardSprites = new List<Sprite>(16);
     private readonly List<Shard> _shards = new List<Shard>(16);
     private SpriteRenderer _renderer;
+    private SpriteRenderer _frozenOverlayRenderer;
+    private float _frozenOverlayBaseScale;
     private Texture2D _sheet;
     private Rect _currentFrameRect;
     private int _columns;
@@ -85,6 +87,19 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
         _renderer.receiveShadows = false;
         _visualScale = Mathf.Max(0.1f, worldHeight / Mathf.Max(0.01f, cellHeight / pixelsPerUnit));
         image.transform.localScale = Vector3.one * _visualScale;
+
+        Sprite frozenOverlay = RougeSpriteAssets.Load("Sprites/Effects/enemy_frozen_overlay");
+        if (frozenOverlay != null)
+        {
+            float frozenHeight = frozenOverlay.rect.height /
+                                 Mathf.Max(1f, frozenOverlay.pixelsPerUnit);
+            _frozenOverlayBaseScale = worldHeight * 1.12f /
+                                      Mathf.Max(0.01f, frozenHeight);
+            _frozenOverlayRenderer = RougeSpriteAssets.CreateRenderer(
+                "Boss Frozen Overlay", transform, frozenOverlay, Vector3.zero,
+                _frozenOverlayBaseScale, 202, Color.white);
+            _frozenOverlayRenderer.gameObject.SetActive(false);
+        }
     }
 
     public void SetWorldState(Vector3 position, Vector3 velocity)
@@ -100,9 +115,16 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
         _frameTimer = 0f;
     }
 
+    public void SetFrozenVisual(bool active)
+    {
+        if (_frozenOverlayRenderer == null) return;
+        _frozenOverlayRenderer.gameObject.SetActive(active && !_shattered);
+    }
+
     public void BeginDeath()
     {
         _dying = true;
+        SetFrozenVisual(false);
         _skillRemaining = 0f;
         _frameTimer = 0f;
     }
@@ -124,6 +146,7 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
         if (_renderer == null || _sheet == null || _shattered) return;
         _shattered = true;
         _renderer.enabled = false;
+        SetFrozenVisual(false);
 
         Rect rect = _currentFrameRect;
         const int shardColumns = 4;
@@ -166,6 +189,16 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
     private void Update()
     {
         float dt = Time.unscaledDeltaTime;
+        if (_frozenOverlayRenderer != null &&
+            _frozenOverlayRenderer.gameObject.activeSelf)
+        {
+            float pulse = 0.985f + Mathf.Sin(Time.unscaledTime * 7f) * 0.025f;
+            _frozenOverlayRenderer.transform.localScale = Vector3.one *
+                (_frozenOverlayBaseScale * pulse);
+            Color color = _frozenOverlayRenderer.color;
+            color.a = 0.88f + Mathf.Sin(Time.unscaledTime * 5f) * 0.08f;
+            _frozenOverlayRenderer.color = color;
+        }
         if (_shattered)
         {
             for (int i = 0; i < _shards.Count; i++)

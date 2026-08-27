@@ -26,6 +26,54 @@ public enum RougeTowerTargetPriority
     BossFirst = 1
 }
 
+public enum RougeIceTowerBranch
+{
+    None = 0,
+    [InspectorName("A - 冻结路线")] Freeze = 1,
+    [InspectorName("B - 脆弱路线")] Vulnerability = 2
+}
+
+public enum RougeIceTowerAugment
+{
+    None = 0,
+    [InspectorName("A2-b - 随机冰地刺")] IceSpikes = 1,
+    [InspectorName("A2-a - 相邻格永久变为霜寒格")] PermanentFrostTiles = 2,
+    [InspectorName("B2-a - 脆弱单位受到更多伤害")] VulnerabilityDamage = 3,
+    [InspectorName("B2-b - 脆弱敌人 -2 护甲")] VulnerabilityArmor = 4
+}
+
+public enum RougeMachineGunBranch
+{
+    None = 0,
+    [InspectorName("A - 暴击路线")] Critical = 1,
+    [InspectorName("B - 破片路线")] Fragments = 2
+}
+
+public enum RougeMachineGunAugment
+{
+    None = 0,
+    [InspectorName("A1 - 暴击率提升至 50%")] CriticalChance = 1,
+    [InspectorName("A2 - 暴击获得 4 穿甲")] CriticalArmorPenetration = 2,
+    [InspectorName("B1 - 破片提升至 6 枚")] FragmentCount = 3,
+    [InspectorName("B2 - 破片有 50% 概率嵌入")] EmbeddedFragments = 4
+}
+
+public enum RougeCannonBranch
+{
+    None = 0,
+    [InspectorName("A - 内圈爆破")] InnerBlast = 1,
+    [InspectorName("B - 持续炮弹")] PersistentShell = 2
+}
+
+public enum RougeCannonAugment
+{
+    None = 0,
+    [InspectorName("A1 - 扩大爆炸与强化内圈")] InnerBlastArea = 1,
+    [InspectorName("A2 - 追加 3 枚小炮弹")] SecondaryBombardment = 2,
+    [InspectorName("B1 - 持续爆炸轻微击退")] PersistentKnockback = 3,
+    [InspectorName("B2 - 额外触发 2 次并提高伤害")] PersistentExtraTicks = 4
+}
+
 public readonly struct RougeTowerStats
 {
     public readonly float Damage;
@@ -73,7 +121,7 @@ public readonly struct RougeTowerStats
 
 internal static class TowerDefenseVisuals
 {
-    public const int MaxTowerLevel = 5;
+    public const int MaxTowerLevel = 3;
     public const int StandardTowerTypeCount = 8;
     public const int TowerTypeCount = 10;
     private static Material s_lineMaterial;
@@ -203,11 +251,7 @@ internal static class TowerDefenseVisuals
 
     public static Vector2Int GetFootprintSize(RougeTowerType type)
     {
-        RougeTowerTypeConfig configured = s_runtimeBalance?.Find(type);
-        return configured != null
-            ? new Vector2Int(Mathf.Clamp(configured.footprintWidth, 1, 16),
-                Mathf.Clamp(configured.footprintHeight, 1, 16))
-            : new Vector2Int(4, 4);
+        return Vector2Int.one;
     }
 
     public static int GetReinforcementAuraBuffLevel()
@@ -215,6 +259,50 @@ internal static class TowerDefenseVisuals
         RougeTowerTypeConfig configured = s_runtimeBalance?.Find(
             RougeTowerType.ReinforcementTower);
         return Mathf.Max(1, configured?.reinforcementAuraBuffLevel ?? 1);
+    }
+
+    public static int GetReinforcementAuraRangeCells()
+    {
+        RougeTowerTypeConfig configured = s_runtimeBalance?.Find(
+            RougeTowerType.ReinforcementTower);
+        return Mathf.Clamp(configured?.reinforcementAuraRangeCells ?? 1, 1, 8);
+    }
+
+    public static RougeIceTowerSpecializationConfig GetIceSpecializationConfig()
+    {
+        RougeIceTowerSpecializationConfig config = s_runtimeBalance?.iceTowerSpecialization;
+        if (config == null)
+        {
+            config = new RougeIceTowerSpecializationConfig();
+            if (s_runtimeBalance != null) s_runtimeBalance.iceTowerSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
+    }
+
+    public static RougeMachineGunSpecializationConfig GetMachineGunSpecializationConfig()
+    {
+        RougeMachineGunSpecializationConfig config =
+            s_runtimeBalance?.machineGunSpecialization;
+        if (config == null)
+        {
+            config = new RougeMachineGunSpecializationConfig();
+            if (s_runtimeBalance != null) s_runtimeBalance.machineGunSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
+    }
+
+    public static RougeCannonSpecializationConfig GetCannonSpecializationConfig()
+    {
+        RougeCannonSpecializationConfig config = s_runtimeBalance?.cannonSpecialization;
+        if (config == null)
+        {
+            config = new RougeCannonSpecializationConfig();
+            if (s_runtimeBalance != null) s_runtimeBalance.cannonSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
     }
 
     public static RougeTowerStats GetStats(RougeTowerType type, int requestedLevel)
@@ -267,7 +355,7 @@ internal static class TowerDefenseVisuals
             case RougeTowerType.Ice:
                 return new RougeTowerStats(Pick(i, 10f, 18f, 26f, 32f, 40f),
                     Pick(i, 5f, 4.5f, 4f, 3.5f, 3f), Pick(i, 12f, 14f, 16f, 18f, 20f),
-                    effectPercent: Pick(i, 50f, 55f, 60f, 65f, 70f), effectDuration: 3f);
+                    effectPercent: 50f, effectDuration: 2f);
             case RougeTowerType.Cannon:
                 return new RougeTowerStats(Pick(i, 50f, 75f, 100f, 125f, 200f),
                     Pick(i, 3f, 2.7f, 2.4f, 2.2f, 2f), Pick(i, 22f, 26f, 30f, 34f, 40f),

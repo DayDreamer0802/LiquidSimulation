@@ -1494,6 +1494,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const int SlowVisualFlag = 8;
     private const int FacingLeftVisualFlag = 16;
     private const int FacingValidVisualFlag = 32;
+    private const int FrozenVisualFlag = 64;
     private const float LaunchMotionDuration = 0.22f;
     private const float LaunchStackDuration = 0.12f;
     private const float LaunchPlanarImpulseFactor = 1.05f;
@@ -1511,6 +1512,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const float TowerKillLaunchGoalExclusionRadius = 15f;
     private const float TowerKillLaunchVerticalImpulse = 12f;
     private const float TowerKillLaunchPlanarImpulseFactor = 1.05f;
+    private const float TowerTileExplosionChance = 0.03f;
+    private const float TowerTileExplosionMaxHealthRatio = 0.30f;
+    private const float TowerTileExplosionRadius = 8f;
 
     [ReadOnly] public NativeArray<float4> PositionScaleIn;
     [ReadOnly] public NativeArray<float4> VelocityIn;
@@ -1538,6 +1542,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     [ReadOnly] public NativeArray<int> TowerLaserDamageFrames;
     [ReadOnly] public NativeArray<int> TowerKillGoldBonus;
     [ReadOnly] public NativeArray<int> TowerWealthCellIndexPlusOne;
+    [ReadOnly] public NativeArray<int> TowerKillTileEffects;
     [ReadOnly] public NativeArray<float> TowerDamageByType;
     [ReadOnly] public NativeArray<int> TowerDamageByTypeFrames;
     [NativeDisableParallelForRestriction] public NativeArray<long> TowerDamageTotalsFixed;
@@ -1552,6 +1557,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     public float2 GoalPos;
     public float2 SpawnCenter;
     public float EnemyMaxHealth;
+    public float EnemyArmor;
     public float EnemyRadius;
     public float EnemyMaxSpeed;
     public float2 ArenaHalfExtents;
@@ -1656,14 +1662,21 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             RougeEnemyEffectState effects = effectInPtr[sourceIndex];
             int towerKillGoldBonus = math.max(0, effects.TowerKillGoldBonus);
             int towerWealthCellIndexPlusOne = math.max(0, effects.TowerWealthCellIndexPlusOne);
+            int towerSourceTileEffect = effects.TowerSourceTileEffect;
 
             float3 pos = pos4.xyz;
             float3 vel = vel4.xyz;
             float tornadoMark = vel4.w;
             float health = state4.x;
+            effects.MaximumHealth = math.max(effects.MaximumHealth, math.max(health, 1f));
+            if (!ExternalSpawning)
+            {
+                effects.Armor = math.max(effects.Armor, EnemyArmor);
+            }
             float radius = state4.y;
             float crowdRadius = math.max(radius, pos4.w);
             float maxSpeed = state4.z;
+            byte enemyKind = EnemyKinds[sourceIndex];
             bool isBoss = sourceIndex == BossEnemyIndex;
             if (isBoss)
             {
@@ -1675,12 +1688,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.LaunchStackTimer = 0f;
                 effects.LaunchLandingRadius = 0f;
                 effects.LaunchLandingDamage = 0f;
-                if (effects.FreezeTimer > 0f)
-                {
-                    effects.SlowTimer = math.max(effects.SlowTimer, effects.FreezeTimer);
-                    effects.SlowPercent = math.max(effects.SlowPercent, BossMaximumSlowPercent);
-                    effects.FreezeTimer = 0f;
-                }
+                effects.VulnerabilityLandingBlastPending = 0;
                 effects.SlowPercent = math.clamp(effects.SlowPercent, 0f, BossMaximumSlowPercent);
             }
             float flashTimer = math.frac(math.max(state4.w, 0f));
@@ -1747,7 +1755,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true, false, false,
+                    EncodeVisualState(flashTimer, false, true, false, false, false,
                         effects.FacingDirection < 0f));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
@@ -1765,13 +1773,17 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             if (TowerLaserDamageFrames[sourceIndex] == TowerLaserDamageFrame)
             {
                 float healthBeforeTowerDamage = health;
-                health -= TowerLaserDamage[sourceIndex];
+                // Direct tower hits are already armor-resolved per individual hit on
+                // the managed side. Keeping them separated is essential for rapid-fire
+                // lasers because the minimum-one rule belongs to each attack tick.
+                health -= math.max(0f, TowerLaserDamage[sourceIndex]);
                 flashTimer = math.max(flashTimer, 0.2f);
                 if (healthBeforeTowerDamage > 0f && health <= 0f)
                 {
                     towerKillGoldBonus = math.max(towerKillGoldBonus, TowerKillGoldBonus[sourceIndex]);
                     towerWealthCellIndexPlusOne = math.max(0,
                         TowerWealthCellIndexPlusOne[sourceIndex]);
+                    towerSourceTileEffect = TowerKillTileEffects[sourceIndex];
                 }
             }
 
@@ -1796,6 +1808,38 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.FreezeTimer = math.max(0f, effects.FreezeTimer - DeltaTime);
             }
 
+            if (effects.BossFreezeImmunityTimer > 0f)
+                effects.BossFreezeImmunityTimer = math.max(0f,
+                    effects.BossFreezeImmunityTimer - DeltaTime);
+
+            if (effects.VulnerabilityTimer > 0f)
+                effects.VulnerabilityTimer = math.max(0f,
+                    effects.VulnerabilityTimer - DeltaTime);
+            if (effects.VulnerabilityDamageBonusTimer > 0f)
+            {
+                effects.VulnerabilityDamageBonusTimer = math.max(0f,
+                    effects.VulnerabilityDamageBonusTimer - DeltaTime);
+                if (effects.VulnerabilityDamageBonusTimer <= 0f)
+                    effects.VulnerabilityDamageBonus = 0f;
+            }
+            else effects.VulnerabilityDamageBonus = 0f;
+            if (effects.VulnerabilityArmorTimer > 0f)
+            {
+                effects.VulnerabilityArmorTimer = math.max(0f,
+                    effects.VulnerabilityArmorTimer - DeltaTime);
+                if (effects.VulnerabilityArmorTimer <= 0f)
+                    effects.VulnerabilityArmor = 0f;
+            }
+            else effects.VulnerabilityArmor = 0f;
+            if (effects.VulnerabilityLandingBlastTimer > 0f)
+            {
+                effects.VulnerabilityLandingBlastTimer = math.max(0f,
+                    effects.VulnerabilityLandingBlastTimer - DeltaTime);
+                if (effects.VulnerabilityLandingBlastTimer <= 0f)
+                    effects.VulnerabilityLandingBlast = 0;
+            }
+            else effects.VulnerabilityLandingBlast = 0;
+
             if (effects.SlowTimer > 0f)
             {
                 effects.SlowTimer = math.max(0f, effects.SlowTimer - DeltaTime);
@@ -1810,7 +1854,6 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.SlowPercent = 0f;
                 effects.SlowStacks = 0f;
             }
-
             float2 toPlayer = PlayerPos - pos.xz;
             float distToPlayerSq = math.lengthsq(toPlayer);
             float2 toGoal = GoalPos - pos.xz;
@@ -1824,6 +1867,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 || effects.LaunchLandingRadius > 0f
                 || effects.LaunchLandingDamage > 0f
                 || bufferedLaunchDeath;
+            if (isAirborne && effects.VulnerabilityTimer > 0f &&
+                effects.VulnerabilityLandingBlast != 0)
+                effects.VulnerabilityLandingBlastPending = 1;
             float3 acceleration = isAirborne ? new float3(0f, -30f, 0f) : float3.zero;
             if (!isAirborne)
             {
@@ -1912,6 +1958,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 {
                     int skillIndex = skillEntryPtr[entryIndex];
                     RougeSkillArea skill = SkillAreas[skillIndex];
+                    ResolveEnemySpecificStatus(ref skill, enemyKind);
                     float2 skillDelta = pos.xz - skill.Position;
                     float skillPreR = skill.Radius + math.max(0f, skill.Length) + radius;
                     if (math.abs(skillDelta.x) > skillPreR || math.abs(skillDelta.y) > skillPreR) continue;
@@ -1941,7 +1988,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             break;
                         case 15:
                         case 16:
-                            ProcessTowerLaser(ref health, ref flashTimer, pos, skill);
+                            ProcessTowerLaser(ref health, ref flashTimer, ref effects, pos, skill);
                             break;
                         case 17:
                             ProcessTacticalDamageArea(ref health, ref flashTimer, ref vel, ref tornadoMark, ref effects, pos, skill);
@@ -1950,7 +1997,15 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             ProcessTacticalBlackHole(ref vel, pos, skill);
                             break;
                         case 19:
-                            ProcessTowerLaser(ref health, ref flashTimer, pos, skill);
+                            ProcessTowerLaser(ref health, ref flashTimer, ref effects, pos, skill);
+                            break;
+                        case 20:
+                            ProcessVulnerabilityLandingBlast(ref health, ref flashTimer,
+                                ref effects, pos, skill);
+                            break;
+                        case 21:
+                            ProcessIceSpikeCell(ref health, ref flashTimer, ref vel,
+                                ref tornadoMark, ref effects, pos, skill);
                             break;
                     }
                     int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
@@ -1959,15 +2014,17 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     {
                         towerDamageByType[sourceTowerType] += healthBeforeTowerSkill - health;
                     }
-                    if (!isBoss && !bufferedLaunchDeath &&
-                        healthBeforeTowerSkill > 0f && health <= 0f)
+                    if (healthBeforeTowerSkill > 0f && health <= 0f &&
+                        (uint)sourceTowerType < (uint)TowerDefenseVisuals.TowerTypeCount)
                     {
                         towerKillGoldBonus = math.max(towerKillGoldBonus,
                             skill.SourceTowerKillGoldBonus);
                         towerWealthCellIndexPlusOne = math.max(0,
                             skill.SourceTowerWealthCellIndexPlusOne);
-                        ApplyTowerKillLaunch(ref vel, ref flashTimer, ref tornadoMark, ref effects,
-                            pos, skill, sourceTowerType, sourceIndex);
+                        towerSourceTileEffect = skill.SourceTowerTileEffect;
+                        if (!isBoss && !bufferedLaunchDeath)
+                            ApplyTowerKillLaunch(ref vel, ref flashTimer, ref tornadoMark,
+                                ref effects, pos, skill, sourceTowerType, sourceIndex);
                     }
                 }
             }
@@ -1980,7 +2037,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 while (effects.PoisonTimer > 0f && effects.PoisonTickTimer <= 0f)
                 {
                     float previousHealth = health;
-                    health -= EnemyMaxHealth * PoisonTickMaxHealthRatio;
+                    health -= ApplyArmor(effects.MaximumHealth * PoisonTickMaxHealthRatio,
+                        effects);
                     flashTimer = math.max(flashTimer, 0.45f);
                     effects.PoisonTickTimer += PoisonTickInterval;
                     if (previousHealth > 0f && health <= 0f)
@@ -2013,7 +2071,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.BurnTickTimer -= DeltaTime;
                 while (effects.BurnTimer > 0f && effects.BurnTickTimer <= 0f)
                 {
-                    health -= effects.BurnDamage;
+                    health -= ApplyArmor(effects.BurnDamage, effects);
                     flashTimer = math.max(flashTimer, 0.3f);
                     effects.BurnTickTimer += BurnTickInterval;
                 }
@@ -2056,7 +2114,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     }
 
                     float prevH = health;
-                    health -= bullet.Damage * BulletDmgMult;
+                    health -= ApplyArmor(bullet.Damage * BulletDmgMult, effects);
                     flashTimer = 1f;
                     if (prevH > 0f && health <= 0f)
                     {
@@ -2093,8 +2151,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             if (isBoss)
             {
                 // Damage and non-motion status effects still apply, but all direct pulls,
-                // knockback and launch impulses are discarded. Freeze becomes the boss's
-                // maximum allowed slow instead of stopping or lifting it.
+                // knockback and launch impulses are discarded. Branch-A ice can still
+                // freeze the Boss for its explicitly reduced duration.
                 acceleration = bossUnaffectedAcceleration;
                 vel = bossUnaffectedVelocity;
                 vel.y = 0f;
@@ -2104,12 +2162,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.LaunchStackTimer = 0f;
                 effects.LaunchLandingRadius = 0f;
                 effects.LaunchLandingDamage = 0f;
-                if (effects.FreezeTimer > 0f)
-                {
-                    effects.SlowTimer = math.max(effects.SlowTimer, effects.FreezeTimer);
-                    effects.SlowPercent = math.max(effects.SlowPercent, BossMaximumSlowPercent);
-                    effects.FreezeTimer = 0f;
-                }
+                effects.VulnerabilityLandingBlastPending = 0;
                 effects.SlowPercent = math.clamp(effects.SlowPercent, 0f, BossMaximumSlowPercent);
             }
 
@@ -2220,6 +2273,20 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     bool isLaunchKill = tornadoMark > 2.5f;
                     health = 0f;
                     tornadoMark = 0f;
+                    if (effects.VulnerabilityLandingBlastPending != 0)
+                    {
+                        SkillEventQueue.Enqueue(new RougeSkillEvent
+                        {
+                            Type = (int)RougeSkillEventType.VulnerabilityLandingBlast,
+                            Position = pos.xz,
+                            Radius = math.max(0.1f, radius * math.max(0f,
+                                effects.VulnerabilityLandingRadiusMultiplier)),
+                            Damage = math.max(0f,
+                                effects.VulnerabilityLandingNormalDamageRatio),
+                            Duration = math.max(0f,
+                                effects.VulnerabilityLandingEliteBossDamageRatio)
+                        });
+                    }
                     if (isSkillKill)
                     {
                         if (isLaunchKill)
@@ -2251,10 +2318,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
                     effects.LaunchLandingDamage = 0f;
                     effects.LaunchLandingRadius = 0f;
+                    effects.VulnerabilityLandingBlastPending = 0;
                 }
                 else if (!ExternalSpawning && isAirborne && vel.y < -1f)
                 {
-                    health -= math.abs(vel.y) * 15f;
+                    health -= ApplyArmor(math.abs(vel.y) * 15f, effects);
                     flashTimer = 1f;
                 }
 
@@ -2305,6 +2373,23 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     });
                 }
 
+                if (effects.EmbeddedMachineGunFragmentCount > 0 &&
+                    effects.EmbeddedMachineGunFragmentDamage > 0f)
+                {
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
+                    {
+                        Type = (int)RougeSkillEventType.MachineGunEmbeddedFragments,
+                        Position = pos.xz,
+                        Damage = effects.EmbeddedMachineGunFragmentDamage,
+                        Duration = effects.EmbeddedMachineGunFragmentRange,
+                        Count = effects.EmbeddedMachineGunFragmentCount,
+                        KillGoldBonus = effects.EmbeddedMachineGunKillGoldBonus,
+                        WealthCellIndexPlusOne =
+                            effects.EmbeddedMachineGunWealthCellIndexPlusOne,
+                        TileEffect = effects.EmbeddedMachineGunTileEffect
+                    });
+                }
+
                 SkillEventQueue.Enqueue(new RougeSkillEvent
                 {
                     Type = (int)RougeSkillEventType.EnemyDeathBurst,
@@ -2312,10 +2397,23 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     Radius = radius
                 });
 
+                if (towerSourceTileEffect == (int)RougeTowerPlaceEffect.Explosion &&
+                    Hash01((uint)(sourceIndex + 1) * 2246822519u + FrameSeed) <
+                    TowerTileExplosionChance)
+                {
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
+                    {
+                        Type = (int)RougeSkillEventType.TowerTileExplosion,
+                        Position = pos.xz,
+                        Radius = TowerTileExplosionRadius,
+                        Damage = math.max(1f, effects.MaximumHealth) *
+                                 TowerTileExplosionMaxHealthRatio
+                    });
+                }
+
                 System.Threading.Interlocked.Increment(ref ((int*)EnemyKillCount.GetUnsafePtr())[0]);
                 if (TowerDefenseRewardsEnabled)
                 {
-                    byte enemyKind = EnemyKinds[sourceIndex];
                     int reward = (enemyKind & 0x80) != 0
                         ? 0
                         : math.max(0, effects.BaseKillGold);
@@ -2360,6 +2458,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health <= 0f,
                     bufferedLaunchDeath && launchKillPending && health > 0f,
                     effects.SlowTimer > 0f && effects.SlowPercent > 0f,
+                    effects.FreezeTimer > 0f,
                     effects.FacingDirection < 0f));
             effectOutPtr[sourceIndex] = effects;
         }
@@ -2371,7 +2470,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     }
 
     private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual,
-        bool isBufferedLaunchVisual, bool isSlowedVisual, bool isFacingLeft)
+        bool isBufferedLaunchVisual, bool isSlowedVisual, bool isFrozenVisual,
+        bool isFacingLeft)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -2392,6 +2492,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (isSlowedVisual)
         {
             flags |= SlowVisualFlag;
+        }
+
+        if (isFrozenVisual)
+        {
+            flags |= FrozenVisualFlag;
         }
 
         flags |= FacingValidVisualFlag;
@@ -2627,7 +2732,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             acceleration.xz += dir * (skill.PullForce * weight * KnockbackResist);
             vel.y = math.max(vel.y, skill.VerticalForce * weight * KnockbackResist);
             tornadoMark = 1f;
-            health -= skill.Damage * 0.05f * DeltaTime;
+            health -= ApplyArmor(skill.Damage * 0.05f * DeltaTime, effects);
             flashTimer = 1f;
             ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         }
@@ -2646,7 +2751,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             vel.xz += dir * (skill.PullForce * weight * KnockbackResist * 0.1f);
             vel.y = math.max(vel.y, skill.VerticalForce * weight * KnockbackResist);
             float prevHB = health;
-            health -= skill.Damage * BombDmgMult;
+            health -= ApplyArmor(skill.Damage * BombDmgMult, effects);
             flashTimer = 1f;
             if (prevHB > 0f && health <= 0f)
             {
@@ -2670,7 +2775,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             {
                 float weight = 1f - math.saturate(math.sqrt(distSq) / skill.Radius);
                 float prevHL = health;
-                health -= skill.Damage * DeltaTime * LaserDmgMult;
+                health -= ApplyArmor(skill.Damage * DeltaTime * LaserDmgMult, effects);
                 flashTimer = 1f;
                 if (prevHL > 0f && health <= 0f)
                 {
@@ -2712,7 +2817,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             if (dot > 0.3f)
             {
                 float prevHM = health;
-                health -= skill.Damage * DeltaTime * 200f * MeleeDmgMult;
+                health -= ApplyArmor(skill.Damage * DeltaTime * 200f * MeleeDmgMult, effects);
                 flashTimer = 1f;
                 if (prevHM > 0f && health <= 0f)
                 {
@@ -2739,7 +2844,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             acceleration.xz += dir * (skill.PullForce * weight * KnockbackResist);
             vel.y = math.max(vel.y, skill.VerticalForce * weight * KnockbackResist);
             float prevHO = health;
-            health -= skill.Damage * DeltaTime * OrbitDmgMult;
+            health -= ApplyArmor(skill.Damage * DeltaTime * OrbitDmgMult, effects);
             flashTimer = 1f;
             if (prevHO > 0f && health <= 0f)
             {
@@ -2783,7 +2888,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float2 dir = diff / dist;
             float weight = 1f - math.saturate((dist - innerR) / math.max(skill.Length, 0.001f));
             float previousHealth = health;
-            health -= skill.Damage * weight;
+            health -= ApplyArmor(skill.Damage * weight, effects);
             acceleration.xz += dir * (-skill.PullForce * weight * KnockbackResist);
             vel.y = math.max(vel.y, skill.VerticalForce * weight * KnockbackResist * 1.25f);
             tornadoMark = 2f;
@@ -2809,7 +2914,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             float2 pullDir = -math.normalizesafe(diff, float2.zero);
             acceleration.xz += pullDir * (skill.PullForce * weight);
             float prevH = health;
-            health -= skill.Damage * DeltaTime * LaserDmgMult;
+            health -= ApplyArmor(skill.Damage * DeltaTime * LaserDmgMult, effects);
             flashTimer = math.max(flashTimer, 0.3f);
             if (prevH > 0f && health <= 0f)
             {
@@ -2855,7 +2960,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
         if (skill.Damage > 0f)
         {
-            health -= skill.Damage * DeltaTime;
+            health -= ApplyArmor(skill.Damage * DeltaTime, effects);
             if (isSkateboardLaunchArea)
             {
                 health = math.max(health, 1f);
@@ -2900,7 +3005,14 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
         if (skill.Damage > 0f)
         {
-            health -= skill.Type == 14 ? skill.Damage * DeltaTime : skill.Damage;
+            float rawDamage = skill.Type == 14 ? skill.Damage * DeltaTime : skill.Damage;
+            if (skill.Type == 13 && skill.AuxA > 0f && skill.AuxB > 1f)
+            {
+                float innerRadius = skill.Radius * skill.AuxA;
+                if (math.lengthsq(diff) <= innerRadius * innerRadius)
+                    rawDamage *= skill.AuxB;
+            }
+            health -= ApplyArmor(rawDamage, effects);
             flashTimer = math.max(flashTimer, skill.Type == 14 ? 0.2f : 0.8f);
         }
 
@@ -2908,7 +3020,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         return repelled;
     }
 
-    private void ProcessTowerLaser(ref float health, ref float flashTimer, float3 pos, RougeSkillArea skill)
+    private void ProcessTowerLaser(ref float health, ref float flashTimer,
+        ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
     {
         if (math.abs(pos.y - RenderHeight) > 5f) return;
         float2 fromStart = pos.xz - skill.Position;
@@ -2916,8 +3029,67 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (along < 0f || along > skill.Length) return;
         float2 closest = skill.Position + skill.Direction * along;
         if (math.lengthsq(pos.xz - closest) > skill.Radius * skill.Radius) return;
-        health -= skill.Type == 16 ? skill.Damage * DeltaTime : skill.Damage;
+        float rawDamage = skill.Type == 16 ? skill.Damage * DeltaTime : skill.Damage;
+        health -= ApplyArmor(rawDamage, effects);
+        if (((SkillHitEffectTag)skill.EffectFlags & SkillHitEffectTag.Slow) != 0)
+        {
+            effects.SlowStacks = 1f;
+            effects.SlowPercent = math.max(effects.SlowPercent,
+                math.max(0f, skill.EffectSlowPercent));
+            effects.SlowTimer = math.max(effects.SlowTimer,
+                skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
+        }
+        if (((SkillHitEffectTag)skill.EffectFlags & SkillHitEffectTag.Freeze) != 0)
+            ApplyFreezeStatus(ref effects, skill.EffectFreezeDuration,
+                skill.EffectBossFreezeImmunityDuration);
         flashTimer = math.max(flashTimer, skill.Type == 16 ? 0.2f : 0.9f);
+    }
+
+    private static void ProcessVulnerabilityLandingBlast(ref float health,
+        ref float flashTimer, ref RougeEnemyEffectState effects, float3 pos,
+        RougeSkillArea skill)
+    {
+        if (math.lengthsq(pos.xz - skill.Position) > skill.Radius * skill.Radius) return;
+        health -= math.max(0f, effects.MaximumHealth) * math.max(0f, skill.Damage);
+        flashTimer = math.max(flashTimer, 0.9f);
+    }
+
+    private void ProcessIceSpikeCell(ref float health, ref float flashTimer,
+        ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects,
+        float3 pos, RougeSkillArea skill)
+    {
+        float2 delta = math.abs(pos.xz - skill.Position);
+        if (math.max(delta.x, delta.y) > skill.Radius) return;
+        health -= ApplyArmor(skill.Damage, effects);
+        flashTimer = math.max(flashTimer, 0.9f);
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects,
+            pos, skill);
+    }
+
+    private static void ResolveEnemySpecificStatus(ref RougeSkillArea skill, byte enemyKind)
+    {
+        bool boss = (enemyKind & 0x80) != 0;
+        bool elite = (enemyKind & 0x40) != 0;
+        if (boss)
+        {
+            if (skill.EffectBossFreezeDuration > 0f)
+                skill.EffectFreezeDuration = skill.EffectBossFreezeDuration;
+            if (skill.EffectVulnerabilityDamageBonus > 0f)
+                skill.EffectVulnerabilityDamageBonus *=
+                    math.max(0f, skill.EffectVulnerabilityBossScale);
+        }
+        else
+        {
+            skill.EffectBossFreezeImmunityDuration = 0f;
+            if (elite && skill.EffectEliteFreezeDuration > 0f)
+                skill.EffectFreezeDuration = skill.EffectEliteFreezeDuration;
+            if (elite && skill.EffectVulnerabilityDamageBonus > 0f)
+                skill.EffectVulnerabilityDamageBonus *=
+                    math.max(0f, skill.EffectVulnerabilityEliteScale);
+        }
+
+        if (skill.Type == 20 && (boss || elite))
+            skill.Damage = math.max(0f, skill.AuxA);
     }
 
     private void ApplyTowerKillLaunch(ref float3 vel, ref float flashTimer, ref float tornadoMark,
@@ -2968,6 +3140,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             skill.SourceTowerKillGoldBonus);
         effects.TowerWealthCellIndexPlusOne = math.max(0,
             skill.SourceTowerWealthCellIndexPlusOne);
+        effects.TowerSourceTileEffect = skill.SourceTowerTileEffect;
         flashTimer = math.max(flashTimer, 0.9f);
     }
 
@@ -2979,7 +3152,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (math.lengthsq(difference) > skill.Radius * skill.Radius) return;
 
         float previousHealth = health;
-        health -= skill.Damage;
+        health -= ApplyArmor(skill.Damage, effects);
         flashTimer = math.max(flashTimer, 0.9f);
         if (skill.AuxA <= 0f || previousHealth <= 0f || health > 0f) return;
 
@@ -3047,6 +3220,9 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             effects.LaunchLandingDamage = math.max(effects.LaunchLandingDamage, skill.Damage * 0.5f);
             effects.LaunchLandingRadius = math.max(effects.LaunchLandingRadius, skill.EffectLaunchLandingRadius);
             effects.LaunchMotionTimer = math.max(effects.LaunchMotionTimer, LaunchMotionDuration);
+            if (effects.VulnerabilityTimer > 0f &&
+                effects.VulnerabilityLandingBlast != 0)
+                effects.VulnerabilityLandingBlastPending = 1;
             if (startingLaunchChain)
             {
                 effects.LaunchStackTimer = math.max(effects.LaunchStackTimer, LaunchStackDuration);
@@ -3070,20 +3246,64 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             if (skill.Type == 13)
             {
                 effects.SlowStacks = 1f;
-                effects.SlowPercent = math.max(0f, skill.EffectSlowPercent);
+                effects.SlowPercent = math.max(effects.SlowPercent,
+                    math.max(0f, skill.EffectSlowPercent));
             }
             else
             {
                 effects.SlowStacks = 0f;
-                effects.SlowPercent = skill.EffectSlowPercent;
+                effects.SlowPercent = skill.SourceTowerTileEffect ==
+                                      (int)RougeTowerPlaceEffect.Frost
+                    ? math.max(effects.SlowPercent, skill.EffectSlowPercent)
+                    : skill.EffectSlowPercent;
             }
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
         }
 
+        if (skill.EffectVulnerabilityDuration > 0f)
+        {
+            // Vulnerability components form a strongest-value union. Any new
+            // vulnerability application refreshes the whole merged set, so +damage
+            // and negative armor from different Ice towers can coexist.
+            float mergedDuration = math.max(effects.VulnerabilityTimer,
+                skill.EffectVulnerabilityDuration);
+            effects.VulnerabilityTimer = mergedDuration;
+            effects.VulnerabilityDamageBonus = math.max(
+                effects.VulnerabilityDamageBonus,
+                math.max(0f, skill.EffectVulnerabilityDamageBonus));
+            effects.VulnerabilityDamageBonusTimer = mergedDuration;
+            if (skill.EffectVulnerabilityArmor < 0f)
+            {
+                effects.VulnerabilityArmor = effects.VulnerabilityArmorTimer > 0f
+                    ? math.min(effects.VulnerabilityArmor, skill.EffectVulnerabilityArmor)
+                    : skill.EffectVulnerabilityArmor;
+                effects.VulnerabilityArmorTimer = mergedDuration;
+            }
+            if (skill.EffectVulnerabilityLandingBlast != 0)
+            {
+                effects.VulnerabilityLandingBlast = 1;
+                effects.VulnerabilityLandingBlastTimer = math.max(
+                    effects.VulnerabilityLandingBlastTimer,
+                    skill.EffectVulnerabilityDuration);
+                effects.VulnerabilityLandingRadiusMultiplier = math.max(0f,
+                    skill.EffectVulnerabilityLandingRadiusMultiplier);
+                effects.VulnerabilityLandingNormalDamageRatio = math.max(0f,
+                    skill.EffectVulnerabilityLandingNormalDamageRatio);
+                effects.VulnerabilityLandingEliteBossDamageRatio = math.max(0f,
+                    skill.EffectVulnerabilityLandingEliteBossDamageRatio);
+                if (tornadoMark > 0.5f || vel.y > 0.05f ||
+                    pos.y > RenderHeight + 0.05f || effects.LaunchMotionTimer > 0f)
+                    effects.VulnerabilityLandingBlastPending = 1;
+            }
+        }
+
         if ((tags & SkillHitEffectTag.Freeze) != 0)
         {
-            effects.FreezeTimer = math.max(effects.FreezeTimer,
-                skill.EffectFreezeDuration > 0f ? skill.EffectFreezeDuration : 2f);
+            float freezeDuration = skill.EffectFreezeDuration > 0f
+                ? skill.EffectFreezeDuration
+                : 2f;
+            ApplyFreezeStatus(ref effects, freezeDuration,
+                skill.EffectBossFreezeImmunityDuration);
         }
 
         if ((tags & SkillHitEffectTag.Curse) != 0)
@@ -3162,6 +3382,43 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         vel4 = float4.zero;
         state4 = new float4(EnemyMaxHealth, EnemyRadius, EnemyMaxSpeed * speedScale, 0f);
         effects = default;
+        effects.MaximumHealth = EnemyMaxHealth;
+        effects.Armor = math.max(0f, EnemyArmor);
+    }
+
+    private static float ApplyArmor(float rawDamage, RougeEnemyEffectState effects)
+    {
+        rawDamage = math.max(0f, rawDamage);
+        if (rawDamage <= 0f)
+        {
+            return 0f;
+        }
+
+        float armor = effects.Armor;
+        if (effects.VulnerabilityTimer > 0f)
+        {
+            if (effects.VulnerabilityArmorTimer > 0f)
+                armor = effects.VulnerabilityArmor;
+            else if (armor > 0f)
+                armor *= 0.5f;
+        }
+        float resolved = (rawDamage - armor) * (1f - armor * 0.1f);
+        resolved = math.max(1f, resolved);
+        if (effects.VulnerabilityTimer > 0f)
+            resolved *= 1f + math.max(0f, effects.VulnerabilityDamageBonus);
+        return math.max(1f, resolved);
+    }
+
+    private static void ApplyFreezeStatus(ref RougeEnemyEffectState effects,
+        float freezeDuration, float bossImmunityDuration)
+    {
+        freezeDuration = math.max(0f, freezeDuration);
+        bool blocked = bossImmunityDuration > 0f && effects.BossFreezeImmunityTimer > 0f;
+        if (freezeDuration <= 0f || blocked) return;
+        effects.FreezeTimer = math.max(effects.FreezeTimer, freezeDuration);
+        if (bossImmunityDuration > 0f)
+            effects.BossFreezeImmunityTimer = math.max(effects.BossFreezeImmunityTimer,
+                freezeDuration + bossImmunityDuration);
     }
 
     private static float DistanceSqPointSegment(float2 point, float2 a, float2 b)
@@ -3846,6 +4103,23 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     });
                 }
 
+                if (effects.EmbeddedMachineGunFragmentCount > 0 &&
+                    effects.EmbeddedMachineGunFragmentDamage > 0f)
+                {
+                    SkillEventQueue.Enqueue(new RougeSkillEvent
+                    {
+                        Type = (int)RougeSkillEventType.MachineGunEmbeddedFragments,
+                        Position = pos.xz,
+                        Damage = effects.EmbeddedMachineGunFragmentDamage,
+                        Duration = effects.EmbeddedMachineGunFragmentRange,
+                        Count = effects.EmbeddedMachineGunFragmentCount,
+                        KillGoldBonus = effects.EmbeddedMachineGunKillGoldBonus,
+                        WealthCellIndexPlusOne =
+                            effects.EmbeddedMachineGunWealthCellIndexPlusOne,
+                        TileEffect = effects.EmbeddedMachineGunTileEffect
+                    });
+                }
+
                 SkillEventQueue.Enqueue(new RougeSkillEvent
                 {
                     Type = (int)RougeSkillEventType.EnemyDeathBurst,
@@ -4259,12 +4533,16 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
             if (skill.Type == 13)
             {
                 effects.SlowStacks = 1f;
-                effects.SlowPercent = math.max(0f, skill.EffectSlowPercent);
+                effects.SlowPercent = math.max(effects.SlowPercent,
+                    math.max(0f, skill.EffectSlowPercent));
             }
             else
             {
                 effects.SlowStacks = 0f;
-                effects.SlowPercent = skill.EffectSlowPercent;
+                effects.SlowPercent = skill.SourceTowerTileEffect ==
+                                      (int)RougeTowerPlaceEffect.Frost
+                    ? math.max(effects.SlowPercent, skill.EffectSlowPercent)
+                    : skill.EffectSlowPercent;
             }
             effects.SlowTimer = math.max(effects.SlowTimer, skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
         }

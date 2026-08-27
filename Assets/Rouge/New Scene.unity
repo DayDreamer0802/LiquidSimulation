@@ -572,10 +572,9 @@ MonoBehaviour:
   map: {fileID: 11400000, guid: 04dd93d95e5618a48bb11f8984112d3d, type: 2}
   loadOnEnable: 1
   clearOnDisable: 1
-  placedTowerGridColor: {r: 0.9025157, g: 1, b: 0.9953849, a: 0.98}
+  placedTowerGridColor: {r: 0.82, g: 1, b: 0.94, a: 0.68}
   validTowerGridColor: {r: 0.12, g: 1, b: 0.34, a: 0.98}
   invalidTowerGridColor: {r: 1, g: 0.23, b: 0.18, a: 0.9}
-  ownedCellCornerColor: {r: 1, g: 0.76, b: 0.08, a: 1}
   ownedCellCornerLength: 0.23
   ownedCellCornerWidth: 0.024
   ownedCellCornerInset: 0.045
@@ -719,6 +718,7 @@ MonoBehaviour:
   urpLitShader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
   enemyCount: 100000
   enemyMaxHealth: 24
+  enemyArmor: 1
   enemyRadius: 1.2
   enemyMaxSpeed: 7
   enemySpriteSize: {x: 1, y: 1}
@@ -2514,15 +2514,69 @@ MonoBehaviour:
   mainTower: {fileID: 0}
   towerBalance:
     sellRefundMultiplier: 0.25
+    iceTowerSpecialization:
+      slowPercent: 50
+      slowDuration: 1.5
+      freezeNormalDuration: 1
+      freezeEliteDuration: 0.75
+      freezeBossDuration: 0.5
+      freezeBossImmunityDuration: 0.5
+      frostAttackSlowPercent: 70
+      frostDurationBonus: 0.25
+      iceSpikeMinCells: 3
+      iceSpikeMaxCells: 5
+      iceSpikeIntervalMin: 0.8
+      iceSpikeIntervalMax: 1.2
+      iceSpikeDamageMultiplier: 0.5
+      iceSpikeFreezeDurationMultiplier: 0.5
+      vulnerabilityDuration: 2
+      vulnerabilityDamageBonus: 0.5
+      vulnerabilityEliteScale: 1
+      vulnerabilityBossScale: 1
+      vulnerabilityArmor: -2
+    machineGunSpecialization:
+      criticalChance: 0.25
+      upgradedCriticalChance: 0.5
+      criticalDamageMultiplier: 2
+      criticalArmorPenetration: 4
+      fragmentTriggerChance: 0.5
+      fragmentCount: 3
+      upgradedFragmentCount: 6
+      fragmentDamageMultiplier: 0.3
+      embeddedFragmentChance: 0.5
+      embeddedFragmentDamageMultiplier: 0.5
+      fragmentSpeed: 70
+      fragmentHitRadius: 1.5
+    cannonSpecialization:
+      innerRadiusMultiplier: 0.33333334
+      innerDamageMultiplier: 2
+      upgradedAoeRadiusMultiplier: 1.25
+      upgradedInnerRadiusMultiplier: 0.5
+      upgradedInnerDamageMultiplier: 3
+      secondaryTriggerChance: 0.25
+      secondaryProjectileCount: 3
+      secondaryDamageMultiplier: 0.25
+      secondaryRadiusMultiplier: 0.25
+      secondaryFlightDuration: 1
+      secondaryTravelDistanceMultiplier: 0.25
+      secondaryArcHeightMultiplier: 0.35
+      persistentLandingDamageMultiplier: 0.25
+      persistentTickInterval: 0.5
+      persistentTickDamageMultiplier: 0.2
+      persistentTickCount: 5
+      persistentKnockbackForce: 4
+      upgradedPersistentExtraTicks: 2
+      upgradedPersistentDamageMultiplier: 0.25
     towers:
     - towerType: 0
       placementRadius: 2.2
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 625
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 625
         damage: 10
@@ -2575,48 +2629,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 5000
-        damage: 32
-        attackInterval: 3.5
-        attackRange: 36
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 25
-        effectDuration: 3
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 10000
-        damage: 40
-        attackInterval: 3
-        attackRange: 40
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 25
-        effectDuration: 3
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 1
       placementRadius: 2
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 400
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 400
         damage: 5
@@ -2669,48 +2690,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 3200
-        damage: 15
-        attackInterval: 0.05
-        attackRange: 60
-        targetCount: 12
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 6400
-        damage: 20
-        attackInterval: 0.05
-        attackRange: 72
-        targetCount: 15
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 2
       placementRadius: 2.7
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 750
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 750
         damage: 50
@@ -2763,48 +2751,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 6000
-        damage: 125
-        attackInterval: 2.2
-        attackRange: 68
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 12
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 12000
-        damage: 200
-        attackInterval: 2
-        attackRange: 80
-        targetCount: 2
-        projectileCount: 2
-        aoeRadius: 15
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 3
       placementRadius: 2.4
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 625
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 625
         damage: 10
@@ -2857,48 +2812,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 5000
-        damage: 16
-        attackInterval: 5
-        attackRange: 32
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 8
-        effectPercent: 0
-        effectDuration: 4
-        tickInterval: 0.5
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 10000
-        damage: 20
-        attackInterval: 5
-        attackRange: 36
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 10
-        effectPercent: 0
-        effectDuration: 6
-        tickInterval: 0.25
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 4
       placementRadius: 2.3
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 750
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 750
         damage: 2
@@ -2951,48 +2873,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 6000
-        damage: 5
-        attackInterval: 0.016666668
-        attackRange: 42
-        targetCount: 20
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 12000
-        damage: 7
-        attackInterval: 0.016666668
-        attackRange: 48
-        targetCount: 30
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 5
       placementRadius: 2.8
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 1000
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 1000
         damage: 200
@@ -3045,48 +2934,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 8000
-        damage: 500
-        attackInterval: 4.25
-        attackRange: 52
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 16000
-        damage: 1000
-        attackInterval: 4
-        attackRange: 60
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 1.2
-        orbitRadialSpeed: 8
-        orbitAngularSpeed: 180
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 6
       placementRadius: 2.5
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 900
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 900
         damage: 30
@@ -3139,48 +2995,15 @@ MonoBehaviour:
         projectileInterval: 0.09
         projectileFlightDuration: 1.05
         brownianStrength: 3
-      - goldCost: 7200
-        damage: 90
-        attackInterval: 2.4
-        attackRange: 42
-        targetCount: 1
-        projectileCount: 3
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0.22
-        orbitSphereRadius: 1.5
-        orbitRadialSpeed: 11
-        orbitAngularSpeed: 270
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
-      - goldCost: 14400
-        damage: 125
-        attackInterval: 2.2
-        attackRange: 50
-        targetCount: 1
-        projectileCount: 4
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0.2
-        orbitSphereRadius: 1.7
-        orbitRadialSpeed: 12
-        orbitAngularSpeed: 320
-        orbitOuterHoldDuration: 1.5
-        projectileInterval: 0.09
-        projectileFlightDuration: 1.05
-        brownianStrength: 3
     - towerType: 7
       placementRadius: 2.8
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 1400
       specialTowerCountCostMultiplier: 0
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 1400
         damage: 18
@@ -3233,48 +3056,15 @@ MonoBehaviour:
         projectileInterval: 0.075
         projectileFlightDuration: 0.95
         brownianStrength: 3.4
-      - goldCost: 11200
-        damage: 62
-        attackInterval: 2.6
-        attackRange: 54
-        targetCount: 1
-        projectileCount: 12
-        aoeRadius: 2.85
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0.07
-        projectileFlightDuration: 0.9
-        brownianStrength: 3.6
-      - goldCost: 22400
-        damage: 90
-        attackInterval: 2.4
-        attackRange: 60
-        targetCount: 1
-        projectileCount: 16
-        aoeRadius: 3.1
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0.06
-        projectileFlightDuration: 0.85
-        brownianStrength: 3.8
     - towerType: 8
       placementRadius: 2.8
-      footprintSize: 4
-      footprintWidth: 4
-      footprintHeight: 4
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 4000
       specialTowerCountCostMultiplier: 0.25
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 4000
         damage: 0
@@ -3327,48 +3117,15 @@ MonoBehaviour:
         projectileInterval: 0
         projectileFlightDuration: 0
         brownianStrength: 0
-      - goldCost: 32000
-        damage: 0
-        attackInterval: 1
-        attackRange: 0
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0
-        projectileFlightDuration: 0
-        brownianStrength: 0
-      - goldCost: 64000
-        damage: 0
-        attackInterval: 1
-        attackRange: 0
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0
-        projectileFlightDuration: 0
-        brownianStrength: 0
     - towerType: 9
       placementRadius: 3.1
-      footprintSize: 4
-      footprintWidth: 5
-      footprintHeight: 5
+      footprintSize: 1
+      footprintWidth: 1
+      footprintHeight: 1
       purchaseCost: 6000
       specialTowerCountCostMultiplier: 0.5
       reinforcementAuraBuffLevel: 1
+      reinforcementAuraRangeCells: 1
       levels:
       - goldCost: 6000
         damage: 0
@@ -3405,40 +3162,6 @@ MonoBehaviour:
         projectileFlightDuration: 0
         brownianStrength: 0
       - goldCost: 24000
-        damage: 0
-        attackInterval: 1
-        attackRange: 0
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0
-        projectileFlightDuration: 0
-        brownianStrength: 0
-      - goldCost: 48000
-        damage: 0
-        attackInterval: 1
-        attackRange: 0
-        targetCount: 1
-        projectileCount: 1
-        aoeRadius: 0
-        effectPercent: 0
-        effectDuration: 0
-        tickInterval: 0
-        orbitSphereRadius: 0
-        orbitRadialSpeed: 0
-        orbitAngularSpeed: 0
-        orbitOuterHoldDuration: 0
-        projectileInterval: 0
-        projectileFlightDuration: 0
-        brownianStrength: 0
-      - goldCost: 96000
         damage: 0
         attackInterval: 1
         attackRange: 0
@@ -3718,6 +3441,7 @@ MonoBehaviour:
       killGold: 1
       eliteKillGold: 20
       baseHealth: 10
+      armor: 1
       healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
@@ -3730,6 +3454,7 @@ MonoBehaviour:
       killGold: 1
       eliteKillGold: 20
       baseHealth: 10
+      armor: 1
       healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
@@ -3742,6 +3467,7 @@ MonoBehaviour:
       killGold: 1
       eliteKillGold: 20
       baseHealth: 10
+      armor: 1
       healthGrowthMultiplier: 1
       baseSpeed: 6
       size: 1
@@ -3757,6 +3483,7 @@ MonoBehaviour:
     targetArrivalTimeSeconds: 1200
     targetTravelTimeSeconds: 300
     maxHealth: 1000000
+    armor: 5
     moveSpeed: 3.5
     maximumSlowPercent: 20
     radius: 5
@@ -3780,6 +3507,7 @@ MonoBehaviour:
     targetArrivalTimeSeconds: 1200
     targetTravelTimeSeconds: 300
     maxHealth: 1000000
+    armor: 5
     moveSpeed: 3.5
     maximumSlowPercent: 20
     radius: 5
