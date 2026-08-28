@@ -548,6 +548,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("startingGold"), new GUIContent("初始金币"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyHealthMultiplier"), new GUIContent("敌人生命倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyMoveSpeedMultiplier"), new GUIContent("敌人移速倍率"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("eliteSpawnDelaySeconds"),
+            new GUIContent("精英禁生成时间（秒）", "关卡开始后的这段游戏时间内，随机生成的敌人不会成为精英。"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerGoldCostMultiplier"), new GUIContent("塔楼金币消耗倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerDamageMultiplier"), new GUIContent("塔楼伤害倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerAttackSpeedMultiplier"), new GUIContent("塔楼攻速倍率"));

@@ -334,6 +334,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     // Navigation/crowd simulation still samples terrain more finely. Tower placement is
     // cell-based and never exposes or consumes these internal simulation subdivisions.
     public const int MicroCellsPerTile = 16;
+    public const float DefaultEliteSpawnDelaySeconds = 180f;
     [Serializable]
     public sealed class TileDefinition
     {
@@ -419,6 +420,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     private List<int> disabledTowerTypeIds = new List<int>();
     [SerializeField, Min(0.01f)] private float enemyHealthMultiplier = 1f;
     [SerializeField, Min(0.01f)] private float enemyMoveSpeedMultiplier = 1f;
+    [SerializeField, Min(0f), Tooltip("Game time in seconds during which random enemies cannot become elites.")]
+    private float eliteSpawnDelaySeconds = DefaultEliteSpawnDelaySeconds;
     [SerializeField, Min(0f)] private float towerGoldCostMultiplier = 1f;
     [SerializeField, Min(0f)] private float towerDamageMultiplier = 1f;
     [SerializeField, Min(0.01f)] private float towerAttackSpeedMultiplier = 1f;
@@ -473,6 +476,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public IReadOnlyList<int> DisabledTowerTypeIds => disabledTowerTypeIds;
     public float EnemyHealthMultiplier => enemyHealthMultiplier;
     public float EnemyMoveSpeedMultiplier => enemyMoveSpeedMultiplier;
+    public float EliteSpawnDelaySeconds => eliteSpawnDelaySeconds;
     public float TowerGoldCostMultiplier => towerGoldCostMultiplier;
     public float TowerDamageMultiplier => towerDamageMultiplier;
     public float TowerAttackSpeedMultiplier => towerAttackSpeedMultiplier;
@@ -854,6 +858,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         disabledTowerTypeIds = new List<int>();
         enemyHealthMultiplier = 1f;
         enemyMoveSpeedMultiplier = 1f;
+        eliteSpawnDelaySeconds = DefaultEliteSpawnDelaySeconds;
         towerGoldCostMultiplier = 1f;
         towerDamageMultiplier = 1f;
         towerAttackSpeedMultiplier = 1f;
@@ -914,6 +919,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         tiltShiftSettings = tiltShiftSettings.Sanitized();
         enemyHealthMultiplier = Mathf.Max(0.01f, enemyHealthMultiplier);
         enemyMoveSpeedMultiplier = Mathf.Max(0.01f, enemyMoveSpeedMultiplier);
+        eliteSpawnDelaySeconds = Mathf.Max(0f, eliteSpawnDelaySeconds);
         towerGoldCostMultiplier = Mathf.Max(0f, towerGoldCostMultiplier);
         towerDamageMultiplier = Mathf.Max(0f, towerDamageMultiplier);
         towerAttackSpeedMultiplier = Mathf.Max(0.01f, towerAttackSpeedMultiplier);

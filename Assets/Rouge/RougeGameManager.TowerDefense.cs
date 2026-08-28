@@ -3252,6 +3252,11 @@ public partial class RougeGameManager
     private byte RollTowerDefenseEnemyKind(int waveEnemyTypeIndex)
     {
         byte kind = (byte)Mathf.Clamp(waveEnemyTypeIndex, 0, EnemyArchetypeMask);
+        float eliteSpawnDelay = _towerDefenseLevel != null
+            ? Mathf.Max(0f, _towerDefenseLevel.EliteSpawnDelaySeconds)
+            : RougeTowerDefenseMap.DefaultEliteSpawnDelaySeconds;
+        if (_survivalTime < eliteSpawnDelay) return kind;
+
         float eliteChance = enemyBalance.EvaluateEliteChance01(GetTowerDefenseEnemyLevel());
         if (UnityEngine.Random.value < eliteChance) kind |= EliteEnemyFlag;
         return kind;
