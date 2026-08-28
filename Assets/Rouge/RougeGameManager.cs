@@ -48,6 +48,7 @@ public partial class RougeGameManager : MonoBehaviour
     [SerializeField] private Shader aoeRingShader;
     [SerializeField] private Shader groundZoneShader;
     [SerializeField] private Shader hologramShader;
+    [SerializeField] private Shader towerUpgradeVfxShader;
     [SerializeField] private Shader techPanelShader;
     [SerializeField] private Shader laserBeamShader;
     [SerializeField] private Shader urpLitShader;
@@ -633,6 +634,17 @@ public partial class RougeGameManager : MonoBehaviour
         // after R has requested a reload.
         if (!_initialized || _towerDefenseSceneReloadRequested)
         {
+            return;
+        }
+
+        // Observation transitions run on unscaled time while gameplay is frozen.
+        // Keep completed simulation counters intact: they are authoritative results
+        // from the preceding frame and will be settled after the camera transition.
+        if (IsCameraViewTransitionPaused)
+        {
+            RenderEnemies();
+            RenderOrbitSphereVisuals();
+            RenderTowerDefensePausedFrame(false);
             return;
         }
 
@@ -1798,6 +1810,10 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void HandleCameraZoomInput()
     {
+        if (_towerDefenseInitialized &&
+            _cameraViewMode != CameraViewMode.Default &&
+            _cameraViewMode != CameraViewMode.TopDown)
+            return;
         float scroll = Input.mouseScrollDelta.y;
         if (math.abs(scroll) <= 0.001f)
         {
@@ -3498,6 +3514,7 @@ public partial class RougeGameManager : MonoBehaviour
         AssignShaderReferenceIfMissing(ref aoeRingShader, "Rouge/AOERing");
         AssignShaderReferenceIfMissing(ref groundZoneShader, "Rouge/GroundZone");
         AssignShaderReferenceIfMissing(ref hologramShader, "Rouge/Hologram");
+        AssignShaderReferenceIfMissing(ref towerUpgradeVfxShader, "Rouge/Tower Upgrade VFX");
         AssignShaderReferenceIfMissing(ref techPanelShader, "Rouge/TechPanel");
         AssignShaderReferenceIfMissing(ref laserBeamShader, "Rouge/LaserBeam");
         AssignShaderReferenceIfMissing(ref urpLitShader, "Universal Render Pipeline/Lit");
@@ -3587,6 +3604,8 @@ public partial class RougeGameManager : MonoBehaviour
                 return groundZoneShader;
             case "Rouge/Hologram":
                 return hologramShader;
+            case "Rouge/Tower Upgrade VFX":
+                return towerUpgradeVfxShader;
             case "Rouge/TechPanel":
                 return techPanelShader;
             case "Rouge/LaserBeam":

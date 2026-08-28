@@ -13,8 +13,10 @@ Shader "Hidden/Rouge/TiltShift"
         #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
         float4 _RougeTiltShiftParams;
+        float4 _RougeTiltShiftTransitions;
         float _RougeTiltShiftBlurRadius;
         float _RougeTiltShiftVerticalScale;
+        float _RougeTiltShiftUiTop;
         float4 _RougeTiltShiftColor;
 
         TEXTURE2D_X(_RougeTiltShiftBlurTexture);
@@ -70,11 +72,25 @@ Shader "Hidden/Rouge/TiltShift"
             {
                 half3 blurred = SAMPLE_TEXTURE2D_X(
                     _RougeTiltShiftBlurTexture, sampler_LinearClamp, uv).rgb;
-                float distanceFromFocus = abs(uv.y - _RougeTiltShiftParams.y);
-                float blurMask = smoothstep(
-                    _RougeTiltShiftParams.z,
-                    _RougeTiltShiftParams.z + _RougeTiltShiftParams.w,
-                    distanceFromFocus);
+                // Normalize against the part of the screen that still shows the game.
+                // The dock edge becomes gameY=0, so the lower transition remains
+                // visible above the UI instead of being hidden behind it.
+                float visibleGameBottom = _RougeTiltShiftUiTop >= 0.0
+                    ? _RougeTiltShiftUiTop
+                    : 0.0;
+                float gameY = saturate((uv.y - visibleGameBottom) /
+                    max(0.0001, 1.0 - visibleGameBottom));
+                float upperDistance = max(0.0,
+                    gameY - _RougeTiltShiftParams.y);
+                float lowerDistance = max(0.0,
+                    _RougeTiltShiftParams.y - gameY);
+                float upperBlur = smoothstep(_RougeTiltShiftParams.z,
+                    _RougeTiltShiftParams.z + _RougeTiltShiftTransitions.x,
+                    upperDistance) * _RougeTiltShiftTransitions.z;
+                float lowerBlur = smoothstep(_RougeTiltShiftParams.w,
+                    _RougeTiltShiftParams.w + _RougeTiltShiftTransitions.y,
+                    lowerDistance) * _RougeTiltShiftTransitions.w;
+                float blurMask = saturate(max(lowerBlur, upperBlur));
                 color = lerp(source.rgb, blurred, blurMask);
             }
             half luminance = dot(color, half3(0.2126h, 0.7152h, 0.0722h));

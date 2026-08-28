@@ -11,7 +11,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         Tile,
         EnemySpawn,
         MainTower,
-        BossSpawn
+        BossSpawn,
+        Camera
     }
 
     private enum UpperDragKind
@@ -155,7 +156,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             _settingsScroll = EditorGUILayout.BeginScrollView(_settingsScroll);
             EditorGUILayout.LabelField("图层 / 画笔", EditorStyles.boldLabel);
             PaintTool nextTool = (PaintTool)GUILayout.Toolbar((int)_tool,
-                new[] { "地图", "敌人", "主塔", "Boss" }, GUILayout.Height(28f));
+                new[] { "地图", "敌人", "主塔", "Boss", "镜头" }, GUILayout.Height(28f));
             if (nextTool != _tool)
             {
                 _tool = nextTool;
@@ -168,6 +169,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 EditorGUILayout.HelpBox("左键：绘制地形。右键：删除地形及其上层对象。主塔所在格受保护。", MessageType.None);
             else if (_tool == PaintTool.EnemySpawn)
                 EditorGUILayout.HelpBox("点击空的可行走地块创建敌人出生点。拖动已有编号标记可移动；右键只删除上层标记。", MessageType.None);
+            else if (_tool == PaintTool.Camera)
+                EditorGUILayout.HelpBox("Scene 相机直接定义四种模式的 1× 初始镜头；每次切换都会回到对应预设。", MessageType.None);
             else
                 EditorGUILayout.HelpBox("只编辑上层：对象必须放在可行走地块上且不能重叠。右键会保留底层地形；主塔不能删除。", MessageType.None);
 
@@ -184,6 +187,9 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                     break;
                 case PaintTool.BossSpawn:
                     DrawBossLayerSettings();
+                    break;
+                case PaintTool.Camera:
+                    DrawCameraSettings();
                     break;
             }
             EditorGUILayout.EndScrollView();
@@ -328,7 +334,6 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
 
         // Level-wide gameplay rules live on the Main tab so the Map tab stays focused on terrain.
         DrawLevelRulesSettings();
-        DrawLevelCameraSettings();
     }
 
     private void DrawBossLayerSettings()
@@ -350,6 +355,11 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
                 MessageType.Warning);
         }
         ApplyMapPropertyChanges("Edit Boss Layer Settings");
+    }
+
+    private void DrawCameraSettings()
+    {
+        DrawLevelCameraSettings();
     }
 
     private void ApplyMapPropertyChanges(string undoName)
@@ -801,15 +811,40 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("cameraBoundsSize"),
             new GUIContent("边界尺寸（宽/高）"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("minimumCameraZoom"),
-            new GUIContent("最小缩放"));
+            new GUIContent("默认 / F3 最小视距"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("maximumCameraZoom"),
-            new GUIContent("最大缩放"));
+            new GUIContent("默认 / F3 最大视距"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("tiltShiftSettings"),
+            new GUIContent("F2 移轴配置（通常从 Scene 写入）"), true);
         bool guiChanged = EditorGUI.EndChangeCheck();
         if (guiChanged) Undo.SetCurrentGroupName("Edit Level Camera Clamp");
         if (_serializedMap.ApplyModifiedProperties()) MarkMapChanged();
+        EditorGUILayout.Space(4f);
+        EditorGUILayout.LabelField("四模式 1× 基准", EditorStyles.boldLabel);
+        DrawCameraPresetStatus("默认", _map.DefaultCameraView);
+        DrawCameraPresetStatus("F1 自由", _map.FreeCameraView);
+        DrawCameraPresetStatus("F2 移轴", _map.TiltShiftCameraView);
+        DrawCameraPresetStatus("F3 俯视", _map.TopDownCameraView);
         EditorGUILayout.HelpBox(
-            "这些数值保存在当前地图资源中，因此每个关卡互相独立。使用该地图的场景加载器会在运行时应用它们。",
+            "默认与 F3 共用同一个运行时视距倍率（初始 1，建议范围 0.5–2），移动仍受镜头边界钳制。",
             MessageType.None);
+    }
+
+    private static void DrawCameraPresetStatus(string label,
+        RougeCameraViewPreset preset)
+    {
+        if (!preset.Configured)
+        {
+            EditorGUILayout.LabelField($"○ {label}", "未从 Scene 写入");
+            return;
+        }
+        string projection = preset.Orthographic
+            ? $"正交 {preset.OrthographicSize:0.##}"
+            : $"透视 {preset.FieldOfView:0.#}°";
+        Vector3 p = preset.Position;
+        Vector3 r = preset.EulerAngles;
+        EditorGUILayout.LabelField($"● {label}",
+            $"P({p.x:0.#}, {p.y:0.#}, {p.z:0.#})  R({r.x:0.#}, {r.y:0.#}, {r.z:0.#})  {projection}");
     }
 
     private void DrawMapPanel()
@@ -960,7 +995,10 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         }
         else if (evt.type == EventType.MouseDrag && _painting && (evt.button == 0 || evt.button == 1))
         {
-            if (inside) PaintLine(_hoverCell, evt.button == 1);
+            if (inside)
+            {
+                PaintLine(_hoverCell, evt.button == 1);
+            }
             evt.Use();
         }
         else if ((evt.type == EventType.MouseUp || evt.rawType == EventType.MouseUp) && _painting)

@@ -137,6 +137,18 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
         _instance.ApplyTier(next, true);
     }
 
+    public static void SetActiveTier(RougeVisualQualityTier tier)
+    {
+        tier = (RougeVisualQualityTier)Mathf.Clamp((int)tier, 0, 2);
+        if (_instance != null)
+        {
+            _instance.ApplyTier(tier, true);
+            return;
+        }
+        _activeTier = tier;
+        PlayerPrefs.SetInt(PreferenceKey, (int)tier);
+    }
+
     public static string GetTierLabel(RougeVisualQualityTier tier)
     {
         return tier switch

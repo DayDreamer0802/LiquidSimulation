@@ -415,6 +415,57 @@ MonoBehaviour:
     defeatGrantsVictory: 1
   configureCameraBounds: 1
   cameraBoundsCenter: {x: 0, y: 0}
-  cameraBoundsSize: {x: 142, y: 142}
-  minimumCameraZoom: 1
-  maximumCameraZoom: 3
+  cameraBoundsSize: {x: 100, y: 100}
+  minimumCameraZoom: 0.5
+  maximumCameraZoom: 1.5
+  defaultCameraPositionXZ: {x: 0, y: -98}
+  tiltShiftCameraPositionXZ: {x: 0, y: -82}
+  defaultCameraView:
+    configured: 1
+    position: {x: 0, y: 95, z: -92}
+    eulerAngles: {x: 60.000004, y: 0, z: 0}
+    orthographic: 0
+    fieldOfView: 60
+    orthographicSize: 5
+    nearClipPlane: 0.03
+    farClipPlane: 1000
+  freeCameraView:
+    configured: 1
+    position: {x: 0, y: 65, z: -80}
+    eulerAngles: {x: 60.000004, y: 0, z: 0}
+    orthographic: 0
+    fieldOfView: 75
+    orthographicSize: 5
+    nearClipPlane: 0.03
+    farClipPlane: 1000
+  tiltShiftCameraView:
+    configured: 1
+    position: {x: 0, y: 90, z: -75}
+    eulerAngles: {x: 60.000004, y: -0, z: -0}
+    orthographic: 0
+    fieldOfView: 60
+    orthographicSize: 5
+    nearClipPlane: 0.03
+    farClipPlane: 1000
+  topDownCameraView:
+    configured: 1
+    position: {x: 0, y: 160, z: -21.5}
+    eulerAngles: {x: 90, y: 0, z: 0}
+    orthographic: 0
+    fieldOfView: 60
+    orthographicSize: 5
+    nearClipPlane: 0.03
+    farClipPlane: 1000
+  tiltShiftSettings:
+    focusCenterY: 0.5
+    upperClearRange: 0.2
+    upperTransitionWidth: 0.1
+    upperBlurStrength: 0.86
+    anchorLowerBlurToUi: 1
+    lowerClearRange: 0.05
+    lowerTransitionWidth: 0.1
+    lowerUiEdgeOffset: 0
+    lowerBlurStrength: 0.95
+    blurRadius: 5
+    contrast: 1.01
+    saturation: 1

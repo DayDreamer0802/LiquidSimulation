@@ -98,7 +98,7 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
         }
     }
 
-    private static Material GetHologramMaterial(Shader shader)
+    internal static Material GetHologramMaterial(Shader shader)
     {
         if (s_hologramMaterial != null) return s_hologramMaterial;
         if (shader == null) shader = Shader.Find("Rouge/Hologram");

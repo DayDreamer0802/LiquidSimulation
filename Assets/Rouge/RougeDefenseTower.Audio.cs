@@ -53,6 +53,7 @@ public sealed partial class RougeDefenseTower
         public AudioSource Source;
         public RougeDefenseTower Owner;
         public double ReadyDspTime;
+        public float BaseVolume;
     }
 
     private sealed class TowerLoopVoice
@@ -71,6 +72,7 @@ public sealed partial class RougeDefenseTower
     private static TowerOneShotVoice[] towerCombatVoices;
     private static TowerOneShotVoice[] towerUtilityVoices;
     private static TowerLoopVoice[] towerLoopVoices;
+    private static float towerUserSfxVolume = 1f;
 
     [System.NonSerialized] private double nextTowerAttackAudioTime;
     [System.NonSerialized] private uint towerAudioVariationCounter;
@@ -79,6 +81,14 @@ public sealed partial class RougeDefenseTower
     {
         for (int i = 0; i < TowerAudioResourcePaths.Length; i++)
             LoadTowerAudioClip(TowerAudioResourcePaths[i]);
+    }
+
+    internal static void SetUserSfxVolume(float volume)
+    {
+        towerUserSfxVolume = Mathf.Clamp01(volume);
+        RefreshOneShotPoolVolumes(towerCombatVoices);
+        RefreshOneShotPoolVolumes(towerUtilityVoices);
+        NormalizeTowerLoopVolumes();
     }
 
     internal void PlayPlacementSound()
@@ -230,7 +240,7 @@ public sealed partial class RougeDefenseTower
         source.Stop();
         source.clip = clip;
         source.loop = true;
-        source.volume = TowerLaserLoopTotalVolume;
+        source.volume = TowerLaserLoopTotalVolume * towerUserSfxVolume;
         source.pitch = 1f;
         source.Play();
         NormalizeTowerLoopVolumes();
@@ -354,7 +364,8 @@ public sealed partial class RougeDefenseTower
         source.Stop();
         source.clip = clip;
         source.loop = false;
-        source.volume = volume;
+        voice.BaseVolume = volume;
+        source.volume = volume * towerUserSfxVolume;
         source.pitch = pitch;
         source.panStereo = pan;
         source.Play();
@@ -372,6 +383,7 @@ public sealed partial class RougeDefenseTower
         }
         voice.Owner = null;
         voice.ReadyDspTime = 0d;
+        voice.BaseVolume = 0f;
     }
 
     private static void StopOneShotPool(TowerOneShotVoice[] pool)
@@ -469,12 +481,23 @@ public sealed partial class RougeDefenseTower
         }
         if (activeCount <= 0) return;
 
-        float volume = TowerLaserLoopTotalVolume / activeCount;
+        float volume = TowerLaserLoopTotalVolume / activeCount * towerUserSfxVolume;
         for (int i = 0; i < towerLoopVoices.Length; i++)
         {
             TowerLoopVoice voice = towerLoopVoices[i];
             if (voice != null && voice.Source != null && voice.Owner != null)
                 voice.Source.volume = volume;
+        }
+    }
+
+    private static void RefreshOneShotPoolVolumes(TowerOneShotVoice[] pool)
+    {
+        if (pool == null) return;
+        for (int i = 0; i < pool.Length; i++)
+        {
+            TowerOneShotVoice voice = pool[i];
+            if (voice?.Source == null) continue;
+            voice.Source.volume = voice.BaseVolume * towerUserSfxVolume;
         }
     }
 

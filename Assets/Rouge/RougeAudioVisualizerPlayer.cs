@@ -5,6 +5,8 @@ using UnityEngine.UI;
 [RequireComponent(typeof(AudioSource))]
 public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 {
+    private const int DecorativeCanvasSortingOrder = 40;
+
     private struct BarVisual
     {
         public RectTransform Root;
@@ -67,6 +69,9 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     private Vector2 _cachedLeftSize;
     private Vector2 _cachedRightSize;
     private float _visualRefreshTimer;
+    private float _authoredVolume = 1f;
+    private float _userVolume = 1f;
+    private bool _authoredVolumeCaptured;
 
     public AudioSource Source => _audioSource;
     public bool IsPlaying => _audioSource != null && _audioSource.isPlaying;
@@ -79,6 +84,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     private void Awake()
     {
         EnsureAudioSource();
+        CaptureAuthoredVolume();
         EnsureSpectrumBuffer();
         EnsureLevelBuffer();
     }
@@ -233,12 +239,20 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 
     public void SetVolume(float volume)
     {
-        if (_audioSource == null)
-        {
-            return;
-        }
+        EnsureAudioSource();
+        if (_audioSource == null) return;
+        _authoredVolume = Mathf.Clamp01(volume);
+        _authoredVolumeCaptured = true;
+        _audioSource.volume = _authoredVolume * _userVolume;
+    }
 
-        _audioSource.volume = Mathf.Clamp01(volume);
+    public void SetUserVolume(float volume)
+    {
+        EnsureAudioSource();
+        if (_audioSource == null) return;
+        CaptureAuthoredVolume();
+        _userVolume = Mathf.Clamp01(volume);
+        _audioSource.volume = _authoredVolume * _userVolume;
     }
 
     private void EnsureAudioSource()
@@ -247,6 +261,13 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         {
             _audioSource = GetComponent<AudioSource>();
         }
+    }
+
+    private void CaptureAuthoredVolume()
+    {
+        if (_authoredVolumeCaptured || _audioSource == null) return;
+        _authoredVolume = Mathf.Clamp01(_audioSource.volume);
+        _authoredVolumeCaptured = true;
     }
 
     private void EnsureSpectrumBuffer()
@@ -269,6 +290,9 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     {
         if (_root != null && _leftBars != null && _rightBars != null && _leftBars.Length == _barsPerSide && _rightBars.Length == _barsPerSide)
         {
+            Canvas parentCanvas = _root.GetComponentInParent<Canvas>();
+            if (_useDedicatedOverlayCanvas && parentCanvas != null)
+                parentCanvas.sortingOrder = DecorativeCanvasSortingOrder;
             return;
         }
 
@@ -357,7 +381,8 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
             GameObject canvasObject = new GameObject(_overlayCanvasName, typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
             _runtimeCanvas = canvasObject.GetComponent<Canvas>();
             _runtimeCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            _runtimeCanvas.sortingOrder = 1000;
+            // Keep the decorative spectrum behind the gameplay HUD (sorting 50).
+            _runtimeCanvas.sortingOrder = DecorativeCanvasSortingOrder;
 
             CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -374,6 +399,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     {
         if (_runtimeCanvas != null)
         {
+            _runtimeCanvas.sortingOrder = DecorativeCanvasSortingOrder;
             return _runtimeCanvas;
         }
 
@@ -393,6 +419,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 
             _runtimeCanvas = canvas;
             _ownsRuntimeCanvas = false;
+            _runtimeCanvas.sortingOrder = DecorativeCanvasSortingOrder;
             return _runtimeCanvas;
         }
 
@@ -404,7 +431,8 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         GameObject canvasObject = new GameObject(_overlayCanvasName, typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         _runtimeCanvas = canvasObject.GetComponent<Canvas>();
         _runtimeCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        _runtimeCanvas.sortingOrder = 1000;
+        // Keep the decorative spectrum behind the gameplay HUD (sorting 50).
+        _runtimeCanvas.sortingOrder = DecorativeCanvasSortingOrder;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;

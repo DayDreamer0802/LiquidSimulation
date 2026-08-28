@@ -378,9 +378,9 @@ MonoBehaviour:
   _verticalPadding: 32
   _barSpacing: 4
   _minBarHeight: 2
-  _floatingHeightRatio: 0.56
+  _floatingHeightRatio: 0.34
   _maxHeightRatio: 0.38
-  _activeAlpha: 0.95
+  _activeAlpha: 0.78
   _inactiveAlpha: 0
   _fadeSpeed: 4
   _lowColor: {r: 0.17, g: 0.92, b: 0.83, a: 0.75}
@@ -588,6 +588,11 @@ MonoBehaviour:
   arenaFrameBaseColor: {r: 0.035, g: 0.075, b: 0.11, a: 1}
   arenaFramePanelColor: {r: 0.07, g: 0.14, b: 0.19, a: 1}
   arenaEnergyColor: {r: 0.08, g: 0.82, b: 1.2, a: 1}
+  playStartupMapReveal: 1
+  startupRevealDuration: 1.65
+  startupEdgeFlashDuration: 0.42
+  startupMainTowerRevealDuration: 0.72
+  startupCrystalColor: {r: 0.06, g: 1.15, b: 1.8, a: 1}
 --- !u!4 &613537617
 Transform:
   m_ObjectHideFlags: 0
@@ -600,7 +605,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1701847739}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &995686284
@@ -653,7 +659,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 142, y: 1, z: 142}
+  m_Size: {x: 100, y: 1, z: 100}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!4 &995686287
 Transform:
@@ -722,6 +728,7 @@ MonoBehaviour:
   aoeRingShader: {fileID: 4800000, guid: c1044b71751c5ee41869fd09649335c7, type: 3}
   groundZoneShader: {fileID: 4800000, guid: 9ccdddfacc2305e439f7fe48407b428f, type: 3}
   hologramShader: {fileID: 4800000, guid: 7422d013edeeb1f44854e6faccc25ae6, type: 3}
+  towerUpgradeVfxShader: {fileID: 4800000, guid: 74ed0528c25e4b63b07bdafe8b51d83f, type: 3}
   techPanelShader: {fileID: 4800000, guid: b4ba5ac408e2f8c438946b210d667e04, type: 3}
   laserBeamShader: {fileID: 4800000, guid: e021425b141e2b74c9ac24c0919cd339, type: 3}
   urpLitShader: {fileID: 4800000, guid: 933532a4fcc9baf4fa0491de14d08ed7, type: 3}
@@ -3653,6 +3660,8 @@ MonoBehaviour:
   debugFreeMoveSpeed: 25
   debugFreeFastMultiplier: 4
   debugFreeLookSensitivity: 0.12
+  debugFreeScrollSpeed: 1.25
+  cameraViewTransitionDuration: 0.55
 --- !u!20 &1701847738
 Camera:
   m_ObjectHideFlags: 0
@@ -3684,9 +3693,9 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.3
+  near clip plane: 0.03
   far clip plane: 1000
-  field of view: 60
+  field of view: 75
   orthographic: 0
   orthographic size: 5
   m_Depth: 0
@@ -3712,13 +3721,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1701847736}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.5, y: 0, z: 0, w: 0.8660254}
-  m_LocalPosition: {x: 0, y: 40, z: -25}
+  m_LocalRotation: {x: 0.5, y: -0, z: -0, w: 0.8660254}
+  m_LocalPosition: {x: 0, y: 65, z: -80}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_Father: {fileID: 613537617}
+  m_LocalEulerAnglesHint: {x: 60, y: 0, z: 0}
 --- !u!114 &1701847740
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3777,9 +3786,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   effectEnabled: 0
   focusCenterY: 0.5
-  clearBandHalfHeight: 0.16
-  transitionWidth: 0.2
-  blurRadius: 5.5
+  upperClearRange: 0.2
+  upperTransitionWidth: 0.1
+  upperBlurStrength: 0.86
+  anchorLowerBlurToUi: 1
+  lowerClearRange: 0.05
+  lowerTransitionWidth: 0.1
+  lowerUiEdgeOffset: 0
+  lowerBlurStrength: 0.95
+  blurRadius: 5
   contrast: 1.01
   saturation: 1
 --- !u!114 &1701847742
@@ -3926,7 +3941,6 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 613537617}
-  - {fileID: 1701847739}
   - {fileID: 288212303}
   - {fileID: 1458908833}
   - {fileID: 2130041845}

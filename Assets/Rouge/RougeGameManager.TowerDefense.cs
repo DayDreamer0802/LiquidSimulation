@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Mathematics;
 using UnityEngine;
@@ -126,6 +127,8 @@ public partial class RougeGameManager
     private readonly int[] _accumulatedWealthPendingGold = new int[TowerDefenseMapCellCapacity];
     private readonly float[] _accumulatedWealthPayoutTimers = new float[TowerDefenseMapCellCapacity];
     private bool _towerDefenseInitialized;
+    private bool _towerDefenseStartupActive;
+    private Coroutine _towerDefenseStartupRoutine;
     private bool _towerPlacementMode;
     private bool _showAllTowerAttackRanges;
     private bool _towerDefenseDoubleSpeed;
@@ -170,12 +173,20 @@ public partial class RougeGameManager
     private bool _pendingMainTowerAoe;
     private Canvas _towerDefenseCanvas;
     private Text _towerDefenseStatusText;
+    private Text _towerDefenseControlsText;
     private Button _visualQualityButton;
     private Text _visualQualityButtonText;
-    private Text _towerDefenseModeText;
+    private Image _selectedTowerPortraitFrame;
+    private Image _selectedTowerPortrait;
+    private Text _selectedTowerSummaryText;
+    private Text _selectedTowerBuffText;
+    private RectTransform _towerActionContainer;
     private Text _towerDefenseGameOverText;
     private Image _mainTowerHealthFill;
     private Text _mainTowerHealthText;
+    private GameObject _towerDamagePanel;
+    private GameObject _towerPlaceEffectPanel;
+    private Text _towerPlaceEffectText;
     private Button _towerCancelBuildButton;
     private Text _towerCancelBuildButtonText;
     private Button _towerUpgradeButton;
@@ -189,8 +200,6 @@ public partial class RougeGameManager
     private Button _towerRelocateButton;
     private Text _towerRelocateButtonText;
     private Text _towerDamageRankingText;
-    private GameObject _towerPlaceEffectPanel;
-    private Text _towerPlaceEffectText;
     private Button _chargeTowerBuildButton;
     private Text _chargeTowerBuildButtonText;
     private Button _reinforcementTowerBuildButton;
@@ -403,6 +412,9 @@ public partial class RougeGameManager
         EnsureBossBalanceDefaults();
         tacticalSkillBalance.EnsureDefaults();
         _towerDefenseLevel = RougeTowerDefenseMapLoader.ActiveMap;
+        InitializePlayerSettings();
+        cameraZoomMultiplier = 1f;
+        _cameraViewMode = CameraViewMode.Default;
         ApplyEnemySpriteSheetTextures();
         TowerDefenseVisuals.SetRuntimeBalance(towerBalance);
         TowerDefenseVisuals.SetRuntimeLevelModifiers(
@@ -476,14 +488,80 @@ public partial class RougeGameManager
         if (cameraFollow != null)
         {
             cameraFollow.SetTowerDefensePan(true);
-            if (mainTower != null) cameraFollow.FocusGroundPointImmediately(mainTower.transform.position);
+            RougeCameraFollow.ViewState defaultView =
+                ResolveCameraViewPreset(CameraViewMode.Default, cameraFollow);
+            PrepareCameraPresetTransition(cameraFollow, CameraViewMode.Default, defaultView);
+            cameraFollow.ApplyViewState(defaultView);
         }
         ResolveEnemySpawnPoints();
         ResolveExistingDefenseTowers();
         RefreshReinforcementTowerAuras();
         PrepareTowerTargetRequests();
         BuildTowerDefenseUi();
+        PrewarmTowerDefenseCameraUiGlyphs();
+        RougeCameraModeToast.Prewarm(GetTowerDefenseHudFont());
+        BuildPlayerSettingsUi();
+        ApplyDamageStatisticsVisibility();
         RefreshTowerDefenseUi();
+        BeginTowerDefenseStartup();
+    }
+
+    private void BeginTowerDefenseStartup()
+    {
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        if (loader == null || !loader.StartupRevealEnabled || _towerDefenseLevel == null)
+        {
+            loader?.CancelStartupReveal();
+            _towerDefenseStartupActive = false;
+            return;
+        }
+
+        _towerDefenseStartupActive = true;
+        Time.timeScale = 0f;
+        if (_towerDefenseCanvas != null) _towerDefenseCanvas.gameObject.SetActive(false);
+        _towerDefenseStartupRoutine = StartCoroutine(PlayTowerDefenseStartup(loader));
+    }
+
+    private IEnumerator PlayTowerDefenseStartup(RougeTowerDefenseMapLoader loader)
+    {
+        RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
+        RougeTiltShiftCamera tiltShift = ResolveTiltShiftCamera();
+        if (follow != null)
+        {
+            follow.CancelScriptedView();
+            RougeCameraFollow.ViewState openingView =
+                ResolveCameraViewPreset(CameraViewMode.TiltShift, follow);
+            follow.SetViewBaseline(openingView);
+            follow.ApplyViewState(openingView);
+        }
+        if (tiltShift != null)
+        {
+            tiltShift.ApplySettings(_towerDefenseLevel.TiltShiftSettings);
+            tiltShift.ClearWorldFocusPoint();
+            tiltShift.SetEffectEnabled(true);
+        }
+
+        yield return loader.PlayStartupReveal(mainTower);
+
+        if (follow != null)
+        {
+            RougeCameraFollow.ViewState gameplayView =
+                ResolveCameraViewPreset(CameraViewMode.Default, follow);
+            PrepareCameraPresetTransition(follow, CameraViewMode.Default, gameplayView);
+            follow.TransitionAndReleaseScriptedView(gameplayView);
+            while (follow != null && follow.IsScriptedViewActive)
+                yield return null;
+        }
+
+        if (tiltShift != null) tiltShift.SetEffectEnabled(false);
+        if (_towerDefenseCanvas != null) _towerDefenseCanvas.gameObject.SetActive(true);
+        _towerDefenseStartupActive = false;
+        if (_towerDefenseGameOver)
+            Time.timeScale = 0f;
+        else
+            ApplyTowerDefenseTimeScale();
+        RefreshTowerDefenseUi(true);
+        _towerDefenseStartupRoutine = null;
     }
 
     private void EnsureTowerDefenseInitialized()
@@ -503,6 +581,13 @@ public partial class RougeGameManager
         if (!_towerDefenseInitialized) return;
 
         StopAllTowerAttackSounds();
+        if (_towerDefenseStartupRoutine != null)
+        {
+            StopCoroutine(_towerDefenseStartupRoutine);
+            _towerDefenseStartupRoutine = null;
+        }
+        RougeTowerDefenseMapLoader.Active?.CancelStartupReveal();
+        _towerDefenseStartupActive = false;
         RougeDefenseTower.ShutdownTowerAudio();
         HideTowerDefenseSpawnWarnings();
         if (_cameraViewMode != CameraViewMode.Default) ExitDebugUnitView();
@@ -581,6 +666,8 @@ public partial class RougeGameManager
         _iceSpikeCandidateCells.Clear();
         if (_towerDefenseCanvas != null) Destroy(_towerDefenseCanvas.gameObject);
         _towerDefenseCanvas = null;
+        _towerDamagePanel = null;
+        DisposePlayerSettingsUi();
         _towerTargetRequestCount = 0;
         _towerTargetScheduledCount = 0;
         _bossSchedule.Clear();
@@ -1175,15 +1262,46 @@ public partial class RougeGameManager
 
     private bool IsTowerDefenseSimulationPaused()
     {
-        return _towerDefenseInitialized && _towerDefenseGameOver;
+        return _towerDefenseInitialized &&
+               (_towerDefenseGameOver || _towerDefenseStartupActive ||
+                IsCameraViewTransitionPaused || IsPlayerSettingsOpen);
     }
 
     private void UpdateTowerDefenseInput(float unscaledDt)
     {
         if (!_towerDefenseInitialized) return;
+        UpdateF2MainTowerHealth(unscaledDt);
+        if (_towerDefenseStartupActive) return;
 
         Keyboard keyboard = Keyboard.current;
         Mouse mouse = Mouse.current;
+        if (IsPlayerSettingsOpen)
+        {
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+                ClosePlayerSettings();
+            return;
+        }
+        if (UpdateCameraViewTransition()) return;
+        if (IsTiltShiftObservationActive)
+        {
+            if (!_tiltShiftObservationExiting && keyboard != null &&
+                keyboard.escapeKey.wasPressedThisFrame)
+            {
+                OpenPlayerSettings();
+                return;
+            }
+            if (UpdateCameraViewInput(keyboard)) return;
+            if (!_tiltShiftObservationExiting && mouse != null &&
+                mouse.leftButton.wasPressedThisFrame)
+            {
+                RougeDefenseTower hovered = RaycastDefenseTower();
+                if (hovered != null)
+                    BeginTiltShiftObservationExit(CameraViewMode.Default, hovered);
+                else
+                    ShowF2MainTowerHealth();
+            }
+            return;
+        }
 #if UNITY_EDITOR
         if (keyboard != null && keyboard.f9Key.wasPressedThisFrame)
         {
@@ -1195,6 +1313,11 @@ public partial class RougeGameManager
 #endif
         if (_towerDefenseGameOver)
         {
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                OpenPlayerSettings();
+                return;
+            }
             if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
                 ReloadTowerDefenseScene();
             return;
@@ -1225,6 +1348,13 @@ public partial class RougeGameManager
             return;
         }
 
+        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame &&
+            !_towerPlacementMode)
+        {
+            OpenPlayerSettings();
+            return;
+        }
+
         // Tower/build state is authoritative for simulation speed. Keeping this
         // synchronized also clears a stale 0.5 scale after any exit path.
         ApplyTowerDefenseTimeScale();
@@ -1237,11 +1367,6 @@ public partial class RougeGameManager
         }
 
         if (UpdateCameraViewInput(keyboard)) return;
-
-        if (keyboard != null && keyboard.tabKey.wasPressedThisFrame)
-        {
-            SetTowerPlacementMode(!_towerPlacementMode);
-        }
 
         bool pointerOverUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
         bool debugCameraLooking = _debugUnitViewMode && mouse != null && mouse.rightButton.isPressed;
@@ -1263,7 +1388,7 @@ public partial class RougeGameManager
             RefreshTowerDefenseUi(true);
         }
 
-        if (!_debugUnitViewMode && mouse != null && mouse.rightButton.wasPressedThisFrame)
+        if (mouse != null && mouse.rightButton.wasPressedThisFrame)
         {
             if (_towerRelocationActive) CancelTowerRelocation();
             else SetTowerPlacementMode(false);
@@ -1389,7 +1514,12 @@ public partial class RougeGameManager
 
     private void ApplyTowerDefenseTimeScale()
     {
-        if (_towerDefenseGameOver) return;
+        if (_towerDefenseGameOver || _towerDefenseStartupActive ||
+            IsCameraViewTransitionPaused || IsPlayerSettingsOpen)
+        {
+            Time.timeScale = 0f;
+            return;
+        }
         Time.timeScale = _chargeTowerTargetSelectionActive || _chargeTowerEffectSelectionActive
             ? 0f
             : _towerPlacementMode
@@ -2181,7 +2311,7 @@ public partial class RougeGameManager
         if (_towerDefenseGold < cost) return;
         if (!_selectedTower.Upgrade()) return;
         _towerDefenseGold -= cost;
-        _selectedTower.PlayUpgradeSound();
+        PlayTowerUpgradeFeedback(_selectedTower);
         _selectedTower.name = _selectedTower.DisplayName + " Lv." + _selectedTower.Level;
         _selectedTower.SetRangeVisibility(_towerPlacementMode);
         RefreshTowerDefenseUi(true);
@@ -2214,7 +2344,7 @@ public partial class RougeGameManager
         if (_towerDefenseGold < cost ||
             !_selectedTower.UpgradeSpecializationChoice(choiceIndex)) return;
         _towerDefenseGold -= cost;
-        _selectedTower.PlayUpgradeSound();
+        PlayTowerUpgradeFeedback(_selectedTower);
         _selectedTower.name = _selectedTower.DisplayName + " Lv." + _selectedTower.Level;
         if (_selectedTower.CreatesPermanentFrostTiles)
             ApplyPermanentFrostAroundIceTower(_selectedTower);
@@ -5365,14 +5495,14 @@ public partial class RougeGameManager
         if (beam.ChargeVisual != null) Destroy(beam.ChargeVisual);
     }
 
-    private void RenderTowerDefensePausedFrame()
+    private void RenderTowerDefensePausedFrame(bool refreshUi = true)
     {
         RenderBullets();
         RenderAOERings();
         RenderExplosions();
         RenderDeathBursts();
         RenderTornados();
-        RefreshTowerDefenseUi();
+        if (refreshUi) RefreshTowerDefenseUi();
     }
 
     private void TriggerTowerDefenseGameOver(string reason)
@@ -5427,19 +5557,12 @@ public partial class RougeGameManager
         _towerDefenseCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
         _towerDefenseCanvas.sortingOrder = 50;
         CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
+        RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
         canvasObject.AddComponent<GraphicRaycaster>();
 
         GameObject statusPanel = CreateUiPanel("Status Panel", canvasObject.transform, new Color(0.025f, 0.04f, 0.07f, 0.88f));
         RectTransform statusRect = statusPanel.GetComponent<RectTransform>();
-        statusRect.anchorMin = new Vector2(1f, 1f);
-        statusRect.anchorMax = new Vector2(1f, 1f);
-        statusRect.pivot = new Vector2(1f, 1f);
-        statusRect.anchoredPosition = new Vector2(-20f, -20f);
-        statusRect.sizeDelta = new Vector2(456f, 184f);
+        RougeTowerDefenseUiLayout.ConfigureStatusPanel(statusRect);
         AddHudPanelChrome(statusPanel, new Color(0.08f, 0.72f, 0.94f, 1f));
 
         Text statusTitle = CreateUiText("Status Title", statusPanel.transform, 21, TextAnchor.MiddleLeft);
@@ -5483,16 +5606,12 @@ public partial class RougeGameManager
         _mainTowerHealthText.fontStyle = FontStyle.Bold;
         StretchRect(_mainTowerHealthText.rectTransform, 3f, 1f, 3f, 1f);
 
-        GameObject damagePanel = CreateUiPanel("Tower Damage Ranking", canvasObject.transform,
+        _towerDamagePanel = CreateUiPanel("Tower Damage Ranking", canvasObject.transform,
             new Color(0.025f, 0.04f, 0.07f, 0.88f));
-        RectTransform damageRect = damagePanel.GetComponent<RectTransform>();
-        damageRect.anchorMin = new Vector2(0f, 1f);
-        damageRect.anchorMax = new Vector2(0f, 1f);
-        damageRect.pivot = new Vector2(0f, 1f);
-        damageRect.anchoredPosition = new Vector2(20f, -20f);
-        damageRect.sizeDelta = new Vector2(306f, 236f);
-        AddHudPanelChrome(damagePanel, new Color(1f, 0.57f, 0.16f, 1f));
-        Text damageTitle = CreateUiText("Damage Ranking Title", damagePanel.transform, 21, TextAnchor.MiddleLeft);
+        RectTransform damageRect = _towerDamagePanel.GetComponent<RectTransform>();
+        RougeTowerDefenseUiLayout.ConfigureDamagePanel(damageRect);
+        AddHudPanelChrome(_towerDamagePanel, new Color(0.08f, 0.72f, 0.94f, 1f));
+        Text damageTitle = CreateUiText("Damage Ranking Title", _towerDamagePanel.transform, 21, TextAnchor.MiddleLeft);
         RectTransform damageTitleRect = damageTitle.rectTransform;
         damageTitleRect.anchorMin = new Vector2(0f, 1f);
         damageTitleRect.anchorMax = new Vector2(1f, 1f);
@@ -5501,129 +5620,174 @@ public partial class RougeGameManager
         damageTitleRect.sizeDelta = new Vector2(-36f, 30f);
         damageTitle.text = "塔楼输出";
         damageTitle.fontStyle = FontStyle.Bold;
-        damageTitle.color = new Color(1f, 0.78f, 0.48f, 1f);
-        _towerDamageRankingText = CreateUiText("Damage Ranking", damagePanel.transform, 17, TextAnchor.UpperLeft);
-        _towerDamageRankingText.lineSpacing = 1.04f;
+        damageTitle.color = new Color(0.44f, 0.90f, 1f, 1f);
+        _towerDamageRankingText = CreateUiText("Damage Ranking", _towerDamagePanel.transform, 18, TextAnchor.UpperLeft);
+        _towerDamageRankingText.lineSpacing = 1.32f;
         StretchRect(_towerDamageRankingText.rectTransform, 18f, 43f, 18f, 12f);
 
-        _towerPlaceEffectPanel = CreateUiPanel("Tower Grid Effect", canvasObject.transform,
-            new Color(0.025f, 0.04f, 0.07f, 0.72f));
-        RectTransform effectRect = _towerPlaceEffectPanel.GetComponent<RectTransform>();
-        effectRect.anchorMin = new Vector2(0f, 1f);
-        effectRect.anchorMax = new Vector2(0f, 1f);
-        effectRect.pivot = new Vector2(0f, 1f);
-        effectRect.anchoredPosition = new Vector2(20f, -268f);
-        effectRect.sizeDelta = new Vector2(500f, 460f);
-        AddHudPanelChrome(_towerPlaceEffectPanel, new Color(0.22f, 0.92f, 0.72f, 1f));
-        _towerPlaceEffectText = CreateUiText("Grid Effect", _towerPlaceEffectPanel.transform,
-            17, TextAnchor.UpperLeft);
+        _towerPlaceEffectPanel = CreateUiPanel("Tower Intelligence", canvasObject.transform,
+            new Color(0.004f, 0.018f, 0.029f, 0.76f));
+        RectTransform towerInfoRect = _towerPlaceEffectPanel.GetComponent<RectTransform>();
+        towerInfoRect.anchorMin = new Vector2(0f, 1f);
+        towerInfoRect.anchorMax = new Vector2(0f, 1f);
+        towerInfoRect.pivot = new Vector2(0f, 1f);
+        towerInfoRect.anchoredPosition = new Vector2(20f, -20f);
+        towerInfoRect.sizeDelta = new Vector2(440f, 700f);
+        AddHudPanelChrome(_towerPlaceEffectPanel, new Color(0.10f, 0.78f, 0.82f, 1f));
+        CanvasGroup towerInfoCanvasGroup = _towerPlaceEffectPanel.AddComponent<CanvasGroup>();
+        towerInfoCanvasGroup.interactable = false;
+        towerInfoCanvasGroup.blocksRaycasts = false;
+
+        Text towerInfoTitle = CreateUiText("Tower Intelligence Title",
+            _towerPlaceEffectPanel.transform, 21, TextAnchor.MiddleLeft);
+        SetTopStretchRect(towerInfoTitle.rectTransform, 18f, 8f, 18f, 32f);
+        towerInfoTitle.text = "塔楼情报";
+        towerInfoTitle.fontStyle = FontStyle.Bold;
+        towerInfoTitle.color = new Color(0.44f, 0.94f, 0.94f, 1f);
+        _towerPlaceEffectText = CreateUiText("Tower Intelligence Detail",
+            _towerPlaceEffectPanel.transform, 16, TextAnchor.UpperLeft);
         _towerPlaceEffectText.lineSpacing = 1.12f;
-        StretchRect(_towerPlaceEffectText.rectTransform, 18f, 14f, 18f, 14f);
+        _towerPlaceEffectText.supportRichText = true;
+        _towerPlaceEffectText.resizeTextForBestFit = false;
+        _towerPlaceEffectText.color = new Color(0.88f, 0.94f, 0.97f, 1f);
+        StretchRect(_towerPlaceEffectText.rectTransform, 18f, 48f, 18f, 16f);
         _towerPlaceEffectPanel.SetActive(false);
 
-        GameObject buildPanel = CreateUiPanel("Build Panel", canvasObject.transform, new Color(0.025f, 0.04f, 0.07f, 0.92f));
+        GameObject buildPanel = CreateUiPanel("Command Dock", canvasObject.transform,
+            new Color(0.004f, 0.014f, 0.024f, 0.995f));
         RectTransform buildRect = buildPanel.GetComponent<RectTransform>();
-        buildRect.anchorMin = new Vector2(0.5f, 0f);
-        buildRect.anchorMax = new Vector2(0.5f, 0f);
-        buildRect.pivot = new Vector2(0.5f, 0f);
-        buildRect.anchoredPosition = new Vector2(0f, 14f);
-        buildRect.sizeDelta = new Vector2(1280f, 188f);
+        RougeTowerDefenseUiLayout.ConfigureCommandDock(buildRect);
         AddHudPanelChrome(buildPanel, new Color(0.08f, 0.68f, 0.9f, 1f));
+        buildPanel.AddComponent<RougeTiltShiftUiBoundary>();
 
-        _towerDefenseModeText = CreateUiText("Mode", buildPanel.transform, 18, TextAnchor.UpperCenter);
-        RectTransform modeRect = _towerDefenseModeText.rectTransform;
-        modeRect.anchorMin = new Vector2(0f, 1f);
-        modeRect.anchorMax = new Vector2(1f, 1f);
-        modeRect.pivot = new Vector2(0.5f, 1f);
-        modeRect.anchoredPosition = new Vector2(0f, -6f);
-        modeRect.sizeDelta = new Vector2(-28f, 46f);
-        _towerDefenseModeText.resizeTextForBestFit = true;
-        _towerDefenseModeText.resizeTextMinSize = 13;
-        _towerDefenseModeText.resizeTextMaxSize = 18;
+        _towerDefenseControlsText = CreateUiText("Camera Controls", canvasObject.transform,
+            14, TextAnchor.MiddleCenter);
+        RectTransform cameraControlsRect = _towerDefenseControlsText.rectTransform;
+        cameraControlsRect.anchorMin = new Vector2(0f, 0f);
+        cameraControlsRect.anchorMax = new Vector2(1f, 0f);
+        cameraControlsRect.pivot = new Vector2(0.5f, 0f);
+        cameraControlsRect.anchoredPosition = new Vector2(0f, 238f);
+        cameraControlsRect.sizeDelta = new Vector2(-72f, 42f);
+        _towerDefenseControlsText.lineSpacing = 1f;
+        _towerDefenseControlsText.color = new Color(0.64f, 0.82f, 0.90f, 0.88f);
 
-        Text buildGroupTitle = CreateUiText("Build Group Title", buildPanel.transform, 15, TextAnchor.MiddleCenter);
-        SetBottomRect(buildGroupTitle.rectTransform, -270f, 115f, 720f, 18f);
+        GameObject selectedSection = CreateCommandDockSection("Selected Tower Section",
+            buildPanel.transform, 0f, 0.27f);
+        GameObject buildSection = CreateCommandDockSection("Build Tower Section",
+            buildPanel.transform, 0.27f, 0.72f);
+        GameObject actionSection = CreateCommandDockSection("Tower Action Section",
+            buildPanel.transform, 0.72f, 1f);
+        _towerActionContainer = actionSection.GetComponent<RectTransform>();
+
+        Text selectedGroupTitle = CreateUiText("Selected Group Title",
+            selectedSection.transform, 19, TextAnchor.MiddleLeft);
+        SetTopStretchRect(selectedGroupTitle.rectTransform, 14f, 8f, 14f, 28f);
+        selectedGroupTitle.text = "选中塔楼";
+        selectedGroupTitle.fontStyle = FontStyle.Bold;
+        selectedGroupTitle.color = new Color(0.44f, 0.90f, 1f, 1f);
+
+        _selectedTowerPortraitFrame = CreateUiImage("Tower Portrait Frame",
+            selectedSection.transform, new Color(0.025f, 0.09f, 0.13f, 0.96f));
+        RectTransform portraitFrameRect = _selectedTowerPortraitFrame.rectTransform;
+        SetBottomLeftRect(portraitFrameRect, 16f, 18f, 112f, 142f);
+        Outline portraitOutline = _selectedTowerPortraitFrame.gameObject.AddComponent<Outline>();
+        portraitOutline.effectColor = new Color(0.10f, 0.70f, 0.94f, 0.72f);
+        portraitOutline.effectDistance = new Vector2(2f, -2f);
+        Text portraitPlaceholder = CreateUiText("Portrait Placeholder",
+            _selectedTowerPortraitFrame.transform, 42, TextAnchor.MiddleCenter);
+        portraitPlaceholder.text = "◇";
+        portraitPlaceholder.color = new Color(0.18f, 0.48f, 0.62f, 0.72f);
+        StretchRect(portraitPlaceholder.rectTransform, 4f, 4f, 4f, 4f);
+        _selectedTowerPortrait = CreateUiImage("Tower Portrait",
+            _selectedTowerPortraitFrame.transform, Color.white);
+        _selectedTowerPortrait.preserveAspect = true;
+        StretchRect(_selectedTowerPortrait.rectTransform, 8f, 8f, 8f, 8f);
+
+        _selectedTowerSummaryText = CreateUiText("Selected Tower Summary",
+            selectedSection.transform, 18, TextAnchor.UpperLeft);
+        RectTransform selectedSummaryRect = _selectedTowerSummaryText.rectTransform;
+        selectedSummaryRect.anchorMin = new Vector2(0f, 0f);
+        selectedSummaryRect.anchorMax = new Vector2(1f, 1f);
+        selectedSummaryRect.offsetMin = new Vector2(146f, 96f);
+        selectedSummaryRect.offsetMax = new Vector2(-14f, -48f);
+        _selectedTowerSummaryText.lineSpacing = 1.12f;
+        _selectedTowerSummaryText.supportRichText = true;
+
+        _selectedTowerBuffText = CreateUiText("Selected Tower Buffs",
+            selectedSection.transform, 15, TextAnchor.UpperLeft);
+        RectTransform selectedBuffRect = _selectedTowerBuffText.rectTransform;
+        selectedBuffRect.anchorMin = new Vector2(0f, 0f);
+        selectedBuffRect.anchorMax = new Vector2(1f, 0f);
+        selectedBuffRect.pivot = new Vector2(0.5f, 0f);
+        selectedBuffRect.anchoredPosition = new Vector2(66f, 12f);
+        selectedBuffRect.sizeDelta = new Vector2(-174f, 78f);
+        _selectedTowerBuffText.supportRichText = true;
+        _selectedTowerBuffText.resizeTextForBestFit = false;
+        _selectedTowerBuffText.lineSpacing = 1.05f;
+        _selectedTowerBuffText.color = new Color(0.82f, 0.91f, 0.96f, 1f);
+
+        Text buildGroupTitle = CreateUiText("Build Group Title", buildSection.transform,
+            19, TextAnchor.MiddleLeft);
+        SetTopStretchRect(buildGroupTitle.rectTransform, 14f, 8f, 14f, 28f);
         buildGroupTitle.text = "建造塔楼";
-        buildGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
-        Text actionGroupTitle = CreateUiText("Tower Action Group Title", buildPanel.transform, 15, TextAnchor.MiddleCenter);
-        SetBottomRect(actionGroupTitle.rectTransform, 360f, 115f, 540f, 18f);
+        buildGroupTitle.fontStyle = FontStyle.Bold;
+        buildGroupTitle.color = new Color(0.44f, 0.90f, 1f, 1f);
+        Text actionGroupTitle = CreateUiText("Tower Action Group Title",
+            actionSection.transform, 19, TextAnchor.MiddleLeft);
+        SetTopStretchRect(actionGroupTitle.rectTransform, 14f, 8f, 14f, 28f);
         actionGroupTitle.text = "塔楼操作";
-        actionGroupTitle.color = new Color(0.58f, 0.72f, 0.86f, 1f);
-        Image groupSeparator = CreateUiImage("Build Group Separator", buildPanel.transform,
-            new Color(0.22f, 0.42f, 0.58f, 0.8f));
-        SetBottomRect(groupSeparator.rectTransform, 88f, 8f, 2f, 123f);
+        actionGroupTitle.fontStyle = FontStyle.Bold;
+        actionGroupTitle.color = new Color(0.44f, 0.90f, 1f, 1f);
+        // Five columns still fit the 4:3 reference canvas after CanvasScaler has
+        // applied its width/height blend.
+        float[] buildColumns = { -280f, -140f, 0f, 140f, 280f };
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), buildColumns[0], 92f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), buildColumns[1], 92f, RougeTowerType.MachineGun, new Color(0.92f, 0.73f, 0.06f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), buildColumns[2], 92f, RougeTowerType.Cannon, new Color(0.95f, 0.22f, 0.08f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), buildColumns[3], 92f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.66f, 0.96f, 1f));
+        CreateChargeTowerBuildButton(buildSection.transform, buildColumns[4], 92f);
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), buildColumns[0], 28f, RougeTowerType.Flame, new Color(1f, 0.24f, 0.08f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), buildColumns[1], 28f, RougeTowerType.Laser, new Color(0.20f, 0.94f, 0.30f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), buildColumns[2], 28f, RougeTowerType.PiercingLaser, new Color(0.78f, 0.24f, 0.96f, 1f));
+        CreateBuildButton(buildSection.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), buildColumns[3], 28f, RougeTowerType.RocketBarrage, new Color(1f, 0.54f, 0.06f, 1f));
+        CreateReinforcementTowerBuildButton(buildSection.transform, buildColumns[4], 28f);
 
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(1, RougeTowerType.Ice), -560f, 86f, RougeTowerType.Ice, new Color(0.08f, 0.55f, 0.82f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(2, RougeTowerType.MachineGun), -420f, 86f, RougeTowerType.MachineGun, new Color(0.72f, 0.62f, 0.08f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(3, RougeTowerType.Cannon), -280f, 86f, RougeTowerType.Cannon, new Color(0.78f, 0.2f, 0.06f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(7, RougeTowerType.OrbitSphere), -140f, 86f, RougeTowerType.OrbitSphere, new Color(0.18f, 0.46f, 0.9f, 1f));
-        CreateChargeTowerBuildButton(buildPanel.transform, 0f, 86f);
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(4, RougeTowerType.Flame), -560f, 32f, RougeTowerType.Flame, new Color(0.82f, 0.08f, 0.04f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(5, RougeTowerType.Laser), -420f, 32f, RougeTowerType.Laser, new Color(0.08f, 0.65f, 0.35f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(6, RougeTowerType.PiercingLaser), -280f, 32f, RougeTowerType.PiercingLaser, new Color(0.62f, 0.08f, 0.68f, 1f));
-        CreateBuildButton(buildPanel.transform, GetTowerBuildLabel(8, RougeTowerType.RocketBarrage), -140f, 32f, RougeTowerType.RocketBarrage, new Color(0.34f, 0.42f, 0.12f, 1f));
-        CreateReinforcementTowerBuildButton(buildPanel.transform, 0f, 32f);
-
-        _towerCancelBuildButton = CreateUiButton("Cancel Build", buildPanel.transform, "取消",
+        _towerCancelBuildButton = CreateUiButton("Cancel Build", actionSection.transform, "[Esc] 取消",
             new Color(0.55f, 0.08f, 0.1f, 1f));
         _towerCancelBuildButtonText = _towerCancelBuildButton.GetComponentInChildren<Text>();
-        RectTransform cancelRect = _towerCancelBuildButton.GetComponent<RectTransform>();
-        cancelRect.anchorMin = new Vector2(0.5f, 0f);
-        cancelRect.anchorMax = new Vector2(0.5f, 0f);
-        cancelRect.anchoredPosition = new Vector2(455f, 32f);
-        cancelRect.sizeDelta = new Vector2(170f, 48f);
+        StyleCommandButton(_towerCancelBuildButton, new Color(1f, 0.20f, 0.24f, 1f));
         _towerCancelBuildButton.onClick.AddListener(CancelTowerBuildSelection);
 
-        _towerUpgradeButton = CreateUiButton("Upgrade", buildPanel.transform, "[U] 升级", new Color(0.15f, 0.58f, 0.28f, 1f));
-        RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
-        upgradeRect.anchorMin = new Vector2(0.5f, 0f);
-        upgradeRect.anchorMax = new Vector2(0.5f, 0f);
-        upgradeRect.anchoredPosition = new Vector2(275f, 32f);
-        upgradeRect.sizeDelta = new Vector2(170f, 48f);
+        _towerUpgradeButton = CreateUiButton("Upgrade", actionSection.transform, "[U] 升级", new Color(0.15f, 0.58f, 0.28f, 1f));
+        StyleCommandButton(_towerUpgradeButton, new Color(0.22f, 1f, 0.42f, 1f));
         _towerUpgradeButton.onClick.AddListener(TryUpgradeSelectedTowerPrimaryButton);
         _towerUpgradeButtonText = _towerUpgradeButton.GetComponentInChildren<Text>();
 
-        _towerUpgradeChoiceButton = CreateUiButton("Upgrade Choice B", buildPanel.transform,
+        _towerUpgradeChoiceButton = CreateUiButton("Upgrade Choice B", actionSection.transform,
             "分支升级 B", new Color(0.12f, 0.46f, 0.72f, 1f));
-        RectTransform upgradeChoiceRect = _towerUpgradeChoiceButton.GetComponent<RectTransform>();
-        upgradeChoiceRect.anchorMin = new Vector2(0.5f, 0f);
-        upgradeChoiceRect.anchorMax = new Vector2(0.5f, 0f);
-        upgradeChoiceRect.anchoredPosition = new Vector2(455f, 32f);
-        upgradeChoiceRect.sizeDelta = new Vector2(170f, 48f);
+        StyleCommandButton(_towerUpgradeChoiceButton, new Color(0.20f, 0.66f, 1f, 1f));
         _towerUpgradeChoiceButton.onClick.AddListener(() =>
             TryUpgradeSelectedTowerChoice(1));
         _towerUpgradeChoiceButtonText =
             _towerUpgradeChoiceButton.GetComponentInChildren<Text>();
         _towerUpgradeChoiceButton.gameObject.SetActive(false);
 
-        _towerSellButton = CreateUiButton("Sell Tower", buildPanel.transform, "出售", new Color(0.72f, 0.08f, 0.1f, 0.98f));
-        RectTransform sellRect = _towerSellButton.GetComponent<RectTransform>();
-        sellRect.anchorMin = new Vector2(0.5f, 0f);
-        sellRect.anchorMax = new Vector2(0.5f, 0f);
-        sellRect.anchoredPosition = new Vector2(185f, 86f);
-        sellRect.sizeDelta = new Vector2(170f, 48f);
+        _towerSellButton = CreateUiButton("Sell Tower", actionSection.transform, "▣  出售", new Color(0.72f, 0.08f, 0.1f, 0.98f));
+        StyleCommandButton(_towerSellButton, new Color(1f, 0.28f, 0.24f, 1f));
         _towerSellButtonText = _towerSellButton.GetComponentInChildren<Text>();
         _towerSellButton.onClick.AddListener(SellSelectedTower);
         _towerSellButton.gameObject.SetActive(false);
 
-        _towerTargetPriorityButton = CreateUiButton("Target Priority", buildPanel.transform, "索敌模式\n离终点最近",
+        _towerTargetPriorityButton = CreateUiButton("Target Priority", actionSection.transform, "◎  索敌模式\n离终点最近",
             new Color(0.12f, 0.38f, 0.68f, 1f));
-        RectTransform priorityRect = _towerTargetPriorityButton.GetComponent<RectTransform>();
-        priorityRect.anchorMin = new Vector2(0.5f, 0f);
-        priorityRect.anchorMax = new Vector2(0.5f, 0f);
-        priorityRect.anchoredPosition = new Vector2(365f, 86f);
-        priorityRect.sizeDelta = new Vector2(170f, 48f);
+        StyleCommandButton(_towerTargetPriorityButton, new Color(0.22f, 0.70f, 1f, 1f));
         _towerTargetPriorityButtonText = _towerTargetPriorityButton.GetComponentInChildren<Text>();
         _towerTargetPriorityButton.onClick.AddListener(ToggleSelectedTowerTargetPriority);
         _towerTargetPriorityButton.gameObject.SetActive(false);
 
-        _towerRelocateButton = CreateUiButton("Relocate Tower", buildPanel.transform, "[R] 搬运",
+        _towerRelocateButton = CreateUiButton("Relocate Tower", actionSection.transform, "[R] 搬运",
             new Color(0.55f, 0.22f, 0.72f, 1f));
-        RectTransform relocateRect = _towerRelocateButton.GetComponent<RectTransform>();
-        relocateRect.anchorMin = new Vector2(0.5f, 0f);
-        relocateRect.anchorMax = new Vector2(0.5f, 0f);
-        relocateRect.anchoredPosition = new Vector2(545f, 86f);
-        relocateRect.sizeDelta = new Vector2(170f, 48f);
+        StyleCommandButton(_towerRelocateButton, new Color(0.86f, 0.38f, 1f, 1f));
         _towerRelocateButtonText = _towerRelocateButton.GetComponentInChildren<Text>();
         _towerRelocateButton.onClick.AddListener(BeginSelectedTowerRelocation);
         _towerRelocateButton.gameObject.SetActive(false);
@@ -5682,9 +5846,16 @@ public partial class RougeGameManager
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(134f, 48f);
+        rect.sizeDelta = new Vector2(132f, 56f);
         Text labelText = button.GetComponentInChildren<Text>();
-        if (labelText != null) labelText.fontSize = 16;
+        if (labelText != null)
+        {
+            labelText.fontSize = 15;
+            labelText.alignment = TextAnchor.MiddleLeft;
+            StretchRect(labelText.rectTransform, 44f, 3f, 4f, 3f);
+        }
+        StyleCommandButton(button, color);
+        CreateBuildButtonGlyph(button.transform, GetTowerBuildGlyph(type), color);
         button.onClick.AddListener(() => BeginTowerBuild(type));
         int index = (int)type;
         if ((uint)index < (uint)_towerBuildButtons.Length)
@@ -5692,6 +5863,183 @@ public partial class RougeGameManager
             _towerBuildButtons[index] = button;
             _towerBuildButtonTexts[index] = labelText;
         }
+    }
+
+    private void RefreshSelectedTowerCommandCard()
+    {
+        if (_selectedTowerSummaryText == null || _selectedTowerBuffText == null ||
+            _selectedTowerPortrait == null || _selectedTowerPortraitFrame == null) return;
+
+        bool hasPreview = _towerPreview != null &&
+                          _towerPreview.gameObject.activeInHierarchy;
+        RougeDefenseTower tower = hasPreview ? _towerPreview : _selectedTower;
+        if (tower == null || !tower.gameObject.activeInHierarchy)
+        {
+            _selectedTowerPortrait.enabled = false;
+            _selectedTowerPortrait.sprite = null;
+            _selectedTowerPortraitFrame.color = new Color(0.025f, 0.065f, 0.09f, 0.96f);
+            _selectedTowerSummaryText.text = "<b>未选择塔楼</b>";
+            _selectedTowerBuffText.text = string.Empty;
+            return;
+        }
+
+        Color towerColor = TowerDefenseVisuals.GetTowerColor(tower.TowerType);
+        _selectedTowerPortraitFrame.color = Color.Lerp(
+            new Color(0.012f, 0.035f, 0.052f, 0.98f), towerColor, 0.18f);
+        Outline portraitOutline = _selectedTowerPortraitFrame.GetComponent<Outline>();
+        if (portraitOutline != null)
+            portraitOutline.effectColor = new Color(towerColor.r, towerColor.g,
+                towerColor.b, 0.78f);
+
+        Sprite portrait = ResolveTowerPortraitSprite(tower);
+        _selectedTowerPortrait.sprite = portrait;
+        _selectedTowerPortrait.enabled = portrait != null;
+
+        float attacksPerSecond = 1f / Mathf.Max(0.01f, tower.EffectiveAttackInterval);
+        float estimatedDps = tower.Damage * attacksPerSecond *
+            Mathf.Max(1, tower.AttackTargetCount) * Mathf.Max(1, tower.AttackProjectileCount);
+        string contextLabel = hasPreview
+            ? "<color=#FFE075><size=14><b>建造预览</b></size></color>  "
+            : string.Empty;
+        _selectedTowerSummaryText.text =
+            $"{contextLabel}<b>{tower.DisplayName}</b>  <size=15>Lv.{tower.Level}</size>\n" +
+            $"<size=16>攻击范围 {tower.AttackRange:0.#}    DPS {FormatCompactDamage(estimatedDps)}</size>";
+
+        string route = GetTowerRouteHudLabel(tower);
+        string buffs = ColorizeTowerBuffText(tower.GetBuffDisplayText());
+        string tile = tower.TowerPlaceEffect == RougeTowerPlaceEffect.None
+            ? string.Empty
+            : $"<color=#8CFFF0>◆ {GetTowerPlaceEffectShortName(tower.TowerPlaceEffect)}</color>";
+        System.Text.StringBuilder builder = _hudBuilder;
+        builder.Clear();
+        if (!string.IsNullOrEmpty(route)) builder.Append(route);
+        if (!string.IsNullOrEmpty(buffs))
+        {
+            if (builder.Length > 0) builder.AppendLine();
+            builder.Append(buffs);
+        }
+        if (!string.IsNullOrEmpty(tile))
+        {
+            if (builder.Length > 0) builder.AppendLine();
+            builder.Append(tile);
+        }
+        if (hasPreview)
+        {
+            string tileDescription = GetTowerPlaceEffectDescription(
+                tower.TowerPlaceEffect, tower);
+            if (!string.IsNullOrWhiteSpace(tileDescription))
+            {
+                if (builder.Length > 0) builder.AppendLine();
+                builder.Append("<color=#C8DCE8>")
+                    .Append(tileDescription.Trim()).Append("</color>");
+            }
+            if (builder.Length > 0) builder.AppendLine();
+            builder.Append("<color=#FFE075>建造花费 ")
+                .Append(tower.PlacementCost).Append(" 金币</color>");
+        }
+        _selectedTowerBuffText.text = builder.ToString();
+    }
+
+    private static Sprite ResolveTowerPortraitSprite(RougeDefenseTower tower)
+    {
+        RougeBillboard billboard = tower != null
+            ? tower.GetComponentInChildren<RougeBillboard>(true)
+            : null;
+        if (billboard == null) return null;
+        SpriteRenderer[] renderers = billboard.GetComponentsInChildren<SpriteRenderer>(true);
+        Sprite best = null;
+        float bestArea = -1f;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            SpriteRenderer renderer = renderers[i];
+            if (renderer == null || renderer.sprite == null ||
+                !renderer.gameObject.activeInHierarchy) continue;
+            Rect rect = renderer.sprite.rect;
+            float area = rect.width * rect.height;
+            if (area <= bestArea) continue;
+            bestArea = area;
+            best = renderer.sprite;
+        }
+        return best;
+    }
+
+    private static string GetTowerRouteHudLabel(RougeDefenseTower tower)
+    {
+        if (tower == null) return string.Empty;
+        if (tower.UsesIceFreeze) return "<color=#FFD45C>◆ A 路线 · 冻结</color>";
+        if (tower.UsesIceVulnerability) return "<color=#C77DFF>◆ B 路线 · 脆弱</color>";
+        if (tower.UsesMachineGunCritical) return "<color=#FFD45C>◆ A 路线 · 暴击</color>";
+        if (tower.UsesMachineGunFragments) return "<color=#C77DFF>◆ B 路线 · 破片</color>";
+        if (tower.UsesCannonInnerBlast) return "<color=#FFD45C>◆ A 路线 · 内圈爆破</color>";
+        if (tower.UsesPersistentCannonShell) return "<color=#C77DFF>◆ B 路线 · 持续炮弹</color>";
+        if (tower.UsesLaserArmorBreak) return "<color=#FFD45C>◆ A 路线 · 破甲</color>";
+        if (tower.UsesLaserRefraction) return "<color=#C77DFF>◆ B 路线 · 折射</color>";
+        return string.Empty;
+    }
+
+    private static string ColorizeTowerBuffText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        string[] entries = text.Split(new[] { "  " },
+            System.StringSplitOptions.RemoveEmptyEntries);
+        System.Text.StringBuilder builder = new System.Text.StringBuilder(text.Length + 48);
+        for (int i = 0; i < entries.Length; i++)
+        {
+            if (i > 0) builder.Append("   ");
+            bool negative = entries[i].Contains("-");
+            builder.Append(negative ? "<color=#FF8C96>▼ " : "<color=#9CFFAE>▲ ")
+                .Append(entries[i]).Append("</color>");
+        }
+        return builder.ToString();
+    }
+
+    private void LayoutTowerActionButtons()
+    {
+        if (_towerActionContainer == null) return;
+        int count = CountActiveActionButtons();
+        int index = 0;
+        LayoutTowerActionButton(_towerSellButton, ref index, count);
+        LayoutTowerActionButton(_towerTargetPriorityButton, ref index, count);
+        LayoutTowerActionButton(_towerRelocateButton, ref index, count);
+        LayoutTowerActionButton(_towerUpgradeButton, ref index, count);
+        LayoutTowerActionButton(_towerUpgradeChoiceButton, ref index, count);
+        LayoutTowerActionButton(_towerCancelBuildButton, ref index, count);
+    }
+
+    private int CountActiveActionButtons()
+    {
+        int count = 0;
+        if (IsActiveActionButton(_towerSellButton)) count++;
+        if (IsActiveActionButton(_towerTargetPriorityButton)) count++;
+        if (IsActiveActionButton(_towerRelocateButton)) count++;
+        if (IsActiveActionButton(_towerUpgradeButton)) count++;
+        if (IsActiveActionButton(_towerUpgradeChoiceButton)) count++;
+        if (IsActiveActionButton(_towerCancelBuildButton)) count++;
+        return count;
+    }
+
+    private static bool IsActiveActionButton(Button button)
+    {
+        return button != null && button.gameObject.activeSelf;
+    }
+
+    private static void LayoutTowerActionButton(Button button, ref int index, int count)
+    {
+        if (!IsActiveActionButton(button)) return;
+        int rows = Mathf.Max(1, (count + 1) / 2);
+        int row = index / 2;
+        int column = index % 2;
+        bool centeredLast = (count & 1) != 0 && index == count - 1;
+        float x = centeredLast ? 0f : column == 0 ? -107f : 107f;
+        float startY = rows == 1 ? 77f : rows == 2 ? 103f : 128f;
+        float step = rows == 3 ? 54f : 66f;
+        RectTransform rect = button.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0f);
+        rect.anchorMax = new Vector2(0.5f, 0f);
+        rect.pivot = new Vector2(0.5f, 0f);
+        rect.anchoredPosition = new Vector2(x, startY - row * step);
+        rect.sizeDelta = new Vector2(centeredLast ? 420f : 206f, 48f);
+        index++;
     }
 
     private static void SetPurchaseButtonAvailability(Button button, Text text, bool available)
@@ -5704,6 +6052,24 @@ public partial class RougeGameManager
     {
         TowerDefenseVisuals.GetBaseStats(type, out _, out _, out _, out _, out int cost);
         return $"[{hotkey}] {TowerDefenseVisuals.GetTowerName(type)}\n{Mathf.Max(0, cost)} 金币";
+    }
+
+    private static string GetTowerBuildGlyph(RougeTowerType type)
+    {
+        switch (type)
+        {
+            case RougeTowerType.Ice: return "❄";
+            case RougeTowerType.MachineGun: return "⌁";
+            case RougeTowerType.Cannon: return "◉";
+            case RougeTowerType.Flame: return "♨";
+            case RougeTowerType.Laser: return "✦";
+            case RougeTowerType.PiercingLaser: return "ϟ";
+            case RougeTowerType.OrbitSphere: return "♦";
+            case RougeTowerType.RocketBarrage: return "➤";
+            case RougeTowerType.ChargeTower: return "◇";
+            case RougeTowerType.ReinforcementTower: return "◆";
+            default: return "·";
+        }
     }
 
     private string GetBossScheduleStatus()
@@ -5730,6 +6096,111 @@ public partial class RougeGameManager
         return displayName;
     }
 
+    private void RefreshTowerDefenseControlsHud()
+    {
+        if (_towerDefenseControlsText == null) return;
+
+        string qualityHint = $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel}";
+        string speedHint = _towerDefenseDoubleSpeed
+            ? "[F10] 速度 ×2"
+            : "[F10] 速度 ×1";
+
+        if (IsTiltShiftObservationActive || _cameraViewMode == CameraViewMode.TiltShift)
+        {
+            _towerDefenseControlsText.text =
+                "[F2 观赏] 左键塔楼：退出并编辑 · 左键空地：显示主塔血条 · " +
+                "[F1] 自由 · [F2] 默认 · [F3] 俯视 · [Esc] 设置\n" + qualityHint;
+            return;
+        }
+
+        if (_chargeTowerEffectSelectionActive)
+        {
+            _towerDefenseControlsText.text =
+                "[充能效果] 点击效果卡片确认 · [Esc] 取消\n" + qualityHint;
+            return;
+        }
+
+        if (_chargeTowerTargetSelectionActive)
+        {
+            _towerDefenseControlsText.text =
+                "[充能目标] 左键选择有效地图格 · [Esc] 取消\n" + qualityHint;
+            return;
+        }
+
+        string cameraHint;
+        switch (_cameraViewMode)
+        {
+            case CameraViewMode.Free:
+                cameraHint = "[F1] 默认 · [F2] 观赏 · [F3] 俯视 · " +
+                             "WASD 平移 · 滚轮升降 · 按住右键旋转 · Shift 加速";
+                break;
+            case CameraViewMode.TopDown:
+                cameraHint = "[F1] 自由 · [F2] 观赏 · [F3] 默认 · " +
+                             (_towerPlacementMode
+                                 ? "中键拖动平移 · 滚轮调整视距"
+                                 : "左键/中键拖动平移 · 滚轮调整视距");
+                break;
+            default:
+                cameraHint = "[F1] 自由 · [F2] 观赏 · [F3] 俯视 · " +
+                             (_towerPlacementMode
+                                 ? "中键拖动平移 · 滚轮调整视距"
+                                 : "左键/中键拖动平移 · 滚轮调整视距");
+                break;
+        }
+
+        if (_towerPlacementMode)
+        {
+            string rangeHint = _showAllTowerAttackRanges
+                ? "[F4] 隐藏全塔范围"
+                : "[F4] 显示全塔范围";
+            string cancelHint = "[右键/Esc] 退出建造";
+            string actionHint;
+
+            if (_towerRelocationActive)
+            {
+                cancelHint = "[右键/Esc] 取消搬运";
+                actionHint = "[搬运] 左键确认落点 · " + cancelHint + " · " + rangeHint;
+            }
+            else if (HasTacticalSkillSelection)
+            {
+                actionHint = "[技能目标] 左键确认 · [Esc] 取消 · " + rangeHint;
+            }
+            else if (_towerPreview != null && _towerPreview.gameObject.activeInHierarchy)
+            {
+                actionHint = "[建造] [1-8] 标准塔 · [C] 充能塔 · [V] 强化塔 · " +
+                             "左键放置 · " + cancelHint + " · " + rangeHint;
+            }
+            else if (_selectedTower != null && _selectedTower.gameObject.activeInHierarchy)
+            {
+                string upgradeHint = _selectedTower.CanUpgrade ? "[U] 升级" : "已满级";
+                string relocateHint = _selectedTower.CanRelocate ? " · [R] 搬运" : string.Empty;
+                string targetHint = _selectedTower.IsTargetedDamage
+                    ? " · [中键] 切换索敌"
+                    : string.Empty;
+                actionHint = "[塔楼编辑] 左键选择塔楼 · " + upgradeHint +
+                             relocateHint + targetHint + " · " + cancelHint + " · " + rangeHint;
+            }
+            else
+            {
+                actionHint = "[建造] 点击建造按钮或按 [1-8/C/V] 选择塔楼 · " +
+                             cancelHint + " · " + rangeHint;
+            }
+
+            _towerDefenseControlsText.text = actionHint + "\n" + cameraHint +
+                                             " · " + qualityHint;
+            return;
+        }
+
+        string viewLabel = _cameraViewMode == CameraViewMode.Free
+            ? "[自由镜头]"
+            : _cameraViewMode == CameraViewMode.TopDown
+                ? "[俯视镜头]"
+                : "[默认镜头]";
+        _towerDefenseControlsText.text = viewLabel + " " + cameraHint +
+            "\n左键塔楼进入编辑 · 点击建造按钮开始建造 · [Esc] 设置 · " +
+            qualityHint + " · " + speedHint;
+    }
+
     private void RefreshTowerDefenseUi(bool force = false)
     {
         if (_towerDefenseCanvas == null) return;
@@ -5738,6 +6209,7 @@ public partial class RougeGameManager
         RefreshTowerEditHints();
         if (_visualQualityButtonText != null)
             _visualQualityButtonText.text = $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel}";
+        RefreshTowerDefenseControlsHud();
         float mainTowerHp = mainTower != null ? mainTower.CurrentHealth : 0f;
         float mainTowerMaxHp = mainTower != null ? mainTower.maxHealth : 0f;
         if (_towerDefenseStatusText != null)
@@ -5790,7 +6262,6 @@ public partial class RougeGameManager
                     : GetReinforcementTowerBuildLabel();
         RefreshChargeTowerEffectSelectionUi();
         RefreshTowerDamageRanking();
-        RefreshTowerPlaceEffectHud();
         if (CommanderSkillsEnabled) RefreshTacticalSkillUi();
         if (_towerCancelBuildButton != null)
         {
@@ -5799,6 +6270,11 @@ public partial class RougeGameManager
                  _chargeTowerBuildSelectionActive || _reinforcementTowerBuildSelectionActive ||
                  _chargeTowerTargetSelectionActive || _towerRelocationActive ||
                  _selectedTower != null);
+            bool showCancel = canCancel &&
+                (HasTacticalSkillSelection || _towerBuildSelectionActive ||
+                 _chargeTowerBuildSelectionActive || _reinforcementTowerBuildSelectionActive ||
+                 _chargeTowerTargetSelectionActive || _towerRelocationActive);
+            _towerCancelBuildButton.gameObject.SetActive(showCancel);
             SetPurchaseButtonAvailability(_towerCancelBuildButton, _towerCancelBuildButtonText, canCancel);
             if (_towerCancelBuildButtonText != null)
                 _towerCancelBuildButtonText.text = _towerRelocationActive ? "[Esc] 取消搬运" : "取消";
@@ -5891,45 +6367,6 @@ public partial class RougeGameManager
                     : $"{GetLocalizedBossName(bossBalance.displayName)}  {bossHealth:0} / {bossMaximumHealth:0}  ({bossHealthRatio * 100f:0.00}%)   {phases}";
             }
         }
-        if (_towerDefenseModeText != null)
-        {
-            string qualityHint = $"F5 光影：{RougeVisualQualityManager.ActiveTierLabel}";
-            if (_cameraViewMode != CameraViewMode.Default)
-            {
-                string speedHint = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
-                string modeHint = _towerPlacementMode
-                    ? "  |  编辑 ×0.5  |  左键放置/选择  |  Tab 退出编辑"
-                    : $"  |  {speedHint}  |  F10 切换速度  |  {qualityHint}  |  Tab 编辑  |  左键选择塔楼";
-                _towerDefenseModeText.text = GetCameraViewStatusText() + modeHint;
-            }
-            else if (_towerPlacementMode)
-            {
-                string tactical = GetTacticalSkillModeText();
-                string rangeMode = _showAllTowerAttackRanges ? "全部" : "仅选中";
-                string selected = !string.IsNullOrEmpty(tactical)
-                    ? tactical
-                    : _chargeTowerTargetSelectionActive
-                    ? GetTowerBuildModeText()
-                    : _towerRelocationActive && _relocatingTower != null
-                    ? $"搬运中：{_relocatingTower.DisplayName}  |  左键选择其他绿色合法地图格  |  成功后扣 {_relocatingTower.RelocationCost} 金币  |  右键/Esc 取消"
-                    : _selectedTower != null
-                    ? string.Empty
-                    : _towerBuildSelectionActive || _chargeTowerBuildSelectionActive ||
-                      _reinforcementTowerBuildSelectionActive
-                        ? GetTowerBuildModeText()
-                        : "建造已取消  |  请从下方选择塔楼";
-                string editHint =
-                    $"编辑模式 ×0.5  |  F4 攻击范围：{rangeMode}  |  {qualityHint}  |  右键退出 / 取消  |  中键拖动  |  滚轮缩放";
-                _towerDefenseModeText.text = string.IsNullOrEmpty(selected)
-                    ? editHint
-                    : editHint + "\n" + selected;
-            }
-            else
-            {
-                string speed = _towerDefenseDoubleSpeed ? "速度 ×2" : "速度 ×1";
-                _towerDefenseModeText.text = $"{speed}  |  F1 自由  |  F2 移轴  |  F3 俯视  |  {qualityHint}  |  点击塔楼编辑  |  点击按钮建造  |  左键拖动  |  滚轮缩放";
-            }
-        }
         if (_towerUpgradeButton != null)
         {
             bool hasSelection = _selectedTower != null;
@@ -5940,22 +6377,6 @@ public partial class RougeGameManager
                                       _selectedTower.RequiresUpgradeChoice;
             _towerUpgradeButton.gameObject.SetActive(!_towerRelocationActive &&
                                                      canUpgrade);
-            RectTransform upgradeRect = _towerUpgradeButton.GetComponent<RectTransform>();
-            RectTransform cancelRect = _towerCancelBuildButton != null
-                ? _towerCancelBuildButton.GetComponent<RectTransform>()
-                : null;
-            if (upgradeRect != null)
-                upgradeRect.anchoredPosition = new Vector2(275f, 32f);
-            if (cancelRect != null)
-                cancelRect.anchoredPosition = showUpgradeChoices
-                    ? new Vector2(365f, 86f)
-                    : new Vector2(455f, 32f);
-            if (_towerUpgradeChoiceButton != null)
-            {
-                RectTransform choiceRect = _towerUpgradeChoiceButton.GetComponent<RectTransform>();
-                if (choiceRect != null)
-                    choiceRect.anchoredPosition = new Vector2(455f, 32f);
-            }
             if (_towerUpgradeChoiceButton != null)
             {
                 _towerUpgradeChoiceButton.gameObject.SetActive(showUpgradeChoices);
@@ -5981,6 +6402,9 @@ public partial class RougeGameManager
                 _towerUpgradeChoiceButtonText.text =
                     GetUpgradeChoiceButtonText(_selectedTower, 1);
         }
+        RefreshSelectedTowerCommandCard();
+        RefreshTowerPlaceEffectHud();
+        LayoutTowerActionButtons();
         if (_towerDefenseGameOverText != null)
         {
             GameObject panel = _towerDefenseGameOverText.transform.parent.gameObject;
@@ -6018,13 +6442,25 @@ public partial class RougeGameManager
 
         System.Text.StringBuilder builder = _hudBuilder;
         builder.Clear();
+        double topDamage = _towerDamageTotalsFixed[_towerDamageRankOrder[0]] / 1000.0;
         for (int rank = 0; rank < _towerDamageRankOrder.Length; rank++)
         {
             int typeIndex = _towerDamageRankOrder[rank];
             double damage = _towerDamageTotalsFixed[typeIndex] / 1000.0;
-            builder.Append(rank + 1).Append(". ")
-                .Append(TowerDefenseVisuals.GetTowerName((RougeTowerType)typeIndex))
-                .Append("   ").Append(FormatCompactDamage(damage));
+            RougeTowerType type = (RougeTowerType)typeIndex;
+            Color towerColor = Color.Lerp(TowerDefenseVisuals.GetTowerColor(type),
+                Color.white, 0.08f);
+            string colorHex = ColorUtility.ToHtmlStringRGB(towerColor);
+            int filledSegments = topDamage > 0.001
+                ? Mathf.Clamp(Mathf.CeilToInt((float)(damage / topDamage) * 6f), 1, 6)
+                : 0;
+            builder.Append("<color=#").Append(colorHex).Append("><b>")
+                .Append(rank + 1).Append(". ")
+                .Append(TowerDefenseVisuals.GetTowerName(type)).Append("</b>  ")
+                .Append('━', filledSegments).Append("</color>")
+                .Append("<color=#29485A>").Append('━', 6 - filledSegments)
+                .Append("</color>  <b>").Append(FormatCompactDamage(damage))
+                .Append("</b>");
             if (rank < _towerDamageRankOrder.Length - 1) builder.AppendLine();
         }
         _towerDamageRankingText.text = builder.ToString();
@@ -6033,16 +6469,20 @@ public partial class RougeGameManager
     private void RefreshTowerPlaceEffectHud()
     {
         if (_towerPlaceEffectPanel == null || _towerPlaceEffectText == null) return;
+
         RougeDefenseTower contextTower = _towerPreview != null &&
                                          _towerPreview.gameObject.activeInHierarchy
             ? _towerPreview
             : _selectedTower;
-        bool show = _towerPlacementMode && contextTower != null;
+        bool show = _towerPlacementMode && contextTower != null &&
+                    contextTower.gameObject.activeInHierarchy;
         _towerPlaceEffectPanel.SetActive(show);
         if (!show) return;
 
         RougeTowerPlaceEffect effect = contextTower.TowerPlaceEffect;
-        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        RougeTowerDefenseMap map = _towerDefenseLevel != null
+            ? _towerDefenseLevel
+            : RougeTowerDefenseMapLoader.ActiveMap;
         System.Text.StringBuilder builder = _hudBuilder;
         builder.Clear();
 
@@ -6053,7 +6493,8 @@ public partial class RougeGameManager
         AppendTowerInfoSection(builder,
             "地图格效果：" + GetTowerPlaceEffectShortName(effect), mapDescription);
 
-        string towerDescription = GetTowerPlayerDescription(contextTower);
+        string towerDescription = GetTowerPlayerDescription(contextTower) +
+                                  GetReinforcementTowerTileDescription(contextTower);
         if (contextTower.IsChargeTower)
         {
             RougeTowerPlaceEffect chargedEffect = contextTower.ChargedTileEffect;
@@ -6074,7 +6515,7 @@ public partial class RougeGameManager
                                     $"{contextTower.ChargeTargetCell.y}]。";
         }
         AppendTowerInfoSection(builder,
-            $"塔楼效果：{contextTower.DisplayName} Lv.{contextTower.Level}/{contextTower.MaxLevel}",
+            $"塔楼效果：{contextTower.DisplayName}  Lv.{contextTower.Level}/{contextTower.MaxLevel}",
             towerDescription);
 
         if (!contextTower.IsSpecialTower)
@@ -6087,10 +6528,10 @@ public partial class RougeGameManager
 
         string towerBuffDescription = GetTowerBuffExplanation(contextTower);
         if (!string.IsNullOrEmpty(towerBuffDescription))
-            AppendTowerInfoSection(builder, "当前 Buff：", towerBuffDescription,
-                false);
+            AppendTowerInfoSection(builder, "当前 Buff：", towerBuffDescription, false);
 
         builder.AppendLine();
+        builder.Append("<color=#FFD45C><b>");
         if (_towerRelocationActive && _relocatingTower != null)
             builder.Append("搬运费用：").Append(_relocatingTower.RelocationCost)
                 .Append(" 金币");
@@ -6098,12 +6539,23 @@ public partial class RougeGameManager
             builder.Append("建造花费：").Append(contextTower.PlacementCost)
                 .Append(" 金币");
         else if (contextTower.CanUpgrade)
-            builder.Append("下次升级：").Append(contextTower.UpgradeCost)
-                .Append(" 金币");
+            builder.Append("下次升级：Lv.").Append(contextTower.Level + 1)
+                .Append(" · ").Append(contextTower.UpgradeCost).Append(" 金币");
         else
-            builder.Append("满级");
+            builder.Append("等级已满");
+        builder.Append("</b></color>");
 
         _towerPlaceEffectText.text = builder.ToString();
+        RectTransform infoRect = _towerPlaceEffectPanel.GetComponent<RectTransform>();
+        if (infoRect != null)
+        {
+            // Keep the card only as tall as its content instead of covering a large
+            // empty part of the board. The translucent backplate remains for contrast.
+            float preferredHeight = _towerPlaceEffectText.preferredHeight;
+            Vector2 size = infoRect.sizeDelta;
+            size.y = Mathf.Clamp(preferredHeight + 68f, 210f, 700f);
+            infoRect.sizeDelta = size;
+        }
     }
 
     private static void AppendTowerInfoSection(System.Text.StringBuilder builder,
@@ -6111,7 +6563,8 @@ public partial class RougeGameManager
     {
         if (string.IsNullOrWhiteSpace(description)) return;
         if (builder.Length > 0) builder.AppendLine();
-        builder.AppendLine(title);
+        builder.Append("<color=#7FEAFF><b>").Append(title)
+            .AppendLine("</b></color>");
         if (!addDiamonds)
         {
             builder.AppendLine(description.Trim());
@@ -6515,9 +6968,18 @@ public partial class RougeGameManager
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(134f, 48f);
+        rect.sizeDelta = new Vector2(132f, 56f);
         _chargeTowerBuildButtonText = _chargeTowerBuildButton.GetComponentInChildren<Text>();
-        if (_chargeTowerBuildButtonText != null) _chargeTowerBuildButtonText.fontSize = 15;
+        if (_chargeTowerBuildButtonText != null)
+        {
+            _chargeTowerBuildButtonText.fontSize = 14;
+            _chargeTowerBuildButtonText.alignment = TextAnchor.MiddleLeft;
+            StretchRect(_chargeTowerBuildButtonText.rectTransform, 44f, 3f, 4f, 3f);
+        }
+        Color accent = new Color(0.08f, 0.92f, 0.78f, 1f);
+        StyleCommandButton(_chargeTowerBuildButton, accent);
+        CreateBuildButtonGlyph(_chargeTowerBuildButton.transform,
+            GetTowerBuildGlyph(RougeTowerType.ChargeTower), accent);
         _chargeTowerBuildButton.onClick.AddListener(BeginChargeTowerBuild);
     }
 
@@ -6529,11 +6991,19 @@ public partial class RougeGameManager
         rect.anchorMin = new Vector2(0.5f, 0f);
         rect.anchorMax = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(134f, 48f);
+        rect.sizeDelta = new Vector2(132f, 56f);
         _reinforcementTowerBuildButtonText =
             _reinforcementTowerBuildButton.GetComponentInChildren<Text>();
         if (_reinforcementTowerBuildButtonText != null)
-            _reinforcementTowerBuildButtonText.fontSize = 15;
+        {
+            _reinforcementTowerBuildButtonText.fontSize = 14;
+            _reinforcementTowerBuildButtonText.alignment = TextAnchor.MiddleLeft;
+            StretchRect(_reinforcementTowerBuildButtonText.rectTransform, 44f, 3f, 4f, 3f);
+        }
+        Color accent = new Color(1f, 0.62f, 0.10f, 1f);
+        StyleCommandButton(_reinforcementTowerBuildButton, accent);
+        CreateBuildButtonGlyph(_reinforcementTowerBuildButton.transform,
+            GetTowerBuildGlyph(RougeTowerType.ReinforcementTower), accent);
         _reinforcementTowerBuildButton.onClick.AddListener(BeginReinforcementTowerBuild);
     }
 
@@ -6709,6 +7179,72 @@ public partial class RougeGameManager
         return go;
     }
 
+    private static GameObject CreateCommandDockSection(string name, Transform parent,
+        float anchorMinX, float anchorMaxX)
+    {
+        GameObject section = CreateUiPanel(name, parent,
+            new Color(0.006f, 0.018f, 0.028f, 0.94f));
+        RectTransform rect = section.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(anchorMinX, 0f);
+        rect.anchorMax = new Vector2(anchorMaxX, 1f);
+        rect.offsetMin = new Vector2(6f, 8f);
+        rect.offsetMax = new Vector2(-6f, -8f);
+        Outline outline = section.AddComponent<Outline>();
+        outline.effectColor = new Color(0.10f, 0.58f, 0.78f, 0.30f);
+        outline.effectDistance = new Vector2(1f, -1f);
+        return section;
+    }
+
+    private static void StyleCommandButton(Button button, Color accent)
+    {
+        if (button == null) return;
+        Color background = Color.Lerp(new Color(0.012f, 0.028f, 0.044f, 1f),
+            accent, 0.16f);
+        Image image = button.GetComponent<Image>();
+        if (image != null) image.color = background;
+        ColorBlock colors = button.colors;
+        colors.normalColor = background;
+        colors.highlightedColor = Color.Lerp(background, accent, 0.30f);
+        colors.pressedColor = Color.Lerp(background, Color.black, 0.24f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.035f, 0.050f, 0.062f, 0.72f);
+        colors.colorMultiplier = 1f;
+        button.colors = colors;
+        Outline outline = button.GetComponent<Outline>();
+        if (outline != null)
+        {
+            outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.62f);
+            outline.effectDistance = new Vector2(1.25f, -1.25f);
+        }
+        Image accentLine = CreateUiImage("Button Accent", button.transform, accent);
+        RectTransform accentRect = accentLine.rectTransform;
+        accentRect.anchorMin = new Vector2(0f, 0f);
+        accentRect.anchorMax = new Vector2(1f, 0f);
+        accentRect.pivot = new Vector2(0.5f, 0f);
+        accentRect.anchoredPosition = Vector2.zero;
+        accentRect.sizeDelta = new Vector2(-4f, 2f);
+    }
+
+    private static void CreateBuildButtonGlyph(Transform parent, string glyph, Color accent)
+    {
+        GameObject plate = CreateUiPanel("Glyph Plate", parent,
+            Color.Lerp(new Color(0.012f, 0.028f, 0.044f, 0.98f), accent, 0.18f));
+        RectTransform plateRect = plate.GetComponent<RectTransform>();
+        plateRect.anchorMin = new Vector2(0f, 0.5f);
+        plateRect.anchorMax = new Vector2(0f, 0.5f);
+        plateRect.pivot = new Vector2(0f, 0.5f);
+        plateRect.anchoredPosition = new Vector2(5f, 0f);
+        plateRect.sizeDelta = new Vector2(34f, 44f);
+        Outline outline = plate.AddComponent<Outline>();
+        outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.62f);
+        outline.effectDistance = new Vector2(1f, -1f);
+        Text icon = CreateUiText("Glyph", plate.transform, 25, TextAnchor.MiddleCenter);
+        icon.text = glyph;
+        icon.color = Color.Lerp(accent, Color.white, 0.16f);
+        icon.fontStyle = FontStyle.Bold;
+        StretchRect(icon.rectTransform, 1f, 1f, 1f, 1f);
+    }
+
     private static void AddHudPanelChrome(GameObject panel, Color accentColor)
     {
         if (panel == null) return;
@@ -6806,6 +7342,20 @@ public partial class RougeGameManager
         return s_towerDefenseHudFont;
     }
 
+    private static void PrewarmTowerDefenseCameraUiGlyphs()
+    {
+        Font font = GetTowerDefenseHudFont();
+        if (font == null) return;
+
+        const string glyphs =
+            "默认镜头自由移轴观赏垂直俯视平滚轮升降按住右键旋转加速中左拖动调整视距" +
+            "点击塔楼选择空地显示主塔血条退出设置充能效果卡片确认取消目标有效地图格" +
+            "隐藏全范围建造搬运标准强化放置满级索敌开始光影游戏速度伤害统计" +
+            "WASDShiftEscF1234506789CVUR/[]·：+-";
+        font.RequestCharactersInTexture(glyphs, 14, FontStyle.Normal);
+        font.RequestCharactersInTexture(glyphs, 27, FontStyle.Bold);
+    }
+
     private static Button CreateUiButton(string name, Transform parent, string label, Color color)
     {
         GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
@@ -6842,6 +7392,26 @@ public partial class RougeGameManager
         rect.pivot = new Vector2(0.5f, 0f);
         rect.anchoredPosition = new Vector2(x, y);
         rect.sizeDelta = new Vector2(width, height);
+    }
+
+    private static void SetBottomLeftRect(RectTransform rect, float x, float y,
+        float width, float height)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.zero;
+        rect.pivot = Vector2.zero;
+        rect.anchoredPosition = new Vector2(x, y);
+        rect.sizeDelta = new Vector2(width, height);
+    }
+
+    private static void SetTopStretchRect(RectTransform rect, float left, float top,
+        float right, float height)
+    {
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.offsetMin = new Vector2(left, -top - height);
+        rect.offsetMax = new Vector2(-right, -top);
     }
 
     private static void SetUiBarFill(Image image, float normalizedValue)

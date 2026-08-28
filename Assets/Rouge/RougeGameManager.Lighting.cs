@@ -89,7 +89,9 @@ public sealed partial class RougeGameManager
         if (_contactShadowMaterial == null || enemyMesh == null) return;
 
         int count = 0;
-        if (mainTower != null && mainTower.isActiveAndEnabled)
+        bool startupHidesMainTower =
+            RougeTowerDefenseMapLoader.Active?.StartupMainTowerHidden ?? false;
+        if (!startupHidesMainTower && mainTower != null && mainTower.isActiveAndEnabled)
             AppendContactShadow(mainTower.transform.position, 5.2f, ref count);
 
         for (int i = 0; i < _defenseTowers.Count; i++)

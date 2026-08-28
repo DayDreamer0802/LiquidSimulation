@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 [AddComponentMenu("Rouge/Tower Defense Map Loader")]
 [DefaultExecutionOrder(-1000)]
@@ -37,6 +38,7 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     private readonly HashSet<Vector2Int> _greenValidTowerGridCells = new HashSet<Vector2Int>();
     private readonly HashSet<Vector2Int> _redInvalidTowerGridCells = new HashSet<Vector2Int>();
     private TowerFootprintGridOverlay _towerFootprintGridOverlay;
+    private GameObject _cameraPreviewUiRoot;
 
     private sealed class TowerFootprintGridOverlay
     {
@@ -52,6 +54,9 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
 
     private sealed class TileVisualState
     {
+        public Transform root;
+        public Vector3 originalLocalPosition;
+        public Vector3 originalLocalScale;
         public Renderer[] renderers;
         public Color[] spriteColors;
     }
@@ -142,11 +147,145 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         BuildMergedSurfaces(false);
         BuildMergedSurfaces(true);
         BuildMapObjects();
+        if (Application.isPlaying) PrimeStartupRevealHiddenState();
+    }
+
+    public void LoadMapPreview(RougeTowerDefenseMap previewMap)
+    {
+        if (Application.isPlaying || previewMap == null) return;
+        RougeTowerDefenseMap assignedMap = map;
+        map = previewMap;
+        try
+        {
+            LoadMap();
+        }
+        finally
+        {
+            map = assignedMap;
+        }
+    }
+
+    public void ApplyCameraPreview(RougeTowerDefenseMap previewMap,
+        RougeCameraPresetMode mode,
+        bool showGameplayUiOverlay)
+    {
+        if (Application.isPlaying || previewMap == null) return;
+        Camera camera = RougeCameraFollow.ResolveCamera();
+        if (camera == null) return;
+
+        RougeCameraFollow follow = camera.GetComponent<RougeCameraFollow>();
+        RougeCameraViewPreset preset = previewMap.GetCameraPreset(mode);
+        if (preset.Configured && follow != null)
+            follow.ApplyViewState(preset.ToViewState());
+        else if (preset.Configured)
+        {
+            RougeCameraFollow.ViewState state = preset.ToViewState();
+            camera.transform.SetPositionAndRotation(state.Position, state.Rotation);
+            camera.orthographic = state.Orthographic;
+            camera.fieldOfView = state.FieldOfView;
+            camera.orthographicSize = state.OrthographicSize;
+            camera.nearClipPlane = state.NearClipPlane;
+            camera.farClipPlane = state.FarClipPlane;
+        }
+        else
+        {
+            Vector2 legacyXZ = mode == RougeCameraPresetMode.TiltShift
+                ? previewMap.TiltShiftCameraPositionXZ
+                : previewMap.DefaultCameraPositionXZ;
+            if (follow != null)
+            {
+                RougeCameraFollow.ViewState state =
+                    follow.BuildTiltShiftObservationView(legacyXZ);
+                if (mode == RougeCameraPresetMode.Free)
+                {
+                    state.FieldOfView = 75f;
+                    state.NearClipPlane = 0.03f;
+                }
+                else if (mode == RougeCameraPresetMode.TopDown)
+                    state = follow.BuildTopDownViewState(state);
+                follow.ApplyViewState(state);
+            }
+            else
+            {
+                Vector3 position = camera.transform.position;
+                position.x = legacyXZ.x;
+                position.z = legacyXZ.y;
+                camera.transform.position = position;
+            }
+        }
+
+        bool tiltShift = mode == RougeCameraPresetMode.TiltShift;
+        RougeTiltShiftCamera tiltShiftCamera = camera.GetComponent<RougeTiltShiftCamera>();
+        if (tiltShiftCamera != null)
+        {
+            if (tiltShift) tiltShiftCamera.ApplySettings(previewMap.TiltShiftSettings);
+            tiltShiftCamera.ClearWorldFocusPoint();
+            tiltShiftCamera.SetEffectEnabled(tiltShift);
+        }
+        SetCameraPreviewUiVisible(!tiltShift && showGameplayUiOverlay);
+    }
+
+    public void ClearCameraPreviewUi()
+    {
+        SetCameraPreviewUiVisible(false);
+    }
+
+    private void SetCameraPreviewUiVisible(bool visible)
+    {
+        if (!visible)
+        {
+            if (_cameraPreviewUiRoot != null)
+            {
+                if (Application.isPlaying) Destroy(_cameraPreviewUiRoot);
+                else DestroyImmediate(_cameraPreviewUiRoot);
+                _cameraPreviewUiRoot = null;
+            }
+            RougeTiltShiftCamera.ClearUiTopBoundary();
+            return;
+        }
+        if (_cameraPreviewUiRoot != null) return;
+
+        _cameraPreviewUiRoot = new GameObject("__Camera UI Occlusion Preview",
+            typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        _cameraPreviewUiRoot.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSaveInEditor;
+        _cameraPreviewUiRoot.transform.SetParent(transform, false);
+        Canvas canvas = _cameraPreviewUiRoot.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 49;
+        RougeTowerDefenseUiLayout.ConfigureCanvasScaler(
+            _cameraPreviewUiRoot.GetComponent<CanvasScaler>());
+
+        RectTransform status = CreateCameraPreviewPanel("Status UI Occlusion",
+            new Color(0.025f, 0.04f, 0.07f, 0.82f));
+        RougeTowerDefenseUiLayout.ConfigureStatusPanel(status);
+        RectTransform ranking = CreateCameraPreviewPanel("Ranking UI Occlusion",
+            new Color(0.025f, 0.04f, 0.07f, 0.82f));
+        RougeTowerDefenseUiLayout.ConfigureDamagePanel(ranking);
+        RectTransform dock = CreateCameraPreviewPanel("Command Dock UI Occlusion",
+            new Color(0.004f, 0.014f, 0.024f, 0.94f));
+        RougeTowerDefenseUiLayout.ConfigureCommandDock(dock);
+        dock.gameObject.AddComponent<RougeTiltShiftUiBoundary>();
+    }
+
+    private RectTransform CreateCameraPreviewPanel(string panelName, Color color)
+    {
+        GameObject panel = new GameObject(panelName,
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline));
+        panel.hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSaveInEditor;
+        panel.transform.SetParent(_cameraPreviewUiRoot.transform, false);
+        Image image = panel.GetComponent<Image>();
+        image.color = color;
+        image.raycastTarget = false;
+        Outline outline = panel.GetComponent<Outline>();
+        outline.effectColor = new Color(0.08f, 0.72f, 0.94f, 0.92f);
+        outline.effectDistance = new Vector2(2f, -2f);
+        return panel.GetComponent<RectTransform>();
     }
 
     [ContextMenu("Clear Map")]
     public void ClearMap()
     {
+        ClearStartupRevealVisuals();
         ClearTowerFootprintGridOverlays();
         _runtimeTowerPlaceEffects.Clear();
         _permanentTowerPlaceEffects.Clear();
@@ -182,6 +321,9 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         }
         _tileVisuals[cell] = new TileVisualState
         {
+            root = instance != null ? instance.transform : null,
+            originalLocalPosition = instance != null ? instance.transform.localPosition : Vector3.zero,
+            originalLocalScale = instance != null ? instance.transform.localScale : Vector3.one,
             renderers = renderers,
             spriteColors = spriteColors
         };
@@ -855,6 +997,11 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         if (levelCameraFollow != null)
         {
             levelCameraFollow.SetZoomLimits(map.MinimumCameraZoom, map.MaximumCameraZoom);
+            if (map.DefaultCameraView.Configured)
+                levelCameraFollow.ApplyViewState(map.DefaultCameraView.ToViewState());
+            else
+                levelCameraFollow.SetPositionXZImmediately(map.DefaultCameraPositionXZ);
+            levelCameraFollow.SetSharedZoomAsApplied(1f);
             levelCameraFollow.SetMovementClampEnabled(map.ConfigureCameraBounds);
         }
         for (int i = 0; i < map.EnemySpawns.Count; i++)
@@ -926,6 +1073,11 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (map == null) return;
         if (follow != null) follow.SetZoomLimits(map.MinimumCameraZoom, map.MaximumCameraZoom);
+        if (follow != null && map.DefaultCameraView.Configured)
+            follow.ApplyViewState(map.DefaultCameraView.ToViewState());
+        else if (follow != null)
+            follow.SetPositionXZImmediately(map.DefaultCameraPositionXZ);
+        if (follow != null) follow.SetSharedZoomAsApplied(1f);
         if (follow != null) follow.SetMovementClampEnabled(map.ConfigureCameraBounds);
         if (!map.ConfigureCameraBounds) return;
 
@@ -970,4 +1122,49 @@ public sealed class RougeMapSurface : MonoBehaviour
 
 public sealed class RougeRuntimeMapObject : MonoBehaviour
 {
+}
+
+public static class RougeTowerDefenseUiLayout
+{
+    public static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
+
+    public static void ConfigureCanvasScaler(CanvasScaler scaler)
+    {
+        if (scaler == null) return;
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = ReferenceResolution;
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+    }
+
+    public static void ConfigureStatusPanel(RectTransform rect)
+    {
+        ConfigureTopRight(rect, new Vector2(-20f, -20f), new Vector2(456f, 184f));
+    }
+
+    public static void ConfigureDamagePanel(RectTransform rect)
+    {
+        ConfigureTopRight(rect, new Vector2(-20f, -224f), new Vector2(356f, 360f));
+    }
+
+    public static void ConfigureCommandDock(RectTransform rect)
+    {
+        if (rect == null) return;
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(1f, 0f);
+        rect.pivot = new Vector2(0.5f, 0f);
+        rect.anchoredPosition = new Vector2(0f, 8f);
+        rect.sizeDelta = new Vector2(-64f, 230f);
+    }
+
+    private static void ConfigureTopRight(RectTransform rect, Vector2 position,
+        Vector2 size)
+    {
+        if (rect == null) return;
+        rect.anchorMin = Vector2.one;
+        rect.anchorMax = Vector2.one;
+        rect.pivot = Vector2.one;
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+    }
 }

@@ -196,6 +196,137 @@ public static class RougeTowerPlaceEffectRules
     }
 }
 
+[Serializable]
+public struct RougeTiltShiftSettings
+{
+    [Range(0.2f, 0.8f)] public float focusCenterY;
+    [Range(0.02f, 0.48f)] public float upperClearRange;
+    [Range(0.02f, 0.48f)] public float upperTransitionWidth;
+    [Range(0f, 1f)] public float upperBlurStrength;
+    public bool anchorLowerBlurToUi;
+    [Range(0.02f, 0.48f)] public float lowerClearRange;
+    [Range(0.02f, 0.48f)] public float lowerTransitionWidth;
+    [Range(-0.12f, 0.2f)] public float lowerUiEdgeOffset;
+    [Range(0f, 1f)] public float lowerBlurStrength;
+    [Range(1f, 26f)] public float blurRadius;
+    [Range(0.5f, 1.5f)] public float contrast;
+    [Range(0f, 2f)] public float saturation;
+
+    public static RougeTiltShiftSettings CreateDefault()
+    {
+        return new RougeTiltShiftSettings
+        {
+            focusCenterY = 0.5f,
+            upperClearRange = 0.27f,
+            upperTransitionWidth = 0.19f,
+            upperBlurStrength = 0.86f,
+            anchorLowerBlurToUi = true,
+            lowerClearRange = 0.25f,
+            lowerTransitionWidth = 0.20f,
+            lowerUiEdgeOffset = 0f,
+            lowerBlurStrength = 0.95f,
+            blurRadius = 4.5f,
+            contrast = 1.01f,
+            saturation = 1f
+        };
+    }
+
+    public RougeTiltShiftSettings Sanitized()
+    {
+        RougeTiltShiftSettings value = blurRadius >= 1f &&
+                                        upperClearRange > 0f && lowerClearRange > 0f
+            ? this
+            : CreateDefault();
+        value.focusCenterY = Mathf.Clamp(value.focusCenterY, 0.2f, 0.8f);
+        value.upperClearRange = Mathf.Clamp(value.upperClearRange, 0.02f, 0.48f);
+        value.upperTransitionWidth = Mathf.Clamp(value.upperTransitionWidth, 0.02f, 0.48f);
+        value.upperBlurStrength = Mathf.Clamp01(value.upperBlurStrength);
+        value.lowerClearRange = Mathf.Clamp(value.lowerClearRange, 0.02f, 0.48f);
+        value.lowerTransitionWidth = Mathf.Clamp(value.lowerTransitionWidth, 0.02f, 0.48f);
+        value.lowerUiEdgeOffset = Mathf.Clamp(value.lowerUiEdgeOffset, -0.12f, 0.2f);
+        value.lowerBlurStrength = Mathf.Clamp01(value.lowerBlurStrength);
+        value.blurRadius = Mathf.Clamp(value.blurRadius, 1f, 26f);
+        value.contrast = Mathf.Clamp(value.contrast, 0.5f, 1.5f);
+        value.saturation = Mathf.Clamp(value.saturation, 0f, 2f);
+        return value;
+    }
+}
+
+public enum RougeCameraPresetMode
+{
+    Default,
+    Free,
+    TiltShift,
+    TopDown
+}
+
+[Serializable]
+public struct RougeCameraViewPreset
+{
+    [SerializeField, HideInInspector] private bool configured;
+    [SerializeField] private Vector3 position;
+    [SerializeField] private Vector3 eulerAngles;
+    [SerializeField] private bool orthographic;
+    [SerializeField, Range(1f, 179f)] private float fieldOfView;
+    [SerializeField, Min(0.01f)] private float orthographicSize;
+    [SerializeField, Min(0.001f)] private float nearClipPlane;
+    [SerializeField, Min(0.01f)] private float farClipPlane;
+
+    public bool Configured => configured;
+    public Vector3 Position => position;
+    public Vector3 EulerAngles => eulerAngles;
+    public bool Orthographic => orthographic;
+    public float FieldOfView => fieldOfView;
+    public float OrthographicSize => orthographicSize;
+    public float NearClipPlane => nearClipPlane;
+    public float FarClipPlane => farClipPlane;
+
+    public static RougeCameraViewPreset Capture(Camera camera)
+    {
+        if (camera == null) return default;
+        return new RougeCameraViewPreset
+        {
+            configured = true,
+            position = camera.transform.position,
+            eulerAngles = camera.transform.eulerAngles,
+            orthographic = camera.orthographic,
+            fieldOfView = camera.fieldOfView,
+            orthographicSize = camera.orthographicSize,
+            nearClipPlane = camera.nearClipPlane,
+            farClipPlane = camera.farClipPlane
+        }.Sanitized();
+    }
+
+    public RougeCameraFollow.ViewState ToViewState()
+    {
+        RougeCameraViewPreset value = Sanitized();
+        return new RougeCameraFollow.ViewState
+        {
+            Position = value.position,
+            Rotation = Quaternion.Euler(value.eulerAngles),
+            Orthographic = value.orthographic,
+            FieldOfView = value.fieldOfView,
+            OrthographicSize = value.orthographicSize,
+            NearClipPlane = value.nearClipPlane,
+            FarClipPlane = value.farClipPlane
+        };
+    }
+
+    public RougeCameraViewPreset Sanitized()
+    {
+        RougeCameraViewPreset value = this;
+        value.fieldOfView = Mathf.Clamp(value.fieldOfView > 0f ? value.fieldOfView : 60f,
+            1f, 179f);
+        value.orthographicSize = Mathf.Max(0.01f,
+            value.orthographicSize > 0f ? value.orthographicSize : 5f);
+        value.nearClipPlane = Mathf.Max(0.001f,
+            value.nearClipPlane > 0f ? value.nearClipPlane : 0.3f);
+        value.farClipPlane = Mathf.Max(value.nearClipPlane + 0.01f,
+            value.farClipPlane > 0f ? value.farClipPlane : 1000f);
+        return value;
+    }
+}
+
 [CreateAssetMenu(fileName = "TowerDefenseMap", menuName = "Rouge/Tower Defense Map")]
 public sealed class RougeTowerDefenseMap : ScriptableObject
 {
@@ -301,8 +432,20 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     [SerializeField] private bool configureCameraBounds = true;
     [SerializeField] private Vector2 cameraBoundsCenter = Vector2.zero;
     [SerializeField] private Vector2 cameraBoundsSize = new Vector2(180f, 180f);
-    [SerializeField, Min(0.01f)] private float minimumCameraZoom = 0.5f;
-    [SerializeField, Min(0.01f)] private float maximumCameraZoom = 5f;
+    [SerializeField, Range(0.5f, 2f)] private float minimumCameraZoom = 0.5f;
+    [SerializeField, Range(0.5f, 2f)] private float maximumCameraZoom = 2f;
+    [SerializeField, HideInInspector]
+    private Vector2 defaultCameraPositionXZ = new Vector2(0f, -25f);
+    [SerializeField, HideInInspector]
+    private Vector2 tiltShiftCameraPositionXZ = new Vector2(0f, -85f);
+    [Header("Four Camera Mode Presets")]
+    [SerializeField] private RougeCameraViewPreset defaultCameraView;
+    [SerializeField] private RougeCameraViewPreset freeCameraView;
+    [SerializeField] private RougeCameraViewPreset tiltShiftCameraView;
+    [SerializeField] private RougeCameraViewPreset topDownCameraView;
+    [Header("F2 Tilt-Shift Observation")]
+    [SerializeField] private RougeTiltShiftSettings tiltShiftSettings =
+        RougeTiltShiftSettings.CreateDefault();
 
     public int Width => width;
     public int Height => height;
@@ -340,6 +483,17 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public Vector2 CameraBoundsSize => cameraBoundsSize;
     public float MinimumCameraZoom => minimumCameraZoom;
     public float MaximumCameraZoom => maximumCameraZoom;
+    public Vector2 DefaultCameraPositionXZ => defaultCameraPositionXZ;
+    public Vector2 TiltShiftCameraPositionXZ => tiltShiftCameraPositionXZ;
+    public RougeCameraViewPreset DefaultCameraView => defaultCameraView.Sanitized();
+    public RougeCameraViewPreset FreeCameraView => freeCameraView.Sanitized();
+    public RougeCameraViewPreset TiltShiftCameraView => tiltShiftCameraView.Sanitized();
+    public RougeCameraViewPreset TopDownCameraView => topDownCameraView.Sanitized();
+    public RougeTiltShiftSettings TiltShiftSettings => tiltShiftSettings.Sanitized();
+    public Bounds WorldBounds => new Bounds(
+        new Vector3(origin.x + width * cellSize * 0.5f, 0f,
+            origin.y + height * cellSize * 0.5f),
+        new Vector3(width * cellSize, 0f, height * cellSize));
 
     public bool Contains(Vector2Int cell) => cell.x >= 0 && cell.y >= 0 && cell.x < width && cell.y < height;
 
@@ -427,6 +581,72 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public Vector3 CellCenter(Vector2Int cell, float y = 0f)
     {
         return new Vector3(origin.x + (cell.x + 0.5f) * cellSize, y, origin.y + (cell.y + 0.5f) * cellSize);
+    }
+
+    public Vector3 MapPointToWorld(Vector2 mapPoint, float y = 0f)
+    {
+        Vector2 point = ClampMapPoint(mapPoint);
+        return new Vector3(origin.x + (point.x + 0.5f) * cellSize, y,
+            origin.y + (point.y + 0.5f) * cellSize);
+    }
+
+    public Vector2 WorldToMapPoint(Vector3 worldPoint)
+    {
+        return ClampMapPoint(new Vector2(
+            (worldPoint.x - origin.x) / cellSize - 0.5f,
+            (worldPoint.z - origin.y) / cellSize - 0.5f));
+    }
+
+    public void SetDefaultCameraPositionXZ(Vector2 worldXZ)
+    {
+        defaultCameraPositionXZ = worldXZ;
+    }
+
+    public void SetTiltShiftCameraPositionXZ(Vector2 worldXZ)
+    {
+        tiltShiftCameraPositionXZ = worldXZ;
+    }
+
+    public void SetTiltShiftSettings(RougeTiltShiftSettings settings)
+    {
+        tiltShiftSettings = settings.Sanitized();
+    }
+
+    public RougeCameraViewPreset GetCameraPreset(RougeCameraPresetMode mode)
+    {
+        switch (mode)
+        {
+            case RougeCameraPresetMode.Free: return FreeCameraView;
+            case RougeCameraPresetMode.TiltShift: return TiltShiftCameraView;
+            case RougeCameraPresetMode.TopDown: return TopDownCameraView;
+            default: return DefaultCameraView;
+        }
+    }
+
+    public void SetCameraPreset(RougeCameraPresetMode mode, RougeCameraViewPreset preset)
+    {
+        preset = preset.Sanitized();
+        switch (mode)
+        {
+            case RougeCameraPresetMode.Free:
+                freeCameraView = preset;
+                break;
+            case RougeCameraPresetMode.TiltShift:
+                tiltShiftCameraView = preset;
+                break;
+            case RougeCameraPresetMode.TopDown:
+                topDownCameraView = preset;
+                break;
+            default:
+                defaultCameraView = preset;
+                break;
+        }
+    }
+
+    public void SetCameraZoomSettings(float minimum, float maximum)
+    {
+        minimumCameraZoom = Mathf.Clamp(minimum, 0.5f, 2f);
+        maximumCameraZoom = Mathf.Clamp(maximum, minimumCameraZoom, 2f);
     }
 
     public EnemySpawn FindEnemySpawn(Vector2Int cell)
@@ -645,11 +865,27 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         legacyTileDefinitions.Add(new TileDefinition { name = "Wall", editorColor = new Color(0.85f, 0.22f, 0.16f, 0.9f), blocksNavigation = true, fallbackHeight = 3f });
         legacyTileDefinitions.Add(new TileDefinition { name = "Tower Place", editorColor = new Color(0.18f, 0.8f, 0.42f, 0.9f), towerPlace = true, blocksNavigation = true, fallbackHeight = 0.1f });
         ResizeGrid(MaxMapCells, MaxMapCells, 8f, true);
+        minimumCameraZoom = 0.5f;
+        maximumCameraZoom = 2f;
+        defaultCameraPositionXZ = new Vector2(0f, -25f);
+        tiltShiftCameraPositionXZ = new Vector2(0f, -85f);
+        defaultCameraView = default;
+        freeCameraView = default;
+        tiltShiftCameraView = default;
+        topDownCameraView = default;
+        tiltShiftSettings = RougeTiltShiftSettings.CreateDefault();
     }
 
     private Vector2Int ClampCell(Vector2Int cell)
     {
         return new Vector2Int(Mathf.Clamp(cell.x, 0, width - 1), Mathf.Clamp(cell.y, 0, height - 1));
+    }
+
+    private Vector2 ClampMapPoint(Vector2 point)
+    {
+        return new Vector2(
+            Mathf.Clamp(point.x, -0.5f, width - 0.5f),
+            Mathf.Clamp(point.y, -0.5f, height - 0.5f));
     }
 
     private void EnsureStorage()
@@ -669,8 +905,13 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         cellSize = Mathf.Max(0.1f, cellSize);
         cameraBoundsSize.x = Mathf.Max(1f, cameraBoundsSize.x);
         cameraBoundsSize.y = Mathf.Max(1f, cameraBoundsSize.y);
-        minimumCameraZoom = Mathf.Max(0.01f, minimumCameraZoom);
-        maximumCameraZoom = Mathf.Max(minimumCameraZoom, maximumCameraZoom);
+        minimumCameraZoom = Mathf.Clamp(minimumCameraZoom, 0.5f, 2f);
+        maximumCameraZoom = Mathf.Clamp(maximumCameraZoom, minimumCameraZoom, 2f);
+        defaultCameraView = defaultCameraView.Sanitized();
+        freeCameraView = freeCameraView.Sanitized();
+        tiltShiftCameraView = tiltShiftCameraView.Sanitized();
+        topDownCameraView = topDownCameraView.Sanitized();
+        tiltShiftSettings = tiltShiftSettings.Sanitized();
         enemyHealthMultiplier = Mathf.Max(0.01f, enemyHealthMultiplier);
         enemyMoveSpeedMultiplier = Mathf.Max(0.01f, enemyMoveSpeedMultiplier);
         towerGoldCostMultiplier = Mathf.Max(0f, towerGoldCostMultiplier);
