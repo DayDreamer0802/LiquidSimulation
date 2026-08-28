@@ -405,6 +405,7 @@ MonoBehaviour:
   disabledTowerTypeIds: 
   enemyHealthMultiplier: 1
   enemyMoveSpeedMultiplier: 1
+  eliteSpawnDelaySeconds: 180
   towerGoldCostMultiplier: 1
   towerDamageMultiplier: 1
   towerAttackSpeedMultiplier: 1
