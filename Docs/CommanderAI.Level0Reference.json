@@ -7,7 +7,8 @@
     "levelAsset": "Assets/Level0.asset",
     "tilePalette": "Assets/Resources/Config/TowerDefenseTilePalette.asset",
     "balance": "Assets/Resources/Config/tower_defense_balance.json",
-    "mainTowerDefaults": "Assets/Rouge/RougeMainTower.cs"
+    "mainTowerBalance": "Assets/Resources/Config/tower_defense_balance.json",
+    "mainTowerContactDefaults": "Assets/Rouge/RougeMainTower.cs"
   },
   "authorityNote": "这是默认关卡的 AI 阅读版快照，不参与运行时加载，也不做一致性检测。实际游玩始终以当前关卡资源和游戏配置为准。",
   "fieldGuide": {
@@ -60,7 +61,7 @@
     "mainTower": {
       "enabled": true,
       "cell": [8, 8],
-      "maxHealth": 1500,
+      "maxHealth": 500,
       "contactRadius": 3.2,
       "damagePerRegularEnemyContact": 18,
       "contactCounterAoe": { "radius": 9, "damage": 22, "knockback": 38, "cooldownSeconds": 0.35 },

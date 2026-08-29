@@ -23,7 +23,15 @@ public partial class RougeGameManager
     private const float TowerDefenseAutoplaySupportGoldAttributionConfidence = 0.35f;
     private const float TowerDefenseAutoplaySupportGoldDamageEquivalent = 4f;
     private const float TowerDefenseAutoplayNearBaseOuterCrisisCells = 8f;
-    private const float TowerDefenseAutoplayEmergencyNearBaseCrisis = 0.55f;
+    private const float TowerDefenseAutoplayNearBaseEarlyWarning = 0.18f;
+    private const float TowerDefenseAutoplayEmergencyNearBaseCrisis = 0.35f;
+    private const float TowerDefenseAutoplayImmediateNearBaseCrisis = 0.75f;
+    private const float TowerDefenseAutoplayNearBaseDecisionSustainSeconds = 0.5f;
+    private const float TowerDefenseAutoplayHeatMinimumHalfLifeSeconds = 1.25f;
+    private const float TowerDefenseAutoplayHeatMaximumHalfLifeSeconds = 2.75f;
+    private const float TowerDefenseAutoplayChargeCooldownSeconds = 36f;
+    private const float TowerDefenseAutoplayCapitalHoldSeconds = 12f;
+    private const float TowerDefenseAutoplayCapitalHoldCooldownSeconds = 8f;
 
     // JSON is parsed and validated once on the managed side. Burst jobs continue to
     // receive only their compact battlefield inputs; they never parse strings or
@@ -126,6 +134,16 @@ public partial class RougeGameManager
     private float _towerDefenseAutoplayNearBasePressureSince =
         float.NegativeInfinity;
     private float _towerDefenseAutoplayNearBaseCrisis;
+    private float _towerDefenseAutoplayNearBaseInstantRisk;
+    private float _towerDefenseAutoplayLastRealNearBaseRisk;
+    private float _towerDefenseAutoplayLastRealNearBaseRiskAt =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayEnemyFlowBacklog;
+    private float _towerDefenseAutoplayBossReadinessUrgency = 1f;
+    private float _towerDefenseAutoplayHeatmapUpdatedAt = float.NegativeInfinity;
+    private int _towerDefenseAutoplayHeatmapRevision;
+    private int _towerDefenseAutoplayHotspotRevision = -1;
+    private RougeTowerDefenseMap _towerDefenseAutoplayHeatmapMap;
     private bool _towerDefenseAutoplaySustainedNearBaseCrisis;
     private bool _towerDefenseAutoplaySustainedMainTowerDamage;
     private float _towerDefenseAutoplayManualSpeechProtectedUntil =
@@ -178,6 +196,24 @@ public partial class RougeGameManager
         new List<string>(TowerDefenseAutoplayThoughtCapacity);
     private readonly List<RougeDefenseTower> _towerDefenseAutoplayBossOverrides =
         new List<RougeDefenseTower>();
+    private readonly List<RougeDefenseTower>
+        _towerDefenseAutoplayBossFocusCandidates =
+        new List<RougeDefenseTower>();
+    private readonly HashSet<RougeDefenseTower>
+        _towerDefenseAutoplayDesiredBossFocus =
+        new HashSet<RougeDefenseTower>();
+    private readonly HashSet<RougeDefenseTower>
+        _towerDefenseAutoplayReservedBossGuards =
+        new HashSet<RougeDefenseTower>();
+    private readonly List<AutoplayHeatHotspot>
+        _towerDefenseAutoplayNearBaseHotspots =
+        new List<AutoplayHeatHotspot>(4);
+    private readonly List<AutoplayBuildChoice>
+        _towerDefenseAutoplayBuildChoiceScratch =
+        new List<AutoplayBuildChoice>(512);
+    private readonly List<AutoplayUpgradeChoice>
+        _towerDefenseAutoplayUpgradeChoiceScratch =
+        new List<AutoplayUpgradeChoice>(64);
     private readonly List<RougeDefenseTower> _towerDefenseAutoplayOwnedTowers =
         new List<RougeDefenseTower>();
     private readonly List<float> _towerDefenseAutoplayOwnedTowerBuildTimes =
@@ -185,6 +221,15 @@ public partial class RougeGameManager
     private float _towerDefenseAutoplayLastSaleGameTime = float.NegativeInfinity;
     private float _towerDefenseAutoplayLastCapitalActionGameTime =
         float.NegativeInfinity;
+    private bool _towerDefenseAutoplayCapitalHoldActive;
+    private float _towerDefenseAutoplayCapitalHoldUntilGameTime =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayLastChargeGameTime = float.NegativeInfinity;
+    private int _towerDefenseAutoplayExpansionBaselineTowerCount;
+    private float _towerDefenseAutoplayNextExpansionGameTime =
+        float.PositiveInfinity;
     private AutoplayStrategyMode _towerDefenseAutoplayStrategyMode =
         AutoplayStrategyMode.Opening;
     private float _towerDefenseAutoplayStrategyModeSince;
@@ -199,9 +244,21 @@ public partial class RougeGameManager
         Array.Empty<float>();
     private float[] _towerDefenseAutoplayActiveUrgentPressureByCell =
         Array.Empty<float>();
+    private float[] _towerDefenseAutoplayNonBossHeatByCell = Array.Empty<float>();
     private float[] _towerDefenseAutoplayGroundValueByCell = Array.Empty<float>();
     private float[] _towerDefenseAutoplayRouteDistanceByCell = Array.Empty<float>();
     private float[] _towerDefenseAutoplayRouteTrafficByCell = Array.Empty<float>();
+    // RouteTraffic includes a light shoulder blur for ordinary circular coverage.
+    // CoreTraffic and RouteNext retain the actual authored lane skeleton so geometry
+    // analysis never mistakes those shoulders for parallel roads.
+    private float[] _towerDefenseAutoplayRouteCoreTrafficByCell =
+        Array.Empty<float>();
+    private int[] _towerDefenseAutoplayRouteNextByCell = Array.Empty<int>();
+    private int[] _towerDefenseAutoplayRoutePredecessorCountByCell =
+        Array.Empty<int>();
+    private Vector2[] _towerDefenseAutoplayRouteTangentByCell =
+        Array.Empty<Vector2>();
+    private float _towerDefenseAutoplayMaximumCoreTraffic = 1f;
     private float[] _towerDefenseAutoplayCoverageByCell = Array.Empty<float>();
     private float[] _towerDefenseAutoplayFunctionCoverageByCell =
         Array.Empty<float>();
@@ -212,12 +269,15 @@ public partial class RougeGameManager
     private AutoplayBuildPrior[] _towerDefenseAutoplayBuildPriors =
         Array.Empty<AutoplayBuildPrior>();
     private float[] _towerDefenseAutoplayUpgradeGrowthPriors = Array.Empty<float>();
+    private float[] _towerDefenseAutoplayUpgradeAbsoluteGainPriors =
+        Array.Empty<float>();
     private float[] _towerDefenseAutoplayUpgradeRangePriors = Array.Empty<float>();
     private NativeArray<float4> _towerDefenseAutoplayPlanPositions;
     private NativeArray<float4> _towerDefenseAutoplayPlanStates;
     private NativeArray<byte> _towerDefenseAutoplayPlanKinds;
     private NativeArray<float> _towerDefenseAutoplayPlanHardFactors;
     private NativeArray<float> _towerDefenseAutoplayPlanMaximumHealth;
+    private NativeArray<RougeEnemyEffectState> _towerDefenseAutoplayPlanEffects;
     private NativeArray<AutoplayEnemyContribution>
         _towerDefenseAutoplayPlanEnemyContributions;
     private NativeArray<AutoplaySpatialCell> _towerDefenseAutoplayPlanCells;
@@ -300,6 +360,12 @@ public partial class RougeGameManager
         public float NextWaveSeconds;
         public float SecondsUntilBoss;
         public float BossPreparation;
+        public float PositiveArmorPressure;
+        public float UncoveredArmorPressure;
+        public float FastUncontrolledPressure;
+        public float VulnerablePressure;
+        public float LateHealthRatioSum;
+        public float LateHealthWeight;
         public Vector2Int MainCell;
         public bool HasMainCell;
     }
@@ -345,7 +411,10 @@ public partial class RougeGameManager
         public int PaidCost;
         public float Utility;
         public float Efficiency;
+        public float ObjectiveUtility;
         public float ObjectiveEfficiency;
+        public float CapitalScore;
+        public float ObjectiveCapitalScore;
         public float FixedScore;
         public float DynamicScore;
         public float TileScore;
@@ -353,7 +422,11 @@ public partial class RougeGameManager
         public float PressureScore;
         public float DiversityScore;
         public float GoalDefenseScore;
+        public float NearBaseHeatCoverage;
+        public int NearBaseHeatCellIndex;
         public float OpportunityPenalty;
+        public float GeometryScore;
+        public float MarginalPower;
         public AutoplayPressureLayer DominantPressureLayer;
     }
 
@@ -361,13 +434,30 @@ public partial class RougeGameManager
     {
         public bool IsValid;
         public RougeDefenseTower Tower;
+        public int SpecializationChoiceIndex;
         public int OriginalCost;
         public int PaidCost;
         public float Utility;
         public float Efficiency;
+        public float ObjectiveUtility;
         public float ObjectiveEfficiency;
+        public float CapitalScore;
+        public float ObjectiveCapitalScore;
         public float PressureScore;
         public float GrowthScore;
+        public float NearBaseHeatCoverage;
+        public int NearBaseHeatCellIndex;
+        public float ObservedCoreRate;
+        public float ObservedCoreConfidence;
+        public float UncoveredArmorPressure;
+        public float FastUncontrolledPressure;
+        public float VulnerablePressure;
+        public float LateHealthRatio;
+        public float EarlyRouteExposure;
+        public float LateRouteExposure;
+        public float RouteReuse;
+        public float Bottleneck;
+        public float MarginalPower;
         public AutoplayPressureLayer DominantPressureLayer;
     }
 
@@ -384,6 +474,21 @@ public partial class RougeGameManager
         public bool CoversProvenLeader;
         public float Utility;
         public float Efficiency;
+        public float CapitalGain;
+    }
+
+    private struct AutoplayChargeChoice
+    {
+        public bool IsValid;
+        public Vector2Int OwnerCell;
+        public Vector2Int TargetCell;
+        public RougeDefenseTower TargetTower;
+        public int OriginalCost;
+        public int PaidCost;
+        public float TargetStrategicScore;
+        public float ExpectedEffectUtility;
+        public float OwnerOpportunityCost;
+        public float CapitalGain;
     }
 
     private struct AutoplayTowerObservation
@@ -412,11 +517,36 @@ public partial class RougeGameManager
         public int OriginalCost;
         public int PaidCost;
         public float AttackRange;
+        public float CombatPower;
         public float FixedScore;
         public float TileScore;
         public float CoverageScore;
         public float BossDamageScore;
         public float OpportunityPenalty;
+        public float GeometryScore;
+        public float PathDwell;
+        public float RouteReuse;
+        public float Bottleneck;
+        public float DirectionConsistency;
+        public float PiercingLaneScore;
+        public float RandomAreaHitChance;
+        public float SingleTargetRealization;
+        public float EarlyRouteExposure;
+        public float LateRouteExposure;
+        public float FinisherFit;
+        public float SetupFit;
+    }
+
+    private struct AutoplayRouteGeometry
+    {
+        public float PathDwell;
+        public float Reuse;
+        public float Bottleneck;
+        public float DirectionConsistency;
+        public float PiercingLane;
+        public float RandomAreaHitChance;
+        public float EarlyExposure;
+        public float LateExposure;
     }
 
     private struct AutoplayPressureChannels
@@ -426,6 +556,14 @@ public partial class RougeGameManager
         public float Elite;
         public float Boss;
         public float Urgent;
+    }
+
+    private struct AutoplayHeatHotspot
+    {
+        public Vector2Int Cell;
+        public float Risk;
+        public float RequiredCoverage;
+        public float CurrentCoverage;
     }
 
     private struct AutoplaySpatialCell
@@ -472,6 +610,12 @@ public partial class RougeGameManager
         public float ImminentElitePressure;
         public float ImminentBossPressure;
         public float NearBaseEnemyWeight;
+        public float PositiveArmorPressure;
+        public float UncoveredArmorPressure;
+        public float FastUncontrolledPressure;
+        public float VulnerablePressure;
+        public float HealthRatio;
+        public float RouteProgress;
         public byte IsValid;
         public byte IsElite;
         public byte IsBoss;
@@ -493,6 +637,12 @@ public partial class RougeGameManager
         public float ImminentElitePressure;
         public float ImminentBossPressure;
         public float NearBaseEnemyWeight;
+        public float PositiveArmorPressure;
+        public float UncoveredArmorPressure;
+        public float FastUncontrolledPressure;
+        public float VulnerablePressure;
+        public float LateHealthRatioSum;
+        public float LateHealthWeight;
     }
 
     private static float CalculateAutoplayNearBaseCrisis(float routeDistance,
@@ -516,6 +666,7 @@ public partial class RougeGameManager
         [ReadOnly] public NativeArray<float4> Positions;
         [ReadOnly] public NativeArray<float4> States;
         [ReadOnly] public NativeArray<byte> Kinds;
+        [ReadOnly] public NativeArray<RougeEnemyEffectState> Effects;
         [ReadOnly] public NativeArray<float> HardFactors;
         [ReadOnly] public NativeArray<float> MaximumHealthByKind;
         [ReadOnly] public NativeArray<AutoplaySpatialCell> Cells;
@@ -564,10 +715,16 @@ public partial class RougeGameManager
             byte kind = Kinds[index];
             bool boss = (kind & BossEnemyFlag) != 0;
             bool elite = !boss && (kind & EliteEnemyFlag) != 0;
+            RougeEnemyEffectState effects = Effects[index];
             float pressure = boss ? 24f : elite ? 4f : 1f;
-            float maximumHealth = MaximumHealthByKind[kind];
+            float maximumHealth = effects.MaximumHealth > 0.001f
+                ? effects.MaximumHealth
+                : MaximumHealthByKind[kind];
+            float healthRatio = maximumHealth > 0.001f
+                ? math.saturate(state.x / maximumHealth)
+                : 1f;
             if (maximumHealth > 0.001f)
-                pressure *= 0.65f + math.saturate(state.x / maximumHealth) * 0.35f;
+                pressure *= 0.65f + healthRatio * 0.35f;
 
             int cellIndex = y * Width + x;
             float goalThreat = 0f;
@@ -581,8 +738,11 @@ public partial class RougeGameManager
                                     math.abs(y - MainCellY);
                 float nearBaseCrisis = CalculateAutoplayNearBaseCrisis(
                     routeDistance, NearBaseFullCrisisCells);
-                nearBaseEnemyWeight = nearBaseCrisis *
-                    (boss ? 2f : elite ? 1.5f : 1f);
+                // Boss pressure has its own channel. Mixing it into the cleanup
+                // signal makes the Boss itself look like a minion leak.
+                nearBaseEnemyWeight = boss
+                    ? 0f
+                    : nearBaseCrisis * (elite ? 1.5f : 1f);
                 goalThreat = 1f - math.saturate(routeDistance /
                     math.max(1f, MaximumRouteDistance));
                 distanceWeight = 1f /
@@ -591,12 +751,19 @@ public partial class RougeGameManager
             }
 
             float hardFactor = HardFactors[kind];
+            float eliteShare = boss ? 0f : math.saturate(hardFactor);
             float crowdPressure = boss
                 ? 0f
-                : pressure * (elite ? 0.35f : 1f);
-            float elitePressure = boss ? 0f : pressure * hardFactor;
+                : pressure * (1f - eliteShare);
+            float elitePressure = boss ? 0f : pressure * eliteShare;
             float bossPressure = boss ? pressure : 0f;
-            float speedRatio = state.z / math.max(0.01f, BaselineSpeed);
+            float slowMultiplier = effects.FreezeTimer > 0f
+                ? 0.05f
+                : effects.SlowTimer > 0f
+                    ? math.clamp(1f - effects.SlowPercent * 0.01f, 0.05f, 1f)
+                    : 1f;
+            float speedRatio = state.z * slowMultiplier /
+                               math.max(0.01f, BaselineSpeed);
             float speedThreat = math.saturate((speedRatio - 1.08f) /
                                               (1.35f - 1.08f));
             float speedArrival = math.saturate((speedRatio - 0.8f) /
@@ -605,9 +772,18 @@ public partial class RougeGameManager
                 math.lerp(0.78f, 1.38f, speedArrival);
             float imminentPressure = pressure * arrivalWeight;
             float urgentFactor = math.max(goalThreat, speedThreat);
-            float urgentPressure = urgentFactor >= 0.7f
+            float urgentPressure = !boss && urgentFactor >= 0.7f
                 ? pressure * (0.4f + urgentFactor * 0.8f)
                 : 0f;
+            float positiveArmor = math.max(0f, effects.Armor);
+            float armorDemand = pressure * math.saturate(positiveArmor / 8f);
+            bool vulnerable = effects.VulnerabilityTimer > 0f ||
+                              effects.VulnerabilityDamageBonusTimer > 0f ||
+                              effects.VulnerabilityArmorPenetrationTimer > 0f;
+            float uncoveredArmor = armorDemand * (vulnerable ? 0.2f : 1f);
+            float fastUncontrolled = pressure * speedThreat;
+            float lateWeight = pressure * math.saturate((goalThreat - 0.45f) /
+                                                        0.55f);
 
             Contributions[index] = new AutoplayEnemyContribution
             {
@@ -624,6 +800,12 @@ public partial class RougeGameManager
                     imminentPressure * hardFactor,
                 ImminentBossPressure = boss ? imminentPressure : 0f,
                 NearBaseEnemyWeight = nearBaseEnemyWeight,
+                PositiveArmorPressure = armorDemand,
+                UncoveredArmorPressure = uncoveredArmor,
+                FastUncontrolledPressure = fastUncontrolled,
+                VulnerablePressure = vulnerable ? pressure : 0f,
+                HealthRatio = healthRatio,
+                RouteProgress = goalThreat,
                 IsValid = 1,
                 IsElite = elite ? (byte)1 : (byte)0,
                 IsBoss = boss ? (byte)1 : (byte)0
@@ -663,6 +845,17 @@ public partial class RougeGameManager
                 totals.ImminentBossPressure +=
                     contribution.ImminentBossPressure;
                 totals.NearBaseEnemyWeight += contribution.NearBaseEnemyWeight;
+                totals.PositiveArmorPressure +=
+                    contribution.PositiveArmorPressure;
+                totals.UncoveredArmorPressure +=
+                    contribution.UncoveredArmorPressure;
+                totals.FastUncontrolledPressure +=
+                    contribution.FastUncontrolledPressure;
+                totals.VulnerablePressure += contribution.VulnerablePressure;
+                float lateWeight = contribution.Pressure *
+                    math.saturate((contribution.RouteProgress - 0.45f) / 0.55f);
+                totals.LateHealthRatioSum += contribution.HealthRatio * lateWeight;
+                totals.LateHealthWeight += lateWeight;
                 if (contribution.IsBoss != 0) totals.BossEnemies++;
                 else if (contribution.IsElite != 0) totals.EliteEnemies++;
 
@@ -793,6 +986,16 @@ public partial class RougeGameManager
         PrepareBoss,
         BossFight,
         Emergency
+    }
+
+    private enum AutoplayCapitalActionKind : byte
+    {
+        None,
+        Hold,
+        Build,
+        Upgrade,
+        Support,
+        Charge
     }
 
     private enum AutoplayEmotionState : byte
@@ -976,6 +1179,10 @@ public partial class RougeGameManager
     private float GetAutoplayPersonalityRegretBudget(
         AutoplayBattleSnapshot snapshot)
     {
+        if (_towerDefenseAutoplayStrategyMode == AutoplayStrategyMode.Emergency ||
+            _towerDefenseAutoplaySustainedNearBaseCrisis ||
+            _towerDefenseAutoplaySustainedMainTowerDamage)
+            return 0f;
         float healthRatio = mainTower != null && mainTower.maxHealth > 0.001f
             ? Mathf.Clamp01(mainTower.CurrentHealth / mainTower.maxHealth)
             : 1f;
@@ -1037,10 +1244,16 @@ public partial class RougeGameManager
         _towerDefenseAutoplayGroundValueByCell = Array.Empty<float>();
         _towerDefenseAutoplayRouteDistanceByCell = Array.Empty<float>();
         _towerDefenseAutoplayRouteTrafficByCell = Array.Empty<float>();
+        _towerDefenseAutoplayRouteCoreTrafficByCell = Array.Empty<float>();
+        _towerDefenseAutoplayRouteNextByCell = Array.Empty<int>();
+        _towerDefenseAutoplayRoutePredecessorCountByCell = Array.Empty<int>();
+        _towerDefenseAutoplayRouteTangentByCell = Array.Empty<Vector2>();
+        _towerDefenseAutoplayMaximumCoreTraffic = 1f;
         _towerDefenseAutoplayCoverageByCell = Array.Empty<float>();
         _towerDefenseAutoplayFunctionCoverageByCell = Array.Empty<float>();
         _towerDefenseAutoplayBuildPriors = Array.Empty<AutoplayBuildPrior>();
         _towerDefenseAutoplayUpgradeGrowthPriors = Array.Empty<float>();
+        _towerDefenseAutoplayUpgradeAbsoluteGainPriors = Array.Empty<float>();
         _towerDefenseAutoplayUpgradeRangePriors = Array.Empty<float>();
         _towerDefenseAutoplayEnemyPressureByCell = Array.Empty<float>();
         _towerDefenseAutoplayCrowdPressureByCell = Array.Empty<float>();
@@ -1050,6 +1263,16 @@ public partial class RougeGameManager
         _towerDefenseAutoplayActiveCrowdPressureByCell = Array.Empty<float>();
         _towerDefenseAutoplayActiveElitePressureByCell = Array.Empty<float>();
         _towerDefenseAutoplayActiveUrgentPressureByCell = Array.Empty<float>();
+        _towerDefenseAutoplayNonBossHeatByCell = Array.Empty<float>();
+        _towerDefenseAutoplayHeatmapMap = null;
+        _towerDefenseAutoplayHeatmapUpdatedAt = float.NegativeInfinity;
+        _towerDefenseAutoplayHeatmapRevision = 0;
+        _towerDefenseAutoplayHotspotRevision = -1;
+        _towerDefenseAutoplayNearBaseInstantRisk = 0f;
+        _towerDefenseAutoplayLastRealNearBaseRisk = 0f;
+        _towerDefenseAutoplayLastRealNearBaseRiskAt = float.NegativeInfinity;
+        _towerDefenseAutoplayEnemyFlowBacklog = 0f;
+        _towerDefenseAutoplayBossReadinessUrgency = 1f;
         _towerDefenseAutoplayOccupiedCells = Array.Empty<bool>();
         _towerDefenseAutoplayHasRouteMainCell = false;
         _towerDefenseAutoplayMaximumRouteDistance = 1f;
@@ -1090,6 +1313,14 @@ public partial class RougeGameManager
         _towerDefenseAutoplayEconomyStress = 0f;
         _towerDefenseAutoplayNearBasePressureSince = float.NegativeInfinity;
         _towerDefenseAutoplayNearBaseCrisis = 0f;
+        _towerDefenseAutoplayNearBaseInstantRisk = 0f;
+        _towerDefenseAutoplayLastRealNearBaseRisk = 0f;
+        _towerDefenseAutoplayLastRealNearBaseRiskAt = float.NegativeInfinity;
+        _towerDefenseAutoplayEnemyFlowBacklog = 0f;
+        _towerDefenseAutoplayBossReadinessUrgency = 1f;
+        _towerDefenseAutoplayHeatmapUpdatedAt = float.NegativeInfinity;
+        _towerDefenseAutoplayHeatmapRevision = 0;
+        _towerDefenseAutoplayHotspotRevision = -1;
         _towerDefenseAutoplaySustainedNearBaseCrisis = false;
         _towerDefenseAutoplaySustainedMainTowerDamage = false;
         _towerDefenseAutoplayManualSpeechProtectedUntil = float.NegativeInfinity;
@@ -1122,6 +1353,13 @@ public partial class RougeGameManager
         ResetAutoplayTowerPerformanceObservations();
         _towerDefenseAutoplayLastSaleGameTime = float.NegativeInfinity;
         _towerDefenseAutoplayLastCapitalActionGameTime = float.NegativeInfinity;
+        _towerDefenseAutoplayCapitalHoldActive = false;
+        _towerDefenseAutoplayCapitalHoldUntilGameTime = float.NegativeInfinity;
+        _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime =
+            float.NegativeInfinity;
+        _towerDefenseAutoplayLastChargeGameTime = float.NegativeInfinity;
+        _towerDefenseAutoplayExpansionBaselineTowerCount = 0;
+        _towerDefenseAutoplayNextExpansionGameTime = float.PositiveInfinity;
         _towerDefenseAutoplayStrategyMode = AutoplayStrategyMode.Opening;
         _towerDefenseAutoplayStrategyModeSince = Mathf.Max(0f, _survivalTime);
         ClearTowerDefenseAutoplayPriorCache();
@@ -1206,6 +1444,7 @@ public partial class RougeGameManager
             _towerDefenseAutoplayMainTowerDamageSamples.Clear();
             _towerDefenseAutoplayBuildCursor =
                 CountAutoplayStandardTowers() % TowerDefenseAutoplayBuildOrder.Length;
+            ResetAutoplayExpansionSchedule(CountAutoplayStandardTowers(), gameTime);
             RougeTowerDefenseMap takeoverMap = RougeTowerDefenseMapLoader.ActiveMap;
             AutoplayDialogueCategory battleCategory;
             if (takeoverMap != null)
@@ -1485,6 +1724,7 @@ public partial class RougeGameManager
             _towerDefenseAutoplayObservedBossHealthCritical = false;
         }
 
+        UpdateAutoplayEnemyFlowHeatmap(map, ref snapshot);
         _towerDefenseAutoplayTensionTarget =
             CalculateTowerDefenseAutoplayTension(snapshot);
         UpdateAutoplayEmotionDialogue(_towerDefenseAutoplayTensionTarget);
@@ -1493,12 +1733,15 @@ public partial class RougeGameManager
         int standardTowerCount = CountAutoplayStandardTowers();
         int buildCellCount = CountAutoplayBuildCells(map);
         int freeBuildCellCount = CountOpenAutoplayBuildCells(map);
+        float decisionGameTime = Mathf.Max(0f, _survivalTime);
+        AdvanceAutoplayExpansionSchedule(standardTowerCount, decisionGameTime);
         UpdateAutoplayTowerPerformanceObservations(map);
         float mainTowerHealthRatio = mainTower != null && mainTower.maxHealth > 0.001f
             ? Mathf.Clamp01(mainTower.CurrentHealth / mainTower.maxHealth)
             : 1f;
         UpdateAutoplayStrategyMode(snapshot, standardTowerCount,
             mainTowerHealthRatio);
+        UpdateAutoplayBossReadinessUrgency(snapshot);
 
         float actionInterval = _towerDefenseAutoplayStrategyMode ==
                                AutoplayStrategyMode.Emergency
@@ -1508,76 +1751,105 @@ public partial class RougeGameManager
             _towerDefenseAutoplayLastCapitalActionGameTime < actionInterval)
             return;
 
-        float perceivedUrgentPressure = snapshot.UrgentPressure *
-            Mathf.Lerp(0.42f, 1f, AutoplayThreatReadingSkill);
-        float perceivedPeakPressure = snapshot.PeakCellPressure *
-            Mathf.Lerp(0.5f, 1f, AutoplayThreatReadingSkill);
-        int pressureExpansion = perceivedUrgentPressure >=
-                                TowerDefenseAutoplayThresholds.highUrgentPressure ||
-                                perceivedPeakPressure >=
-                                TowerDefenseAutoplayThresholds.highPeakPressure
-            ? 2
-            : perceivedUrgentPressure >=
-                  TowerDefenseAutoplayThresholds.mediumUrgentPressure ||
-              snapshot.ActiveEnemies >=
-                  TowerDefenseAutoplayThresholds.mediumActiveEnemies ||
-              snapshot.IncomingPressure >=
-                  TowerDefenseAutoplayThresholds.mediumIncomingPressure
-                ? 1
-                : 0;
-        int bossPreparationExpansion = snapshot.BossPreparation >=
-                                       TowerDefenseAutoplayThresholds
-                                           .highBossPreparation
-            ? 2
-            : snapshot.BossPreparation >= TowerDefenseAutoplayThresholds
-                .mediumBossPreparation ? 1 : 0;
-        int damageExpansion = AutoplayCrisisResponseSkill >= 0.55f
-            ? mainTowerHealthRatio <= TowerDefenseAutoplayThresholds
-                .criticalCrisisHealthRatio
-                ? 2
-                : mainTowerHealthRatio <= TowerDefenseAutoplayThresholds
-                    .lowCrisisHealthRatio ? 1 : 0
-            : mainTowerHealthRatio <= Mathf.Lerp(0.22f, 0.48f,
-                AutoplayCrisisResponseSkill) ? 1 : 0;
+        float tacticalNearBaseRisk =
+            GetAutoplayTacticalNearBaseRisk(decisionGameTime);
+        bool scheduledExpansionOpportunity = decisionGameTime >=
+                                             _towerDefenseAutoplayNextExpansionGameTime;
         int desiredTowerCount = Mathf.Min(buildCellCount,
-            TowerDefenseAutoplayOpeningTowerCount + Mathf.FloorToInt(
-                Mathf.Max(0f, _survivalTime) / TowerDefenseAutoplayExpansionInterval) +
-            Mathf.Max(Mathf.Max(pressureExpansion, damageExpansion),
-                bossPreparationExpansion));
-        int adaptiveBuildLimit = Mathf.Min(buildCellCount,
-            desiredTowerCount + 2);
+            Mathf.Max(TowerDefenseAutoplayOpeningTowerCount,
+                _towerDefenseAutoplayExpansionBaselineTowerCount) +
+            (scheduledExpansionOpportunity ? 1 : 0));
         EvaluateAutoplayBuildChoices(map, snapshot, out AutoplayBuildChoice bestBuild,
             out AutoplayBuildChoice affordableBuild,
             out AutoplayBuildChoice emergencyBuild);
-        EvaluateAutoplayUpgradeChoices(map, snapshot, out AutoplayUpgradeChoice bestUpgrade,
-            out AutoplayUpgradeChoice affordableUpgrade);
+        int openingTarget = Mathf.Min(TowerDefenseAutoplayOpeningTowerCount,
+            standardTowerCount + freeBuildCellCount);
+        bool canExpand = freeBuildCellCount > 0;
+        bool missingFunctionGroup = HasMissingEnabledAutoplayFunctionGroup();
+        bool opening = canExpand && (standardTowerCount < openingTarget ||
+                                     missingFunctionGroup);
+        bool expansionDue = scheduledExpansionOpportunity && canExpand &&
+                            standardTowerCount < desiredTowerCount;
+        bool closesUncoveredNearBaseHeat =
+            DoesAutoplayBuildCloseUncoveredNearBaseHotspot(map,
+                emergencyBuild);
+        bool defensiveBuildOpportunity = closesUncoveredNearBaseHeat &&
+            (tacticalNearBaseRisk >= TowerDefenseAutoplayNearBaseEarlyWarning ||
+             _towerDefenseAutoplaySustainedMainTowerDamage);
+        bool reserveImmediateDefense = defensiveBuildOpportunity &&
+            emergencyBuild.PaidCost <= _towerDefenseGold;
+        int capitalReserve = reserveImmediateDefense
+            ? emergencyBuild.PaidCost
+            : 0;
+        int maximumCoreUpgradeCost = _towerDefenseGold >= capitalReserve
+            ? _towerDefenseGold - capitalReserve
+            : -1;
+        EvaluateAutoplayUpgradeChoices(map, snapshot,
+            emergencyBuild.IsValid ? emergencyBuild.NearBaseHeatCellIndex : -1,
+            maximumCoreUpgradeCost,
+            out AutoplayUpgradeChoice bestUpgrade,
+            out AutoplayUpgradeChoice affordableUpgrade,
+            out AutoplayUpgradeChoice affordableCoreUpgrade,
+            out AutoplayUpgradeChoice affordableHeatUpgrade);
         EvaluateAutoplaySupportChoices(map, snapshot,
             out AutoplaySupportChoice bestSupport,
             out AutoplaySupportChoice affordableSupport);
-        bool saveForStrategicSupport = ShouldSaveForAutoplaySupport(bestSupport,
-            affordableSupport, affordableBuild, affordableUpgrade, snapshot,
-            mainTowerHealthRatio);
-        bool emergencyBelowAdaptiveBuildLimit = standardTowerCount <
-                                                adaptiveBuildLimit;
+        EvaluateAutoplayChargeChoice(map, out AutoplayChargeChoice chargeChoice);
 
-        // Emergency is an engine safety invariant, not merely a faster cadence label.
-        // Do not keep saving for a remote premium tile while enemies are already at
-        // the goal: buy the quickest defensive coverage or upgrade that can act now.
+        // Emergency and opening remain hard tactical obligations. Stable play below
+        // uses one calibrated marginal-gain auction, so cheap placements cannot veto
+        // a much stronger upgrade and support-only metrics cannot swamp combat value.
         if (_towerDefenseAutoplayStrategyMode == AutoplayStrategyMode.Emergency)
         {
-            AutoplayBuildChoice immediateBuild = emergencyBuild.IsValid &&
-                                                  emergencyBuild.PaidCost <=
-                                                  _towerDefenseGold
-                ? emergencyBuild
-                : affordableBuild;
-            if (emergencyBelowAdaptiveBuildLimit && immediateBuild.IsValid &&
-                (!affordableUpgrade.IsValid ||
-                 immediateBuild.ObjectiveEfficiency >=
-                 affordableUpgrade.ObjectiveEfficiency * 0.95f) &&
-                TryBuildAutoplayStandardTower(map, immediateBuild, "紧急守家",
+            _towerDefenseAutoplayCapitalHoldActive = false;
+            bool emergencyBuildCoversHeat = canExpand &&
+                closesUncoveredNearBaseHeat;
+            bool heatDefenseNeeded = emergencyBuildCoversHeat ||
+                                     affordableHeatUpgrade.IsValid;
+            if (heatDefenseNeeded && affordableHeatUpgrade.IsValid &&
+                affordableHeatUpgrade.PaidCost <= 0 &&
+                TryUpgradeAutoplayTower(affordableHeatUpgrade,
+                    out string freeEmergencyHeatUpgradeDecision))
+            {
+                SetAutoplayDecision(freeEmergencyHeatUpgradeDecision, true);
+                return;
+            }
+            bool affordableEmergencyBuild = emergencyBuildCoversHeat &&
+                emergencyBuild.PaidCost <= _towerDefenseGold;
+            bool preferEmergencyHeatUpgrade = affordableEmergencyBuild &&
+                affordableHeatUpgrade.IsValid &&
+                GetAutoplayEmergencyPurchaseScore(
+                    GetAutoplayUpgradeCapitalGain(affordableHeatUpgrade),
+                    affordableHeatUpgrade.PaidCost) >
+                GetAutoplayEmergencyPurchaseScore(
+                    GetAutoplayBuildCapitalGain(emergencyBuild, snapshot,
+                        missingFunctionGroup), emergencyBuild.PaidCost) * 1.05f;
+            if (preferEmergencyHeatUpgrade &&
+                TryUpgradeAutoplayTower(affordableHeatUpgrade,
+                    out string strongerEmergencyHeatUpgradeDecision))
+            {
+                SetAutoplayDecision(strongerEmergencyHeatUpgradeDecision, true);
+                return;
+            }
+            if (affordableEmergencyBuild &&
+                TryBuildAutoplayStandardTower(map, emergencyBuild, "紧急守家",
                     out string emergencyBuildDecision))
             {
                 SetAutoplayDecision(emergencyBuildDecision, true);
+                return;
+            }
+            if (heatDefenseNeeded && affordableHeatUpgrade.IsValid &&
+                TryUpgradeAutoplayTower(affordableHeatUpgrade,
+                    out string emergencyHeatUpgradeDecision))
+            {
+                SetAutoplayDecision(emergencyHeatUpgradeDecision, true);
+                return;
+            }
+            if (emergencyBuildCoversHeat &&
+                emergencyBuild.PaidCost > _towerDefenseGold)
+            {
+                SetAutoplayDecision(DescribeAutoplaySavingPlan(emergencyBuild,
+                    "紧急守家：为当前未覆盖的敌潮热点留钱"), false);
                 return;
             }
             if (affordableUpgrade.IsValid &&
@@ -1587,36 +1859,177 @@ public partial class RougeGameManager
                 SetAutoplayDecision(emergencyUpgradeDecision, true);
                 return;
             }
-            if (emergencyBelowAdaptiveBuildLimit && immediateBuild.IsValid &&
-                TryBuildAutoplayStandardTower(map, immediateBuild, "紧急补火力",
-                    out string emergencyFallbackBuildDecision))
-            {
-                SetAutoplayDecision(emergencyFallbackBuildDecision, true);
-                return;
-            }
-
-            if (!emergencyBelowAdaptiveBuildLimit)
-            {
-                if (bestUpgrade.IsValid)
-                    SetAutoplayDecision(DescribeAutoplaySavingPlan(bestUpgrade),
-                        false);
-                else
-                    SetAutoplayDecision(
-                        "紧急守家：当前塔数已到自适应上限，等待可执行升级。",
-                        false);
-            }
-            else if (emergencyBuild.IsValid)
-                SetAutoplayDecision(DescribeAutoplaySavingPlan(emergencyBuild,
-                    "紧急守家：先凑齐最快能落地的近端防守"), false);
-            else if (bestUpgrade.IsValid)
-                SetAutoplayDecision(DescribeAutoplaySavingPlan(bestUpgrade), false);
-            else
-                SetAutoplayDecision("紧急守家：当前没有可执行的建造或升级目标。",
-                    false);
+            SetAutoplayDecision(bestUpgrade.IsValid
+                ? DescribeAutoplaySavingPlan(bestUpgrade)
+                : "紧急守家：当前没有可执行的热点建造或升级目标。", false);
             return;
         }
 
-        string saleDecision;
+        // The configured opening count is a structural baseline. Within that rule the
+        // tower and cell still come from the full joint battlefield evaluation.
+        if (opening && !defensiveBuildOpportunity)
+        {
+            _towerDefenseAutoplayCapitalHoldActive = false;
+            if (affordableBuild.IsValid &&
+                TryBuildAutoplayStandardTower(map, affordableBuild, "开局铺塔",
+                    out string openingDecision))
+            {
+                SetAutoplayDecision(openingDecision, true);
+                return;
+            }
+            bool recoveryUpgrade = affordableUpgrade.IsValid &&
+                (affordableUpgrade.PaidCost <= 0 ||
+                 _towerDefenseAutoplayEnemyFlowBacklog >= 0.55f);
+            if (recoveryUpgrade && TryUpgradeAutoplayTower(affordableUpgrade,
+                    out string openingRecoveryDecision))
+            {
+                SetAutoplayDecision(openingRecoveryDecision, true);
+                return;
+            }
+            if (bestBuild.IsValid)
+            {
+                SetAutoplayDecision(DescribeAutoplaySavingPlan(bestBuild,
+                    missingFunctionGroup
+                        ? "先补齐控场、集火和群伤中的缺失职能"
+                        : $"先凑齐 {openingTarget} 塔基础阵"), false);
+                return;
+            }
+        }
+
+        // A timer only opens the build side of the market. Every eligible placement
+        // and upgrade remains visible until the common auction has blended ROI with
+        // absolute marginal value for the current amount of spendable gold.
+        bool buildWindow = (expansionDue || defensiveBuildOpportunity) &&
+                           bestBuild.IsValid;
+        bool restrictBuildToDefenseTarget = !expansionDue &&
+                                            defensiveBuildOpportunity;
+        bool stableSupportWindow = bestSupport.IsValid &&
+            bestSupport.CoversProvenLeader &&
+            bestSupport.ObservationConfidence >= 0.999f &&
+            bestSupport.AffectedTowers >= 3 &&
+            bestSupport.HighValueTowers >= 1 && freeBuildCellCount >= 2 &&
+            mainTowerHealthRatio >= 0.68f &&
+            tacticalNearBaseRisk < TowerDefenseAutoplayNearBaseEarlyWarning &&
+            !_towerDefenseAutoplaySustainedMainTowerDamage &&
+            _towerDefenseAutoplayEnemyFlowBacklog < 0.2f;
+        bool stableChargeWindow = chargeChoice.IsValid && freeBuildCellCount >= 2 &&
+            mainTowerHealthRatio >= 0.8f && snapshot.BossEnemies <= 0 &&
+            snapshot.BossPreparation < TowerDefenseAutoplayThresholds
+                .mediumBossPreparation &&
+            tacticalNearBaseRisk < TowerDefenseAutoplayNearBaseEarlyWarning &&
+            !_towerDefenseAutoplaySustainedMainTowerDamage &&
+            _towerDefenseAutoplayEnemyFlowBacklog < 0.2f &&
+            decisionGameTime - _towerDefenseAutoplayLastChargeGameTime >=
+                TowerDefenseAutoplayChargeCooldownSeconds;
+        bool allowSafeCapitalHold = capitalReserve <= 0 &&
+            mainTowerHealthRatio >= 0.68f &&
+            tacticalNearBaseRisk < TowerDefenseAutoplayNearBaseEarlyWarning &&
+            !_towerDefenseAutoplaySustainedMainTowerDamage &&
+            _towerDefenseAutoplayEnemyFlowBacklog < 0.35f &&
+            snapshot.UrgentPressure < TowerDefenseAutoplayThresholds
+                .redeployMaximumUrgentPressure &&
+            snapshot.BossEnemies <= 0;
+        bool allowDefensiveShortHold = defensiveBuildOpportunity &&
+            emergencyBuild.PaidCost > _towerDefenseGold &&
+            !_towerDefenseAutoplaySustainedMainTowerDamage &&
+            tacticalNearBaseRisk < TowerDefenseAutoplayEmergencyNearBaseCrisis;
+        bool allowShortCapitalHold = allowSafeCapitalHold ||
+                                     allowDefensiveShortHold;
+        bool defensiveHoldOnly = !allowSafeCapitalHold &&
+                                 allowDefensiveShortHold;
+
+        if (TryGetBestAutoplayFreeUpgrade(out AutoplayUpgradeChoice freeUpgrade) &&
+            TryUpgradeAutoplayTower(freeUpgrade,
+                out string freeUpgradeDecision))
+        {
+            if (expansionDue) DeferAutoplayExpansionSchedule(decisionGameTime);
+            SetAutoplayDecision(freeUpgradeDecision, true);
+            return;
+        }
+
+        AutoplayCapitalActionKind capitalAction = SelectAutoplayCapitalAction(
+            snapshot, buildWindow, missingFunctionGroup, capitalReserve,
+            emergencyBuild, restrictBuildToDefenseTarget,
+            stableSupportWindow, bestSupport,
+            stableChargeWindow,
+            chargeChoice, allowShortCapitalHold, defensiveHoldOnly,
+            affordableCoreUpgrade,
+            out AutoplayBuildChoice capitalBuild,
+            out AutoplayUpgradeChoice capitalUpgrade,
+            out AutoplaySupportChoice capitalSupport,
+            out AutoplayChargeChoice capitalCharge);
+
+        if (capitalAction == AutoplayCapitalActionKind.Hold)
+        {
+            string holdDecision;
+            if (capitalBuild.IsValid)
+                holdDecision = DescribeAutoplaySavingPlan(capitalBuild,
+                    "短期等待显著更强的建造方案");
+            else if (capitalUpgrade.IsValid)
+                holdDecision = DescribeAutoplaySavingPlan(capitalUpgrade);
+            else if (capitalSupport.IsValid)
+                holdDecision = DescribeAutoplaySupportSavingPlan(capitalSupport);
+            else
+                holdDecision = DescribeAutoplayChargeSavingPlan(capitalCharge);
+            _towerDefenseAutoplayLastCapitalActionGameTime = decisionGameTime;
+            SetAutoplayDecision(holdDecision, false);
+            return;
+        }
+
+        if (capitalAction == AutoplayCapitalActionKind.Build &&
+            TryBuildAutoplayStandardTower(map, capitalBuild, "价值扩建",
+                out string expansionDecision))
+        {
+            SetAutoplayDecision(expansionDecision, true);
+            return;
+        }
+        if (capitalAction == AutoplayCapitalActionKind.Upgrade &&
+            TryUpgradeAutoplayTower(capitalUpgrade, out string upgradeDecision))
+        {
+            if (expansionDue) DeferAutoplayExpansionSchedule(decisionGameTime);
+            SetAutoplayDecision(upgradeDecision, true);
+            return;
+        }
+        if (capitalAction == AutoplayCapitalActionKind.Support &&
+            TryBuildAutoplaySupportTower(map, capitalSupport,
+                out string supportDecision))
+        {
+            if (expansionDue) DeferAutoplayExpansionSchedule(decisionGameTime);
+            SetAutoplayDecision(supportDecision, true);
+            return;
+        }
+        if (capitalAction == AutoplayCapitalActionKind.Charge &&
+            TryBuildAutoplayChargeTower(map, capitalCharge,
+                out string chargeDecision))
+        {
+            if (expansionDue) DeferAutoplayExpansionSchedule(decisionGameTime);
+            SetAutoplayDecision(chargeDecision, true);
+            return;
+        }
+
+        if (expansionDue)
+        {
+            bool superiorBuildPlan = bestBuild.IsValid &&
+                ShouldSaveForAutoplayBuild(bestBuild, affordableBuild) &&
+                !affordableUpgrade.IsValid;
+            if (superiorBuildPlan)
+            {
+                SetAutoplayDecision(DescribeAutoplaySavingPlan(bestBuild,
+                    "扩建窗口已经开启，但只为明显更好的落点留钱"), false);
+                return;
+            }
+            DeferAutoplayExpansionSchedule(decisionGameTime);
+        }
+        if (stableSupportWindow && ShouldReserveForAutoplaySupport(bestSupport,
+                affordableSupport, mainTowerHealthRatio) &&
+            !affordableUpgrade.IsValid && !affordableBuild.IsValid)
+        {
+            SetAutoplayDecision(DescribeAutoplaySupportSavingPlan(bestSupport), false);
+            return;
+        }
+
+        // Redeployment is optimization, never a prerequisite for opening, upgrading
+        // or an expansion that is already due.
         bool stableEnoughToRedeploy = standardTowerCount >=
               TowerDefenseAutoplayOpeningTowerCount +
               TowerDefenseAutoplayThresholds.redeployMinimumExtraTowers &&
@@ -1630,169 +2043,432 @@ public partial class RougeGameManager
                 .redeployMaximumBossPreparation;
         if (stableEnoughToRedeploy &&
             TrySellMisplacedAutoplayTower(map, snapshot, bestBuild,
-                standardTowerCount, out saleDecision))
+                standardTowerCount, out string saleDecision))
         {
             SetAutoplayDecision(saleDecision, true);
             return;
         }
 
-        int openingTarget = Mathf.Min(TowerDefenseAutoplayOpeningTowerCount,
-            standardTowerCount + freeBuildCellCount);
-        bool opening = standardTowerCount < openingTarget;
-        bool expansionDue = standardTowerCount < desiredTowerCount;
-        bool canExpand = freeBuildCellCount > 0;
-        bool belowAdaptiveBuildLimit = standardTowerCount < adaptiveBuildLimit;
+        SetAutoplayDecision(bestUpgrade.IsValid
+            ? DescribeAutoplaySavingPlan(bestUpgrade)
+            : snapshot.ActiveEnemies > 0
+                ? "当前阵线稳定，金币保留给下一次升级或扩建。"
+                : "这会儿很安静，金币先留给下一波。", false);
+    }
 
-        // The configured opening count is a structural baseline. Within that rule the
-        // tower and cell still come from the full joint battlefield evaluation.
-        if (opening)
+    private bool TryGetBestAutoplayFreeUpgrade(
+        out AutoplayUpgradeChoice best)
+    {
+        best = default;
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
         {
-            if (affordableBuild.IsValid &&
-                TryBuildAutoplayStandardTower(map, affordableBuild, "开局铺塔",
-                    out string openingDecision))
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            if (!choice.IsValid || choice.PaidCost > 0) continue;
+            if (!best.IsValid || choice.ObjectiveUtility > best.ObjectiveUtility)
+                best = choice;
+        }
+        if (!best.IsValid) return false;
+        best.Utility = best.ObjectiveUtility;
+        best.Efficiency = best.ObjectiveEfficiency;
+        best.CapitalScore = best.ObjectiveCapitalScore;
+        return true;
+    }
+
+    private AutoplayCapitalActionKind SelectAutoplayCapitalAction(
+        AutoplayBattleSnapshot snapshot, bool buildWindow,
+        bool missingFunctionGroup, int capitalReserve,
+        AutoplayBuildChoice reservedDefenseBuild,
+        bool restrictBuildToDefenseTarget,
+        bool stableSupportWindow, AutoplaySupportChoice supportChoice,
+        bool stableChargeWindow, AutoplayChargeChoice chargeChoice,
+        bool allowShortHold, bool defensiveHoldOnly,
+        AutoplayUpgradeChoice affordableCoreUpgrade,
+        out AutoplayBuildChoice selectedBuild,
+        out AutoplayUpgradeChoice selectedUpgrade,
+        out AutoplaySupportChoice selectedSupport,
+        out AutoplayChargeChoice selectedCharge)
+    {
+        selectedBuild = default;
+        selectedUpgrade = default;
+        selectedSupport = default;
+        selectedCharge = default;
+        int spendableGold = Mathf.Max(0, _towerDefenseGold - capitalReserve);
+        int supportPaidCost = supportChoice.IsValid
+            ? GetTowerDefenseAutoplayPaidCost(supportChoice.Cost)
+            : 0;
+        bool supportMarketOpen = stableSupportWindow && supportChoice.IsValid &&
+            IsValidAutoplayCapitalGain(supportChoice.CapitalGain);
+        bool supportEligible = supportMarketOpen &&
+            supportPaidCost <= spendableGold &&
+            IsValidAutoplayCapitalGain(supportChoice.CapitalGain);
+        bool chargeMarketOpen = stableChargeWindow && chargeChoice.IsValid &&
+            IsValidAutoplayCapitalGain(chargeChoice.CapitalGain);
+        bool chargeEligible = chargeMarketOpen &&
+            chargeChoice.PaidCost <= spendableGold &&
+            IsValidAutoplayCapitalGain(chargeChoice.CapitalGain);
+
+        float maximumRoi = 0f;
+        float maximumGain = 0f;
+        int minimumPositiveCost = int.MaxValue;
+        if (buildWindow)
+        {
+            for (int i = 0; i < _towerDefenseAutoplayBuildChoiceScratch.Count; i++)
             {
-                SetAutoplayDecision(openingDecision, true);
-                return;
-            }
-            if (bestBuild.IsValid)
-            {
-                SetAutoplayDecision(DescribeAutoplaySavingPlan(bestBuild,
-                    $"先凑齐 {openingTarget} 塔基础阵"), false);
-                return;
+                AutoplayBuildChoice choice =
+                    _towerDefenseAutoplayBuildChoiceScratch[i];
+                if (!choice.IsValid || restrictBuildToDefenseTarget &&
+                    !IsSameAutoplayBuildAction(choice, reservedDefenseBuild))
+                    continue;
+                float gain = GetAutoplayBuildCapitalGain(choice, snapshot,
+                    missingFunctionGroup);
+                if (!IsValidAutoplayCapitalGain(gain)) continue;
+                AccumulateAutoplayCapitalScale(gain, choice.PaidCost,
+                    ref maximumRoi, ref maximumGain,
+                    ref minimumPositiveCost);
             }
         }
-
-        if (expansionDue && canExpand && bestBuild.IsValid)
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
         {
-            bool immediateDefenseNeed =
-                _towerDefenseAutoplaySustainedNearBaseCrisis ||
-                _towerDefenseAutoplaySustainedMainTowerDamage;
-            bool saveForSuperiorBuild = !immediateDefenseNeed &&
-                ShouldSaveForAutoplayBuild(bestBuild, affordableBuild);
-            if (_towerDefenseAutoplayStrategyMode !=
-                    AutoplayStrategyMode.Emergency &&
-                ShouldPreferAutoplaySupport(affordableSupport, affordableBuild,
-                    affordableUpgrade, snapshot, mainTowerHealthRatio) &&
-                TryBuildAutoplaySupportTower(map, affordableSupport,
-                    out string expansionSupportDecision))
-            {
-                SetAutoplayDecision(expansionSupportDecision, true);
-                return;
-            }
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            if (!choice.IsValid) continue;
+            float gain = GetAutoplayUpgradeCapitalGain(choice);
+            if (!IsValidAutoplayCapitalGain(gain)) continue;
+            AccumulateAutoplayCapitalScale(gain, choice.PaidCost,
+                ref maximumRoi, ref maximumGain, ref minimumPositiveCost);
+        }
+        if (supportMarketOpen)
+            AccumulateAutoplayCapitalScale(supportChoice.CapitalGain,
+                supportPaidCost, ref maximumRoi, ref maximumGain,
+                ref minimumPositiveCost);
+        if (chargeMarketOpen)
+            AccumulateAutoplayCapitalScale(
+                chargeChoice.CapitalGain,
+                chargeChoice.PaidCost, ref maximumRoi, ref maximumGain,
+                ref minimumPositiveCost);
 
-            if (saveForStrategicSupport && !immediateDefenseNeed)
+        if (maximumGain <= 0f)
+        {
+            _towerDefenseAutoplayCapitalHoldActive = false;
+            return AutoplayCapitalActionKind.None;
+        }
+        int referenceCost = minimumPositiveCost == int.MaxValue
+            ? 0
+            : minimumPositiveCost * 2;
+        float wealth = GetAutoplayCapitalWealth(spendableGold, referenceCost);
+        float bestScore = float.NegativeInfinity;
+        float bestUnaffordableScore = float.NegativeInfinity;
+        AutoplayCapitalActionKind bestKind = AutoplayCapitalActionKind.None;
+        AutoplayCapitalActionKind holdKind = AutoplayCapitalActionKind.None;
+        AutoplayBuildChoice holdBuild = default;
+        AutoplayUpgradeChoice holdUpgrade = default;
+        AutoplaySupportChoice holdSupport = default;
+        AutoplayChargeChoice holdCharge = default;
+        if (buildWindow)
+        {
+            for (int i = 0; i < _towerDefenseAutoplayBuildChoiceScratch.Count; i++)
             {
-                SetAutoplayDecision(DescribeAutoplaySupportSavingPlan(bestSupport),
-                    false);
-                return;
-            }
-
-            if (!saveForSuperiorBuild && affordableBuild.IsValid &&
-                (!affordableUpgrade.IsValid || affordableBuild.Efficiency >=
-                    affordableUpgrade.Efficiency * 1.05f))
-            {
-                if (TryBuildAutoplayStandardTower(map, affordableBuild, "定时扩建",
-                        out string expansionDecision))
+                AutoplayBuildChoice choice =
+                    _towerDefenseAutoplayBuildChoiceScratch[i];
+                int choiceBudget = IsSameAutoplayBuildAction(choice,
+                    reservedDefenseBuild)
+                        ? _towerDefenseGold
+                        : spendableGold;
+                if (!choice.IsValid || restrictBuildToDefenseTarget &&
+                    !IsSameAutoplayBuildAction(choice, reservedDefenseBuild))
+                    continue;
+                float gain = GetAutoplayBuildCapitalGain(choice, snapshot,
+                    missingFunctionGroup);
+                if (!IsValidAutoplayCapitalGain(gain)) continue;
+                float roi = GetAutoplayCapitalRoi(gain, choice.PaidCost);
+                float score = GetAutoplayNormalizedCapitalScore(roi, gain,
+                    maximumRoi, maximumGain, wealth);
+                if (choice.PaidCost > choiceBudget)
                 {
-                    SetAutoplayDecision(expansionDecision, true);
-                    return;
+                    float progress = choice.PaidCost > 0
+                        ? spendableGold / (float)choice.PaidCost
+                        : 1f;
+                    bool permittedHold = !defensiveHoldOnly ||
+                        IsSameAutoplayBuildAction(choice,
+                            reservedDefenseBuild);
+                    if (permittedHold && progress >= 0.65f && progress < 1f &&
+                        score > bestUnaffordableScore)
+                    {
+                        bestUnaffordableScore = score;
+                        holdKind = AutoplayCapitalActionKind.Build;
+                        holdBuild = choice;
+                        holdUpgrade = default;
+                        holdSupport = default;
+                        holdCharge = default;
+                    }
+                    continue;
+                }
+                if (score <= bestScore) continue;
+                bestScore = score;
+                bestKind = AutoplayCapitalActionKind.Build;
+                selectedBuild = choice;
+            }
+        }
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
+        {
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            if (!choice.IsValid) continue;
+            float gain = GetAutoplayUpgradeCapitalGain(choice);
+            if (!IsValidAutoplayCapitalGain(gain)) continue;
+            float roi = GetAutoplayCapitalRoi(gain, choice.PaidCost);
+            float score = GetAutoplayNormalizedCapitalScore(roi, gain,
+                maximumRoi, maximumGain, wealth);
+            if (choice.PaidCost > spendableGold)
+            {
+                float progress = choice.PaidCost > 0
+                    ? spendableGold / (float)choice.PaidCost
+                    : 1f;
+                if (!defensiveHoldOnly && progress >= 0.65f && progress < 1f &&
+                    score > bestUnaffordableScore)
+                {
+                    bestUnaffordableScore = score;
+                    holdKind = AutoplayCapitalActionKind.Upgrade;
+                    holdUpgrade = choice;
+                    holdBuild = default;
+                    holdSupport = default;
+                    holdCharge = default;
+                }
+                continue;
+            }
+            if (score <= bestScore) continue;
+            bestScore = score;
+            bestKind = AutoplayCapitalActionKind.Upgrade;
+            selectedUpgrade = choice;
+        }
+        if (supportMarketOpen)
+        {
+            float gain = supportChoice.CapitalGain;
+            float score = GetAutoplayNormalizedCapitalScore(
+                GetAutoplayCapitalRoi(gain, supportPaidCost), gain,
+                maximumRoi, maximumGain, wealth);
+            if (!supportEligible)
+            {
+                float progress = supportPaidCost > 0
+                    ? spendableGold / (float)supportPaidCost
+                    : 1f;
+                if (!defensiveHoldOnly && progress >= 0.65f && progress < 1f &&
+                    score > bestUnaffordableScore)
+                {
+                    bestUnaffordableScore = score;
+                    holdKind = AutoplayCapitalActionKind.Support;
+                    holdBuild = default;
+                    holdUpgrade = default;
+                    holdSupport = supportChoice;
+                    holdCharge = default;
                 }
             }
-
-            if (affordableUpgrade.IsValid &&
-                (!saveForSuperiorBuild || affordableUpgrade.Efficiency >=
-                    bestBuild.Efficiency * 0.88f) &&
-                TryUpgradeAutoplayTower(affordableUpgrade, out string pressureUpgrade))
+            else if (score > bestScore)
             {
-                SetAutoplayDecision(pressureUpgrade, true);
-                return;
+                bestScore = score;
+                bestKind = AutoplayCapitalActionKind.Support;
+                selectedSupport = supportChoice;
+            }
+        }
+        if (chargeMarketOpen)
+        {
+            float gain = chargeChoice.CapitalGain;
+            float score = GetAutoplayNormalizedCapitalScore(
+                GetAutoplayCapitalRoi(gain, chargeChoice.PaidCost), gain,
+                maximumRoi, maximumGain, wealth);
+            if (!chargeEligible)
+            {
+                float progress = chargeChoice.PaidCost > 0
+                    ? spendableGold / (float)chargeChoice.PaidCost
+                    : 1f;
+                if (!defensiveHoldOnly && progress >= 0.65f && progress < 1f &&
+                    score > bestUnaffordableScore)
+                {
+                    bestUnaffordableScore = score;
+                    holdKind = AutoplayCapitalActionKind.Charge;
+                    holdBuild = default;
+                    holdUpgrade = default;
+                    holdSupport = default;
+                    holdCharge = chargeChoice;
+                }
+            }
+            else if (score > bestScore)
+            {
+                bestScore = score;
+                bestKind = AutoplayCapitalActionKind.Charge;
+                selectedCharge = chargeChoice;
+            }
+        }
+
+        // A fully observed core tower may break a near tie, but never rescue an
+        // objectively weak upgrade. Observed DPS chooses the proven candidate; the
+        // bounded 0..4% confidence nudge only resolves close capital scores.
+        if (affordableCoreUpgrade.IsValid &&
+            affordableCoreUpgrade.PaidCost <= spendableGold)
+        {
+            float coreGain = GetAutoplayUpgradeCapitalGain(
+                affordableCoreUpgrade);
+            float coreBaseScore = GetAutoplayNormalizedCapitalScore(
+                GetAutoplayCapitalRoi(coreGain,
+                    affordableCoreUpgrade.PaidCost), coreGain,
+                maximumRoi, maximumGain, wealth);
+            bool objectivelyClose = bestKind == AutoplayCapitalActionKind.None ||
+                                    coreBaseScore >= bestScore * 0.94f;
+            if (objectivelyClose)
+            {
+                float evidence = Mathf.InverseLerp(0.65f, 1f,
+                    affordableCoreUpgrade.ObservedCoreConfidence);
+                float coreScore = coreBaseScore *
+                                  Mathf.Lerp(1f, 1.04f, evidence);
+                if (coreScore > bestScore)
+                {
+                    bestScore = coreScore;
+                    bestKind = AutoplayCapitalActionKind.Upgrade;
+                    selectedBuild = default;
+                    selectedUpgrade = affordableCoreUpgrade;
+                }
+            }
+        }
+
+        bool clearlySuperiorHold = holdKind != AutoplayCapitalActionKind.None &&
+            (bestKind == AutoplayCapitalActionKind.None ||
+             bestUnaffordableScore >= bestScore * 1.25f &&
+             bestUnaffordableScore - bestScore >= 0.08f);
+        float gameTime = Mathf.Max(0f, _survivalTime);
+        if (allowShortHold && clearlySuperiorHold &&
+            gameTime >= _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime)
+        {
+            if (!_towerDefenseAutoplayCapitalHoldActive)
+            {
+                _towerDefenseAutoplayCapitalHoldActive = true;
+                _towerDefenseAutoplayCapitalHoldUntilGameTime = gameTime +
+                    TowerDefenseAutoplayCapitalHoldSeconds;
+            }
+            if (gameTime < _towerDefenseAutoplayCapitalHoldUntilGameTime)
+            {
+                selectedBuild = holdBuild;
+                selectedUpgrade = holdUpgrade;
+                selectedSupport = holdSupport;
+                selectedCharge = holdCharge;
+                return AutoplayCapitalActionKind.Hold;
             }
 
-            SetAutoplayDecision(DescribeAutoplaySavingPlan(bestBuild,
-                "扩建候选的综合效用高于当前可买方案"), false);
-            return;
+            // A changing target cannot extend the window forever. After one timed
+            // attempt, spend on the best executable action and briefly cool down.
+            _towerDefenseAutoplayCapitalHoldActive = false;
+            _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime = gameTime +
+                TowerDefenseAutoplayCapitalHoldCooldownSeconds;
         }
+        else
+        {
+            if (_towerDefenseAutoplayCapitalHoldActive && allowShortHold)
+                _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime =
+                    Mathf.Max(
+                        _towerDefenseAutoplayCapitalHoldCooldownUntilGameTime,
+                        gameTime + TowerDefenseAutoplayCapitalHoldCooldownSeconds);
+            _towerDefenseAutoplayCapitalHoldActive = false;
+        }
+        return bestKind;
+    }
 
-        bool valuableSpecialTile = affordableBuild.IsValid &&
-                                   AutoplayMapReadingSkill >= 0.28f &&
-                                   affordableBuild.TileScore >=
-                                   TowerDefenseAutoplayThresholds
-                                       .valuableSpecialTileScore;
-        bool pressureNeedsCoverage =
-            _towerDefenseAutoplaySustainedNearBaseCrisis ||
-            _towerDefenseAutoplaySustainedMainTowerDamage ||
-            (mainTowerHealthRatio <= TowerDefenseAutoplayThresholds
-                 .coverageHealthRatio && snapshot.NearBaseEnemyWeight > 0.01f);
-        bool buildBeatsUpgrade = affordableBuild.IsValid &&
-            (!affordableUpgrade.IsValid || affordableBuild.Efficiency >=
-             affordableUpgrade.Efficiency * 1.04f);
-        if (saveForStrategicSupport)
-        {
-            SetAutoplayDecision(DescribeAutoplaySupportSavingPlan(bestSupport),
-                false);
-            return;
-        }
-        if (_towerDefenseAutoplayStrategyMode != AutoplayStrategyMode.Emergency &&
-            ShouldPreferAutoplaySupport(affordableSupport, affordableBuild,
-                affordableUpgrade, snapshot, mainTowerHealthRatio) &&
-            TryBuildAutoplaySupportTower(map, affordableSupport,
-                out string supportDecision))
-        {
-            SetAutoplayDecision(supportDecision, true);
-            return;
-        }
-        if (canExpand && belowAdaptiveBuildLimit && buildBeatsUpgrade &&
-            (valuableSpecialTile || pressureNeedsCoverage) &&
-            TryBuildAutoplayStandardTower(map, affordableBuild,
-                valuableSpecialTile ? "抢占强化格" : "补强防线",
-                out string opportunisticBuildDecision))
-        {
-            SetAutoplayDecision(opportunisticBuildDecision, true);
-            return;
-        }
+    private float GetAutoplayBuildCapitalGain(AutoplayBuildChoice choice,
+        AutoplayBattleSnapshot snapshot, bool missingFunctionGroup)
+    {
+        float strategicGain = choice.ObjectiveUtility *
+            GetAutoplayBuildCapitalContext(choice, snapshot,
+                missingFunctionGroup);
+        // Utility encodes geometry, pressure and role fit; retain a separate absolute
+        // output term so a rich commander can distinguish a large power purchase from
+        // another cheap transition tower instead of comparing only logarithms.
+        float powerGain = Mathf.Sqrt(Mathf.Max(0f, choice.MarginalPower)) * 18f;
+        return strategicGain + powerGain;
+    }
 
-        if (affordableUpgrade.IsValid &&
-            TryUpgradeAutoplayTower(affordableUpgrade, out string upgradeDecision))
-        {
-            SetAutoplayDecision(upgradeDecision, true);
-            return;
-        }
+    private static float GetAutoplayUpgradeCapitalGain(
+        AutoplayUpgradeChoice choice)
+    {
+        float strategicGain = choice.ObjectiveUtility *
+            GetAutoplayUpgradeCapitalContext(choice);
+        float powerGain = Mathf.Sqrt(Mathf.Max(0f, choice.MarginalPower)) * 18f;
+        return strategicGain + powerGain;
+    }
 
-        // When the installed standard towers are all maxed, the next sensible capital
-        // action is another jointly scored tower even before a later time threshold.
-        if (!HasAutoplayUpgradeableTower() && canExpand &&
-            belowAdaptiveBuildLimit && affordableBuild.IsValid &&
-            TryBuildAutoplayStandardTower(map, affordableBuild, "满级后扩建",
-                out string maxedBuildDecision))
-        {
-            SetAutoplayDecision(maxedBuildDecision, true);
-            return;
-        }
+    private float GetAutoplayBuildCapitalContext(AutoplayBuildChoice choice,
+        AutoplayBattleSnapshot snapshot, bool missingFunctionGroup)
+    {
+        float context = 0.88f;
+        int functionGroup = GetAutoplayFunctionGroup(choice.Type);
+        if (missingFunctionGroup &&
+            _towerDefenseAutoplayFunctionCounts[functionGroup] <= 0)
+            context = Mathf.Max(context, 1.28f);
+        if (choice.TileScore >= 95f && choice.OpportunityPenalty <= 0f)
+            context = Mathf.Max(context, 1.08f);
+        if (choice.NearBaseHeatCoverage >=
+            TowerDefenseAutoplayNearBaseEarlyWarning)
+            context = Mathf.Max(context, 1.18f);
+        context += Mathf.Clamp01(
+            (_towerDefenseAutoplayEnemyFlowBacklog - 0.18f) / 0.55f) * 0.15f;
+        if (snapshot.BossEnemies <= 0 && snapshot.BossPreparation >=
+            TowerDefenseAutoplayThresholds.mediumBossPreparation &&
+            IsAutoplayBossDamageTower(choice.Type))
+            context = Mathf.Max(context, 1.06f);
+        float commanderPreference = Mathf.Clamp(
+            TowerDefenseAutoplayCommander.BuildBias *
+            GetAutoplayPersonalityTowerBias(choice.Type), 0.88f, 1.12f);
+        return Mathf.Clamp(context * commanderPreference, 0.72f, 1.42f);
+    }
 
-        bool saveForSupport = bestSupport.IsValid &&
-                              bestSupport.Cost > _towerDefenseGold &&
-                              (!bestBuild.IsValid || bestSupport.Efficiency >=
-                               bestBuild.Efficiency * 1.06f) &&
-                              (!bestUpgrade.IsValid || bestSupport.Efficiency >=
-                               bestUpgrade.Efficiency * 1.06f);
-        bool saveForBuild = canExpand && bestBuild.IsValid &&
-                            (!bestUpgrade.IsValid || bestBuild.Efficiency >=
-                             bestUpgrade.Efficiency * 1.08f);
-        SetAutoplayDecision(saveForSupport
-            ? $"先攒钱：阵地已经成形，下一步在 [{bestSupport.Cell.x}, " +
-              $"{bestSupport.Cell.y}] 部署强化塔，还差 " +
-              $"{Mathf.Max(0, bestSupport.Cost - _towerDefenseGold)} 金币。"
-            : saveForBuild
-            ? DescribeAutoplaySavingPlan(bestBuild,
-                bestBuild.TileScore >= TowerDefenseAutoplayThresholds
-                    .valuableSpecialTileScore
-                    ? "这块强化格值得留给合适的塔"
-                    : "补一座塔比继续硬升更划算")
-            : bestUpgrade.IsValid
-                ? DescribeAutoplaySavingPlan(bestUpgrade)
-            : snapshot.ActiveEnemies > 0
-                ? "眼前有怪，但现在乱花钱不划算。我再攒一会儿。"
-                : "这会儿很安静，金币先留给下一波。", false);
+    private static float GetAutoplayUpgradeCapitalContext(
+        AutoplayUpgradeChoice choice)
+    {
+        float evidence = Mathf.Lerp(1f, 1.08f,
+            Mathf.Clamp01(choice.ObservedCoreConfidence));
+        float commanderPreference = Mathf.Clamp(
+            TowerDefenseAutoplayCommander.UpgradeBias *
+            GetAutoplayPersonalityTowerBias(choice.Tower.TowerType),
+            0.88f, 1.12f);
+        return Mathf.Clamp(evidence * commanderPreference, 0.82f, 1.22f);
+    }
+
+    private static float GetAutoplayCapitalRoi(float gain, int paidCost)
+    {
+        if (!IsValidAutoplayCapitalGain(gain)) return 0f;
+        return Mathf.Max(0f, gain) * 100f /
+               Mathf.Max(100f, paidCost + 180f);
+    }
+
+    private static float GetAutoplayEmergencyPurchaseScore(float gain,
+        int paidCost)
+    {
+        if (!IsValidAutoplayCapitalGain(gain)) return 0f;
+        // Preserve both immediate output and cost efficiency without letting a tiny
+        // cheap upgrade automatically beat the only meaningful defensive purchase.
+        return gain / Mathf.Sqrt(Mathf.Max(100f, paidCost + 180f));
+    }
+
+    private static bool IsSameAutoplayBuildAction(AutoplayBuildChoice left,
+        AutoplayBuildChoice right)
+    {
+        return left.IsValid && right.IsValid && left.Type == right.Type &&
+               left.Cell == right.Cell;
+    }
+
+    private static bool IsValidAutoplayCapitalGain(float gain)
+    {
+        return float.IsFinite(gain) && gain > 0f;
+    }
+
+    private static void AccumulateAutoplayCapitalScale(float gain, int paidCost,
+        ref float maximumRoi, ref float maximumGain,
+        ref int minimumPositiveCost)
+    {
+        if (!IsValidAutoplayCapitalGain(gain)) return;
+        maximumGain = Mathf.Max(maximumGain, gain);
+        maximumRoi = Mathf.Max(maximumRoi,
+            GetAutoplayCapitalRoi(gain, paidCost));
+        if (paidCost > 0)
+            minimumPositiveCost = Mathf.Min(minimumPositiveCost, paidCost);
     }
 
     private bool TryApplyAutoplayBossTargeting(out string decision)
@@ -1800,68 +2476,332 @@ public partial class RougeGameManager
         decision = string.Empty;
         bool liveBoss = TryGetAutoplayLiveBossTarget(out Vector3 bossPosition,
             out float bossRadius);
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
         int focused = 0;
         int released = 0;
+        int cleanupAssigned = 0;
+        int cleanupReleased = 0;
 
-        // Boss focus is a hard combat order: every targeted tower that can switch
-        // priority focuses the boss as soon as it enters that tower's real attack
-        // range, then returns to normal targeting only after the boss leaves it.
-        // Release stale overrides as one squad order instead of spending one entire
-        // AI tick per tower.
-        for (int i = _towerDefenseAutoplayBossOverrides.Count - 1; i >= 0; i--)
-        {
-            RougeDefenseTower tower = _towerDefenseAutoplayBossOverrides[i];
-            bool keep = liveBoss && ShouldAutoplayUseBossFocus(tower,
-                bossPosition, bossRadius) &&
-                tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
-            if (keep) continue;
-            _towerDefenseAutoplayBossOverrides.RemoveAt(i);
-            if (!IsAutoplayStandardTower(tower) ||
-                tower.TargetPriority != RougeTowerTargetPriority.BossFirst)
-                continue;
-            tower.ToggleTargetPriority();
-            released++;
-        }
-
+        _towerDefenseAutoplayBossFocusCandidates.Clear();
+        _towerDefenseAutoplayDesiredBossFocus.Clear();
+        _towerDefenseAutoplayReservedBossGuards.Clear();
         if (liveBoss)
         {
             for (int i = 0; i < _defenseTowers.Count; i++)
             {
                 RougeDefenseTower tower = _defenseTowers[i];
-                if (!IsAutoplayStandardTower(tower) || !tower.IsTargetedDamage ||
-                    !tower.CanToggleTargetPriority)
-                    continue;
-
-                bool shouldFocus = ShouldAutoplayUseBossFocus(tower,
-                    bossPosition, bossRadius);
-                if (tower.TargetPriority == RougeTowerTargetPriority.BossFirst)
-                {
-                    // Normalize any pre-existing/untracked focus mode as well. During
-                    // autoplay, being outside the boss body is always normal targeting.
-                    if (shouldFocus) continue;
-                    tower.ToggleTargetPriority();
-                    released++;
-                    continue;
-                }
-                if (!shouldFocus) continue;
-
-                tower.ToggleTargetPriority();
-                if (tower.TargetPriority != RougeTowerTargetPriority.BossFirst)
-                    continue;
-                _towerDefenseAutoplayBossOverrides.Add(tower);
-                focused++;
+                if (ShouldAutoplayUseBossFocus(tower, bossPosition, bossRadius))
+                    _towerDefenseAutoplayBossFocusCandidates.Add(tower);
+            }
+            AllocateAutoplayBossCleanupGuards(map,
+                _towerDefenseAutoplayBossFocusCandidates,
+                _towerDefenseAutoplayReservedBossGuards);
+            for (int i = 0;
+                 i < _towerDefenseAutoplayBossFocusCandidates.Count; i++)
+            {
+                RougeDefenseTower tower =
+                    _towerDefenseAutoplayBossFocusCandidates[i];
+                if (!_towerDefenseAutoplayReservedBossGuards.Contains(tower))
+                    _towerDefenseAutoplayDesiredBossFocus.Add(tower);
             }
         }
 
-        if (focused <= 0 && released <= 0) return false;
+        // Apply the computed squad order in one pass. At least one in-range tower
+        // remains on the Boss; only the minimum towers needed to cover real non-Boss
+        // hotspots stay on normal cleanup targeting.
+        _towerDefenseAutoplayBossOverrides.Clear();
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower == null) continue;
+            bool shouldCleanupFirst = liveBoss &&
+                _towerDefenseAutoplayReservedBossGuards.Contains(tower);
+            if (tower.SetAutoplayCleanupFirst(shouldCleanupFirst))
+            {
+                if (shouldCleanupFirst) cleanupAssigned++;
+                else cleanupReleased++;
+            }
+            if (!ShouldAutoplayFocusBoss(tower)) continue;
+            bool shouldFocus = _towerDefenseAutoplayDesiredBossFocus.Contains(tower);
+            bool isFocused = tower.TargetPriority ==
+                             RougeTowerTargetPriority.BossFirst;
+            if (shouldFocus != isFocused)
+            {
+                tower.ToggleTargetPriority();
+                if (tower.TargetPriority == RougeTowerTargetPriority.BossFirst)
+                    focused++;
+                else
+                    released++;
+            }
+            if (shouldFocus && tower.TargetPriority ==
+                    RougeTowerTargetPriority.BossFirst)
+                _towerDefenseAutoplayBossOverrides.Add(tower);
+        }
+
+        if (focused <= 0 && released <= 0 && cleanupAssigned <= 0 &&
+            cleanupReleased <= 0) return false;
         _towerTargetScheduledCount = 0;
         RefreshTowerDefenseUi(true);
+        int guardCount = _towerDefenseAutoplayReservedBossGuards.Count;
         decision = focused > 0 && released > 0
-            ? $"Boss 火力配额：{focused} 座入圈塔开始集火，{released} 座转回清漏。"
+            ? $"Boss 火力配额：{focused} 座入圈塔开始集火，{released} 座转回清漏，" +
+              $"当前保留 {guardCount} 座守热点。"
             : focused > 0
-                ? $"Boss 入圈：{focused} 座塔协同集火，圈外火力继续清场。"
-                : $"Boss 离开射界：{released} 座塔恢复普通索敌。";
+                ? $"Boss 入圈：{focused} 座塔协同集火，{guardCount} 座按敌潮热区清漏。"
+                : released > 0 && liveBoss
+                    ? $"敌潮逼近：{released} 座塔退出集火，保留 {guardCount} 座清漏。"
+                    : liveBoss
+                        ? $"Boss 火力配额更新：当前保留 {guardCount} 座塔清漏。"
+                        : released > 0
+                            ? $"Boss 离开射界：{released} 座塔恢复普通索敌。"
+                            : "Boss 离开射界：清漏配额已解除。";
         return true;
+    }
+
+    private void AllocateAutoplayBossCleanupGuards(RougeTowerDefenseMap map,
+        List<RougeDefenseTower> candidates,
+        HashSet<RougeDefenseTower> reserved)
+    {
+        if (map == null || candidates == null || candidates.Count <= 1) return;
+        CollectAutoplayNearBaseHeatHotspots(map);
+        if (_towerDefenseAutoplayNearBaseHotspots.Count == 0) return;
+
+        ApplyAutoplayExistingCleanupCoverageRestrictedFirst(map, candidates);
+
+        int maximumReserved = candidates.Count - 1;
+        while (reserved.Count < maximumReserved)
+        {
+            RougeDefenseTower best = null;
+            float bestScore = 0f;
+            for (int candidateIndex = 0; candidateIndex < candidates.Count;
+                 candidateIndex++)
+            {
+                RougeDefenseTower tower = candidates[candidateIndex];
+                if (reserved.Contains(tower)) continue;
+                float coverageUnits = GetAutoplayCleanupCoverageUnits(tower);
+                float coveredRisk = EstimateAutoplayCleanupCoverageValue(map,
+                    tower, coverageUnits);
+                if (coveredRisk <= 0f) continue;
+                float cleanupPower = tower.Damage /
+                    Mathf.Max(0.03f, tower.EffectiveAttackInterval) *
+                    (1f + Mathf.Max(0, tower.AttackTargetCount - 1) * 0.65f) *
+                    (1f + Mathf.Max(0f, tower.AoeRadius) * 0.08f);
+                float bossPower = tower.Damage /
+                    Mathf.Max(0.03f, tower.EffectiveAttackInterval) *
+                    (tower.UsesFlamethrower
+                        ? 1
+                        : Mathf.Max(1, tower.AttackProjectileCount));
+                float score = coveredRisk * 1000f +
+                    Mathf.Log(1f + cleanupPower) * 24f -
+                    Mathf.Log(1f + bossPower) * 10f;
+                if (tower.AutoplayCleanupFirst) score += 18f;
+                if (score <= bestScore) continue;
+                bestScore = score;
+                best = tower;
+            }
+            if (best == null) break;
+            reserved.Add(best);
+            ApplyAutoplayCleanupCoverage(map, best,
+                GetAutoplayCleanupCoverageUnits(best));
+        }
+    }
+
+    private void CollectAutoplayNearBaseHeatHotspots(RougeTowerDefenseMap map)
+    {
+        if (_towerDefenseAutoplayHotspotRevision ==
+            _towerDefenseAutoplayHeatmapRevision)
+        {
+            ResetAutoplayHotspotCoverage();
+            return;
+        }
+
+        _towerDefenseAutoplayNearBaseHotspots.Clear();
+        _towerDefenseAutoplayHotspotRevision =
+            _towerDefenseAutoplayHeatmapRevision;
+        if (map == null || _towerDefenseAutoplayHeatmapMap != map ||
+            _towerDefenseAutoplayNearBaseCrisis <
+                TowerDefenseAutoplayNearBaseEarlyWarning) return;
+        int cellCount = Mathf.Min(map.Width * map.Height,
+            _towerDefenseAutoplayNonBossHeatByCell.Length);
+        for (int index = 0; index < cellCount; index++)
+        {
+            float risk = GetAutoplayNearBaseHeatRiskAtCell(index);
+            if (risk < TowerDefenseAutoplayNearBaseEarlyWarning) continue;
+            Vector2Int cell = new Vector2Int(index % map.Width,
+                index / map.Width);
+            bool merged = false;
+            for (int i = 0; i < _towerDefenseAutoplayNearBaseHotspots.Count; i++)
+            {
+                AutoplayHeatHotspot existing =
+                    _towerDefenseAutoplayNearBaseHotspots[i];
+                Vector2Int delta = existing.Cell - cell;
+                if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) > 2) continue;
+                if (risk > existing.Risk)
+                {
+                    existing.Cell = cell;
+                    existing.Risk = risk;
+                    _towerDefenseAutoplayNearBaseHotspots[i] = existing;
+                }
+                merged = true;
+                break;
+            }
+            if (merged) continue;
+            _towerDefenseAutoplayNearBaseHotspots.Add(new AutoplayHeatHotspot
+            {
+                Cell = cell,
+                Risk = risk
+            });
+        }
+
+        _towerDefenseAutoplayNearBaseHotspots.Sort((left, right) =>
+            right.Risk.CompareTo(left.Risk));
+        if (_towerDefenseAutoplayNearBaseHotspots.Count > 3)
+            _towerDefenseAutoplayNearBaseHotspots.RemoveRange(3,
+                _towerDefenseAutoplayNearBaseHotspots.Count - 3);
+        for (int i = 0; i < _towerDefenseAutoplayNearBaseHotspots.Count; i++)
+        {
+            AutoplayHeatHotspot hotspot =
+                _towerDefenseAutoplayNearBaseHotspots[i];
+            hotspot.RequiredCoverage = Mathf.Lerp(0.75f, 1.75f,
+                Mathf.InverseLerp(TowerDefenseAutoplayNearBaseEarlyWarning,
+                    TowerDefenseAutoplayImmediateNearBaseCrisis,
+                    hotspot.Risk));
+            _towerDefenseAutoplayNearBaseHotspots[i] = hotspot;
+        }
+    }
+
+    private void ResetAutoplayHotspotCoverage()
+    {
+        for (int i = 0; i < _towerDefenseAutoplayNearBaseHotspots.Count; i++)
+        {
+            AutoplayHeatHotspot hotspot =
+                _towerDefenseAutoplayNearBaseHotspots[i];
+            hotspot.CurrentCoverage = 0f;
+            _towerDefenseAutoplayNearBaseHotspots[i] = hotspot;
+        }
+    }
+
+    private float EstimateAutoplayCleanupCoverageValue(
+        RougeTowerDefenseMap map, RougeDefenseTower tower, float capacity)
+    {
+        float value = 0f;
+        float remaining = Mathf.Max(0f, capacity);
+        for (int i = 0;
+             i < _towerDefenseAutoplayNearBaseHotspots.Count && remaining > 0.001f;
+             i++)
+        {
+            AutoplayHeatHotspot hotspot =
+                _towerDefenseAutoplayNearBaseHotspots[i];
+            if (!DoesAutoplayTowerCoverCell(map, tower, hotspot.Cell)) continue;
+            float deficit = Mathf.Max(0f,
+                hotspot.RequiredCoverage - hotspot.CurrentCoverage);
+            float assigned = Mathf.Min(remaining, deficit);
+            value += hotspot.Risk * assigned;
+            remaining -= assigned;
+        }
+        return value;
+    }
+
+    private void ApplyAutoplayCleanupCoverage(RougeTowerDefenseMap map,
+        RougeDefenseTower tower, float capacity)
+    {
+        float remaining = Mathf.Max(0f, capacity);
+        for (int i = 0;
+             i < _towerDefenseAutoplayNearBaseHotspots.Count && remaining > 0.001f;
+             i++)
+        {
+            AutoplayHeatHotspot hotspot =
+                _towerDefenseAutoplayNearBaseHotspots[i];
+            if (!DoesAutoplayTowerCoverCell(map, tower, hotspot.Cell)) continue;
+            float deficit = Mathf.Max(0f,
+                hotspot.RequiredCoverage - hotspot.CurrentCoverage);
+            float assigned = Mathf.Min(remaining, deficit);
+            if (assigned <= 0f) continue;
+            hotspot.CurrentCoverage += assigned;
+            remaining -= assigned;
+            _towerDefenseAutoplayNearBaseHotspots[i] = hotspot;
+        }
+    }
+
+    private void ApplyAutoplayExistingCleanupCoverageRestrictedFirst(
+        RougeTowerDefenseMap map, List<RougeDefenseTower> excluded)
+    {
+        int hotspotCount = _towerDefenseAutoplayNearBaseHotspots.Count;
+        // Assign narrow/specialized coverage first. If a wide tower that covers A+B
+        // consumes A before an A-only tower is considered, a greedy pass falsely
+        // reports B as uncovered and can trigger another unnecessary construction.
+        for (int breadth = 1; breadth <= hotspotCount; breadth++)
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (!IsAutoplayStandardTower(tower) ||
+                excluded != null && excluded.Contains(tower) ||
+                CountAutoplayCoveredHeatHotspots(map, tower) != breadth)
+                continue;
+            ApplyAutoplayCleanupCoverage(map, tower,
+                GetAutoplayCleanupCoverageUnits(tower));
+        }
+    }
+
+    private int CountAutoplayCoveredHeatHotspots(RougeTowerDefenseMap map,
+        RougeDefenseTower tower)
+    {
+        int count = 0;
+        for (int i = 0; i < _towerDefenseAutoplayNearBaseHotspots.Count; i++)
+            if (DoesAutoplayTowerCoverCell(map, tower,
+                    _towerDefenseAutoplayNearBaseHotspots[i].Cell))
+                count++;
+        return count;
+    }
+
+    private bool DoesAutoplayBuildCloseUncoveredNearBaseHotspot(
+        RougeTowerDefenseMap map, AutoplayBuildChoice choice)
+    {
+        if (map == null || !choice.IsValid ||
+            choice.NearBaseHeatCoverage <
+                TowerDefenseAutoplayNearBaseEarlyWarning ||
+            choice.NearBaseHeatCellIndex < 0) return false;
+
+        CollectAutoplayNearBaseHeatHotspots(map);
+        if (_towerDefenseAutoplayNearBaseHotspots.Count == 0) return false;
+        ApplyAutoplayExistingCleanupCoverageRestrictedFirst(map, null);
+
+        Vector2Int targetCell = new Vector2Int(
+            choice.NearBaseHeatCellIndex % map.Width,
+            choice.NearBaseHeatCellIndex / map.Width);
+        for (int i = 0; i < _towerDefenseAutoplayNearBaseHotspots.Count; i++)
+        {
+            AutoplayHeatHotspot hotspot =
+                _towerDefenseAutoplayNearBaseHotspots[i];
+            Vector2Int delta = hotspot.Cell - targetCell;
+            if (Mathf.Abs(delta.x) + Mathf.Abs(delta.y) > 2) continue;
+            if (hotspot.RequiredCoverage - hotspot.CurrentCoverage >= 0.12f)
+                return true;
+        }
+        return false;
+    }
+
+    private static float GetAutoplayCleanupCoverageUnits(
+        RougeDefenseTower tower)
+    {
+        if (tower == null) return 0f;
+        float rawPower = tower.Damage /
+            Mathf.Max(0.03f, tower.EffectiveAttackInterval);
+        rawPower *= 1f + Mathf.Max(0, tower.AttackTargetCount - 1) * 0.65f;
+        rawPower *= 1f + Mathf.Min(1.2f,
+            Mathf.Max(0f, tower.AoeRadius) * 0.09f);
+        float units = Mathf.Log(1f + Mathf.Max(0f, rawPower)) / 4f;
+        if (tower.TowerType == RougeTowerType.Ice) units += 0.35f;
+        return Mathf.Clamp(units, 0.35f, 2.4f);
+    }
+
+    private static bool DoesAutoplayTowerCoverCell(RougeTowerDefenseMap map,
+        RougeDefenseTower tower, Vector2Int cell)
+    {
+        if (map == null || tower == null || tower.AttackRange <= 0f) return false;
+        Vector3 delta = tower.transform.position - map.CellCenter(cell);
+        delta.y = 0f;
+        return delta.sqrMagnitude <= tower.AttackRange * tower.AttackRange;
     }
 
     private static bool ShouldAutoplayFocusBoss(RougeDefenseTower tower)
@@ -1904,6 +2844,12 @@ public partial class RougeGameManager
     private void RestoreAllAutoplayBossPriorityOverrides()
     {
         bool changed = false;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (tower != null && tower.SetAutoplayCleanupFirst(false))
+                changed = true;
+        }
         for (int i = _towerDefenseAutoplayBossOverrides.Count - 1; i >= 0; i--)
         {
             RougeDefenseTower tower = _towerDefenseAutoplayBossOverrides[i];
@@ -1915,6 +2861,9 @@ public partial class RougeGameManager
             }
         }
         _towerDefenseAutoplayBossOverrides.Clear();
+        _towerDefenseAutoplayBossFocusCandidates.Clear();
+        _towerDefenseAutoplayDesiredBossFocus.Clear();
+        _towerDefenseAutoplayReservedBossGuards.Clear();
         if (!changed) return;
         _towerTargetScheduledCount = 0;
         RefreshTowerDefenseUi(true);
@@ -2022,8 +2971,11 @@ public partial class RougeGameManager
 
         if (candidate.RequiresUpgradeChoice)
         {
-            int choiceIndex = GetAutoplayUpgradeChoice(candidate, choice,
+            int liveChoiceIndex = GetAutoplayUpgradeChoice(candidate, choice,
                 out routeExplanation);
+            int choiceIndex = (uint)choice.SpecializationChoiceIndex <= 1u
+                ? choice.SpecializationChoiceIndex
+                : liveChoiceIndex;
             upgraded = candidate.UpgradeSpecializationChoice(choiceIndex);
         }
         else
@@ -2472,6 +3424,18 @@ public partial class RougeGameManager
                 Mathf.Sqrt(protectedInvestment) * 10f +
                 Mathf.Sqrt(Mathf.Max(0f, leader.ContributionValue)) * 7f) *
                 pressureFit - specialTilePenalty);
+            // Support's internal ranking deliberately includes observation history,
+            // protected investment and cluster quality. Those raw terms are much
+            // larger than build/upgrade utility, so expose a separately calibrated
+            // marginal-defense value to the cross-category capital auction.
+            float capitalGain = Mathf.Max(0f, (
+                Mathf.Log(1f + Mathf.Max(0f, marginalPower)) * 42f +
+                affected * 38f + highValue * 46f +
+                performanceCoverage * 88f +
+                Mathf.Log(1f + Mathf.Max(0f, protectedInvestment)) * 18f +
+                Mathf.Log(1f + Mathf.Max(0f,
+                    leader.ContributionValue)) * 22f) * pressureFit -
+                specialTilePenalty * 0.42f);
             float efficiency = utility * 100f / Mathf.Max(100f, cost + 180f);
             AutoplaySupportChoice choice = new AutoplaySupportChoice
             {
@@ -2485,11 +3449,12 @@ public partial class RougeGameManager
                 ObservationConfidence = observationConfidence,
                 CoversProvenLeader = leaderMarginallyAffected,
                 Utility = utility,
-                Efficiency = efficiency
+                Efficiency = efficiency,
+                CapitalGain = capitalGain
             };
             if (!bestOverall.IsValid || choice.Efficiency > bestOverall.Efficiency)
                 bestOverall = choice;
-            if (cost <= _towerDefenseGold &&
+            if (GetTowerDefenseAutoplayPaidCost(cost) <= _towerDefenseGold &&
                 (!bestAffordable.IsValid ||
                  choice.Efficiency > bestAffordable.Efficiency))
                 bestAffordable = choice;
@@ -2515,27 +3480,8 @@ public partial class RougeGameManager
         return false;
     }
 
-    private static bool ShouldPreferAutoplaySupport(
-        AutoplaySupportChoice support, AutoplayBuildChoice build,
-        AutoplayUpgradeChoice upgrade, AutoplayBattleSnapshot snapshot,
-        float mainTowerHealthRatio)
-    {
-        if (!support.IsValid || !support.CoversProvenLeader ||
-            support.ObservationConfidence < 0.999f ||
-            support.AffectedTowers < 3 || support.HighValueTowers < 1 ||
-            mainTowerHealthRatio < 0.68f || snapshot.UrgentPressure >= 2.4f ||
-            snapshot.NearBaseEnemyWeight >= 3.5f) return false;
-        float alternative = float.NegativeInfinity;
-        if (build.IsValid) alternative = Mathf.Max(alternative, build.Efficiency);
-        if (upgrade.IsValid) alternative = Mathf.Max(alternative, upgrade.Efficiency);
-        return float.IsNegativeInfinity(alternative) ||
-               support.Efficiency >= alternative * 1.04f;
-    }
-
-    private bool ShouldSaveForAutoplaySupport(AutoplaySupportChoice best,
-        AutoplaySupportChoice affordable, AutoplayBuildChoice affordableBuild,
-        AutoplayUpgradeChoice affordableUpgrade, AutoplayBattleSnapshot snapshot,
-        float mainTowerHealthRatio)
+    private bool ShouldReserveForAutoplaySupport(AutoplaySupportChoice best,
+        AutoplaySupportChoice affordable, float mainTowerHealthRatio)
     {
         if (!best.IsValid || !best.CoversProvenLeader ||
             best.ObservationConfidence < 0.999f || affordable.IsValid ||
@@ -2543,19 +3489,17 @@ public partial class RougeGameManager
             _towerDefenseAutoplayStrategyMode == AutoplayStrategyMode.Opening ||
             _towerDefenseAutoplayStrategyMode == AutoplayStrategyMode.Emergency ||
             _towerDefenseAutoplayStrategyMode == AutoplayStrategyMode.BossFight ||
-            mainTowerHealthRatio < 0.75f || snapshot.UrgentPressure >= 1.5f ||
-            snapshot.ActiveEnemies >= 15) return false;
-        if (_towerDefenseGold < Mathf.CeilToInt(best.Cost * 0.42f)) return false;
+            mainTowerHealthRatio < 0.75f ||
+            _towerDefenseAutoplaySustainedNearBaseCrisis ||
+            _towerDefenseAutoplaySustainedMainTowerDamage ||
+            _towerDefenseAutoplayEnemyFlowBacklog >= 0.2f) return false;
+        // Reserve only near the finish line. This realizes the proven support plan
+        // without letting an expensive aura freeze ordinary defense for a whole wave.
+        if (_towerDefenseGold < Mathf.CeilToInt(best.Cost * 0.65f)) return false;
         int shortfall = Mathf.Max(0, best.Cost - _towerDefenseGold);
         if (shortfall > Mathf.Max(1800,
-                Mathf.RoundToInt(_towerDefenseGold * 0.75f))) return false;
-
-        float alternative = 0f;
-        if (affordableBuild.IsValid)
-            alternative = Mathf.Max(alternative, affordableBuild.Efficiency);
-        if (affordableUpgrade.IsValid)
-            alternative = Mathf.Max(alternative, affordableUpgrade.Efficiency);
-        return alternative <= 0f || best.Efficiency >= alternative * 1.18f;
+                Mathf.RoundToInt(_towerDefenseGold * 0.55f))) return false;
+        return true;
     }
 
     private string DescribeAutoplaySupportSavingPlan(
@@ -2569,13 +3513,24 @@ public partial class RougeGameManager
                $"{Mathf.Max(0, support.Cost - _towerDefenseGold)} 金币。";
     }
 
+    private string DescribeAutoplayChargeSavingPlan(
+        AutoplayChargeChoice charge)
+    {
+        QueueAutoplayDialogue(AutoplayDialogueCategory.Saving);
+        if (!charge.IsValid || charge.TargetTower == null)
+            return "格位投资：暂时保留预算，等待可靠的充能目标。";
+        return $"格位投资：准备在 [{charge.OwnerCell.x}, " +
+               $"{charge.OwnerCell.y}] 为{charge.TargetTower.DisplayName}充能，" +
+               $"还差 {Mathf.Max(0, charge.PaidCost - _towerDefenseGold)} 金币。";
+    }
+
     private bool TryBuildAutoplaySupportTower(RougeTowerDefenseMap map,
         AutoplaySupportChoice choice, out string decision)
     {
         decision = string.Empty;
         if (map == null || !choice.IsValid || !choice.CoversProvenLeader ||
             choice.ObservationConfidence < 0.999f ||
-            choice.Cost > _towerDefenseGold ||
+            GetTowerDefenseAutoplayPaidCost(choice.Cost) > _towerDefenseGold ||
             IsTowerTypeDisabled(RougeTowerType.ReinforcementTower) ||
             !IsAutoplayBuildCellFree(map, choice.Cell)) return false;
         if (_towerDefenseAutoplayProvisionalSupportLeader == null ||
@@ -2644,6 +3599,238 @@ public partial class RougeGameManager
         return true;
     }
 
+    private void EvaluateAutoplayChargeChoice(RougeTowerDefenseMap map,
+        out AutoplayChargeChoice best)
+    {
+        best = default;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        int standardTowerCount = CountAutoplayStandardTowers();
+        if (map == null || loader == null || loader.Map != map ||
+            IsTowerTypeDisabled(RougeTowerType.ChargeTower) ||
+            CountOpenAutoplayBuildCells(map) < 2 || standardTowerCount < 4)
+            return;
+
+        int chargeTowerCount = CountAutoplayChargeTowers();
+        int maximumChargeTowers = Mathf.Max(1, standardTowerCount / 4);
+        if (chargeTowerCount >= maximumChargeTowers) return;
+
+        // This also refreshes the per-tower performance list. A charge tower is a
+        // costly map edit, so only measured combat output may nominate its target.
+        if (!TryGetProvenAutoplaySupportLeader(map, out _, out _)) return;
+        int originalCost = GetChargeTowerGoldCost();
+        int paidCost = GetTowerDefenseAutoplayPaidCost(originalCost);
+        int cellCount = map.Width * map.Height;
+
+        for (int performanceIndex = 0;
+             performanceIndex < _towerDefenseAutoplayTowerPerformances.Count;
+             performanceIndex++)
+        {
+            AutoplayTowerPerformance performance =
+                _towerDefenseAutoplayTowerPerformances[performanceIndex];
+            RougeDefenseTower target = performance.Tower;
+            if (!IsAutoplayStandardTower(target) || performance.ObservationAge <
+                    TowerDefenseAutoplaySupportObservationSeconds ||
+                performance.StrategicScore < 0.5f ||
+                !_towerDefenseAutoplayTowerObservations.TryGetValue(target,
+                    out AutoplayTowerObservation observation) ||
+                observation.ObservedDamage < 20f &&
+                performance.RecentDamageRate < 0.25f)
+                continue;
+
+            Vector2Int targetCell = performance.Cell;
+            if (loader.TryGetRuntimeTowerPlaceEffect(targetCell, out _) ||
+                loader.GetEffectiveTowerPlaceEffect(targetCell) !=
+                RougeTowerPlaceEffect.None)
+                continue;
+            float expectedEffectUtility =
+                GetExpectedAutoplayChargeEffectUtility(target);
+
+            for (int offsetY = -1; offsetY <= 1; offsetY++)
+            for (int offsetX = -1; offsetX <= 1; offsetX++)
+            {
+                if (offsetX == 0 && offsetY == 0) continue;
+                Vector2Int ownerCell = targetCell +
+                                       new Vector2Int(offsetX, offsetY);
+                if (!IsAutoplayBuildCellFree(map, ownerCell) ||
+                    loader.GetEffectiveTowerPlaceEffect(ownerCell) !=
+                    RougeTowerPlaceEffect.None)
+                    continue;
+
+                int ownerIndex = ownerCell.y * map.Width + ownerCell.x;
+                if ((uint)ownerIndex >= (uint)cellCount) continue;
+                float ownerOpportunityCost =
+                    GetAutoplayChargeOwnerOpportunityCost(cellCount, ownerIndex);
+                float score = performance.StrategicScore * 220f +
+                    Mathf.Log(1f + Mathf.Max(0f, performance.RecentDamageRate)) * 18f +
+                    expectedEffectUtility - ownerOpportunityCost * 0.35f;
+                if (!float.IsFinite(score) || score <= 0f) continue;
+                if (best.IsValid && score <= best.TargetStrategicScore) continue;
+                best = new AutoplayChargeChoice
+                {
+                    IsValid = true,
+                    OwnerCell = ownerCell,
+                    TargetCell = targetCell,
+                    TargetTower = target,
+                    OriginalCost = originalCost,
+                    PaidCost = paidCost,
+                    TargetStrategicScore = score,
+                    ExpectedEffectUtility = expectedEffectUtility,
+                    OwnerOpportunityCost = ownerOpportunityCost,
+                    CapitalGain = score
+                };
+            }
+        }
+    }
+
+    private float GetAutoplayChargeOwnerOpportunityCost(int cellCount,
+        int cellIndex)
+    {
+        float opportunityCost = 0f;
+        for (int typeIndex = 0;
+             typeIndex < TowerDefenseVisuals.StandardTowerTypeCount; typeIndex++)
+        {
+            int priorIndex = typeIndex * cellCount + cellIndex;
+            if ((uint)priorIndex >= (uint)_towerDefenseAutoplayBuildPriors.Length)
+                continue;
+            AutoplayBuildPrior prior = _towerDefenseAutoplayBuildPriors[priorIndex];
+            if (prior.IsValid)
+                opportunityCost = Mathf.Max(opportunityCost, prior.FixedScore);
+        }
+        return opportunityCost;
+    }
+
+    private static float GetExpectedAutoplayChargeEffectUtility(
+        RougeDefenseTower target)
+    {
+        if (target == null || ChargeTowerEffectPool.Length == 0) return 0f;
+        float sum = 0f;
+        float maximum = 0f;
+        for (int i = 0; i < ChargeTowerEffectPool.Length; i++)
+        {
+            float value = ScoreAutoplayChargeEffect(target,
+                ChargeTowerEffectPool[i]);
+            sum += value;
+            maximum = Mathf.Max(maximum, value);
+        }
+        float mean = sum / ChargeTowerEffectPool.Length;
+        return mean + (maximum - mean) * 0.35f;
+    }
+
+    private static float ScoreAutoplayChargeEffect(RougeDefenseTower target,
+        RougeTowerPlaceEffect effect)
+    {
+        if (target == null) return float.NegativeInfinity;
+        float score = GetAutoplayTileAffinity(target.TowerType, effect);
+        if (effect == RougeTowerPlaceEffect.FreeLevelNoRefund &&
+            !target.CanUpgrade)
+            score -= 100f;
+        if (effect == RougeTowerPlaceEffect.Discount && !target.CanUpgrade)
+            score -= 80f;
+        if (effect == RougeTowerPlaceEffect.Relocation) score -= 45f;
+        return score;
+    }
+
+    private bool TryBuildAutoplayChargeTower(RougeTowerDefenseMap map,
+        AutoplayChargeChoice choice, out string decision)
+    {
+        decision = string.Empty;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        RougeDefenseTower target = choice.TargetTower;
+        if (map == null || loader == null || loader.Map != map ||
+            !choice.IsValid || !IsAutoplayStandardTower(target) ||
+            !_defenseTowers.Contains(target) ||
+            IsTowerTypeDisabled(RougeTowerType.ChargeTower) ||
+            CountOpenAutoplayBuildCells(map) < 2 ||
+            !IsAutoplayBuildCellFree(map, choice.OwnerCell) ||
+            loader.GetEffectiveTowerPlaceEffect(choice.OwnerCell) !=
+            RougeTowerPlaceEffect.None ||
+            !map.WorldToCell(target.transform.position, out Vector2Int targetCell) ||
+            targetCell != choice.TargetCell ||
+            Mathf.Max(Mathf.Abs(targetCell.x - choice.OwnerCell.x),
+                Mathf.Abs(targetCell.y - choice.OwnerCell.y)) != 1 ||
+            loader.TryGetRuntimeTowerPlaceEffect(targetCell, out _) ||
+            loader.GetEffectiveTowerPlaceEffect(targetCell) !=
+            RougeTowerPlaceEffect.None)
+            return false;
+
+        int standardTowerCount = CountAutoplayStandardTowers();
+        if (CountAutoplayChargeTowers() >= Mathf.Max(1,
+                standardTowerCount / 4)) return false;
+        int originalCost = GetChargeTowerGoldCost();
+        int paidCost = GetTowerDefenseAutoplayPaidCost(originalCost);
+        if (_towerDefenseGold < paidCost) return false;
+
+        GameObject towerObject = InstantiateTowerPrefab(RougeTowerType.ChargeTower);
+        if (towerObject == null) return false;
+        towerObject.SetActive(false);
+        RougeDefenseTower tower = towerObject.GetComponent<RougeDefenseTower>();
+        if (tower == null)
+        {
+            Destroy(towerObject);
+            return false;
+        }
+        tower.ConfigureAsChargeTower(true);
+        tower.SetChargeTowerPlacementCost(originalCost);
+        tower.transform.position = map.CellCenter(choice.OwnerCell, 0.05f);
+
+        // Roll exactly once at commit time. Evaluating on every planning tick would
+        // silently give autoplay unlimited free rerolls compared with the player.
+        RollChargeTowerEffectChoices();
+        RougeTowerPlaceEffect selectedEffect = _chargeTowerEffectChoices[0];
+        float selectedScore = ScoreAutoplayChargeEffect(target, selectedEffect);
+        for (int i = 1; i < _chargeTowerEffectChoices.Length; i++)
+        {
+            RougeTowerPlaceEffect effect = _chargeTowerEffectChoices[i];
+            float score = ScoreAutoplayChargeEffect(target, effect);
+            if (score <= selectedScore) continue;
+            selectedEffect = effect;
+            selectedScore = score;
+        }
+        if (!loader.TrySetRuntimeTowerPlaceEffect(targetCell, selectedEffect))
+        {
+            Destroy(towerObject);
+            return false;
+        }
+
+        _towerDefenseGold -= paidCost;
+        RecordTowerDefenseGoldSpent(paidCost);
+        tower.SetChargeTarget(targetCell, selectedEffect);
+        tower.FinalizePlacement();
+        tower.RecordActualGoldPaid(originalCost, paidCost);
+        tower.name = tower.DisplayName;
+        towerObject.SetActive(true);
+        _defenseTowers.Add(tower);
+        ApplyActivatedEffectToTowersInCell(targetCell, selectedEffect);
+        tower.PlayPlacementSound();
+        PlayTowerConstructionEffect(tower);
+        RefreshReinforcementTowerAuras();
+        _towerTargetScheduledCount = 0;
+        _towerDefenseAutoplayPriorDirty = true;
+        _towerDefenseAutoplayLastCapitalActionGameTime =
+            Mathf.Max(0f, _survivalTime);
+        _towerDefenseAutoplayLastChargeGameTime =
+            Mathf.Max(0f, _survivalTime);
+        SetTowerPlaceVisualsVisible(_towerPlacementMode);
+        RefreshTowerDefenseUi(true);
+
+        string effectName = RougeTowerPlaceEffectRules.GetDisplayName(selectedEffect);
+        decision = $"专属充能：在 [{choice.OwnerCell.x}, {choice.OwnerCell.y}] " +
+                   $"建造充能塔，为 [{targetCell.x}, {targetCell.y}] 的" +
+                   $"{target.DisplayName}选择“{effectName}”；" +
+                   $"{FormatAutoplayCost(originalCost, paidCost)}。";
+        QueueAutoplayDialogue(AutoplayDialogueCategory.GreatTile);
+        return true;
+    }
+
+    private int CountAutoplayChargeTowers()
+    {
+        int count = 0;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+            if (_defenseTowers[i] != null && _defenseTowers[i].IsChargeTower)
+                count++;
+        return count;
+    }
+
     private int GetAutoplayUpgradeChoice(RougeDefenseTower tower,
         AutoplayUpgradeChoice scoredChoice, out string explanation)
     {
@@ -2652,12 +3839,25 @@ public partial class RougeGameManager
         bool urgent = pressure == AutoplayPressureLayer.Urgent;
         bool hard = pressure == AutoplayPressureLayer.Elite ||
                     pressure == AutoplayPressureLayer.Boss;
+        bool armorDemand = scoredChoice.UncoveredArmorPressure >= 1.25f &&
+                           scoredChoice.UncoveredArmorPressure >=
+                           scoredChoice.VulnerablePressure * 0.35f;
+        bool controlDemand = scoredChoice.FastUncontrolledPressure >= 0.9f;
+        bool lateLowHealth = scoredChoice.LateHealthRatio <= 0.48f;
+        bool setupPosition = scoredChoice.EarlyRouteExposure >
+                             scoredChoice.LateRouteExposure * 1.12f;
+        bool finisherPosition = scoredChoice.LateRouteExposure >
+                                scoredChoice.EarlyRouteExposure * 1.12f;
+        bool chokePosition = scoredChoice.RouteReuse >= 0.52f ||
+                             scoredChoice.Bottleneck >= 0.58f;
         switch (tower.TowerType)
         {
             case RougeTowerType.Ice:
                 if (tower.NeedsIceBranchChoice)
                 {
-                    if (hard)
+                    bool missingFreeze = controlDemand &&
+                        !HasAutoplayIceBranch(RougeIceTowerBranch.Freeze);
+                    if (armorDemand && !missingFreeze)
                     {
                         explanation = "脆弱路线：帮全队处理硬目标";
                         return 1;
@@ -2667,30 +3867,35 @@ public partial class RougeGameManager
                 }
                 if (tower.UsesIceFreeze)
                 {
-                    explanation = crowd || urgent
-                        ? "冰刺：眼前更需要立刻控场"
-                        : "永久霜寒：把控场范围慢慢铺开";
-                    return crowd || urgent ? 0 : 1;
+                    int frostTargets = CountAutoplayPermanentFrostTargets(tower);
+                    bool frostNetwork = !urgent && frostTargets >= 2 &&
+                                        (setupPosition || chokePosition);
+                    explanation = frostNetwork
+                        ? $"永久霜寒：相邻有 {frostTargets} 个可利用塔位"
+                        : "冰刺：眼前更需要立刻控场";
+                    return frostNetwork ? 1 : 0;
                 }
-                explanation = hard
-                    ? "脆弱穿甲：专门对付精英和 Boss"
+                explanation = armorDemand
+                    ? "脆弱穿甲：专门处理高护甲目标"
                     : "脆弱增伤：让后续火力更疼";
-                return hard ? 1 : 0;
+                return armorDemand ? 1 : 0;
 
             case RougeTowerType.MachineGun:
                 if (tower.NeedsMachineGunBranchChoice)
                 {
-                    explanation = crowd
+                    bool fragmentLane = crowd && !armorDemand &&
+                                        (chokePosition || !finisherPosition);
+                    explanation = fragmentLane
                         ? "破片路线：怪多时一起清"
                         : "暴击路线：把单体火力做实";
-                    return crowd ? 1 : 0;
+                    return fragmentLane ? 1 : 0;
                 }
                 if (tower.UsesMachineGunCritical)
                 {
-                    explanation = hard
-                        ? "暴击穿甲：硬目标更值得针对"
+                    explanation = armorDemand
+                        ? "暴击穿甲：高护甲目标更值得针对"
                         : "暴击率：稳定提高输出";
-                    return hard ? 1 : 0;
+                    return armorDemand ? 1 : 0;
                 }
                 explanation = crowd
                     ? "更多破片：继续扩大清场面"
@@ -2700,10 +3905,12 @@ public partial class RougeGameManager
             case RougeTowerType.Cannon:
                 if (tower.NeedsCannonBranchChoice)
                 {
-                    explanation = hard || urgent
+                    bool persistentLane = !finisherPosition &&
+                                          (setupPosition || chokePosition);
+                    explanation = persistentLane
                         ? "持续炮弹：把关键路口压久一点"
                         : "内圈爆破：怪群越挤越疼";
-                    return hard || urgent ? 1 : 0;
+                    return persistentLane ? 1 : 0;
                 }
                 if (tower.UsesCannonInnerBlast)
                 {
@@ -2712,18 +3919,22 @@ public partial class RougeGameManager
                         : "扩大内圈：稳住主要落点";
                     return crowd ? 1 : 0;
                 }
-                explanation = urgent
+                explanation = urgent || controlDemand
                     ? "持续击退：先把贴近主塔的推回去"
                     : "增加持续次数：让路口一直有伤害";
-                return urgent ? 0 : 1;
+                return urgent || controlDemand ? 0 : 1;
 
             case RougeTowerType.Flame:
                 if (tower.NeedsFlameBranchChoice)
                 {
-                    explanation = hard
+                    bool burnSetup = !urgent && !finisherPosition &&
+                                     !lateLowHealth &&
+                                     (setupPosition || chokePosition) &&
+                                     (hard || scoredChoice.RouteReuse >= 0.45f);
+                    explanation = burnSetup
                         ? "燃烧路线：持续压低精英和 Boss 血线"
                         : "喷火器路线：把密集路口直接扫干净";
-                    return hard ? 1 : 0;
+                    return burnSetup ? 1 : 0;
                 }
                 if (tower.UsesFlamethrower)
                 {
@@ -2732,18 +3943,25 @@ public partial class RougeGameManager
                         : "扇形喷火：集中模式把火力并到 Boss";
                     return crowd || urgent ? 0 : 1;
                 }
-                explanation = hard
+                bool conflagrationReady = hard &&
+                    HasAutoplayIceBranch(RougeIceTowerBranch.Freeze);
+                explanation = conflagrationReady
                     ? "爆燃：配合冻结直接处理硬目标"
-                    : "叠层燃烧：怪群经过火区时持续增伤";
-                return hard ? 1 : 0;
+                    : hard
+                        ? "叠层燃烧：缺少冻结联动，先提高持续伤害"
+                        : "叠层燃烧：怪群经过火区时持续增伤";
+                return conflagrationReady ? 1 : 0;
 
             case RougeTowerType.Laser:
                 if (tower.NeedsLaserBranchChoice)
                 {
-                    explanation = crowd
-                        ? "折射路线：敌人多时不浪费光束"
-                        : "破甲路线：优先拆硬目标";
-                    return crowd ? 1 : 0;
+                    bool armorBreakNeeded = armorDemand;
+                    explanation = armorBreakNeeded
+                        ? "破甲路线：优先拆掉实际存在的护甲"
+                        : crowd && (chokePosition || !finisherPosition)
+                            ? "折射路线：敌人多时不浪费光束"
+                            : "折射路线：没有护甲需求时保留直接增伤";
+                    return armorBreakNeeded ? 0 : 1;
                 }
                 if (tower.UsesLaserArmorBreak)
                 {
@@ -2763,12 +3981,50 @@ public partial class RougeGameManager
         }
     }
 
+    private bool HasAutoplayIceBranch(RougeIceTowerBranch branch)
+    {
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (IsAutoplayStandardTower(tower) &&
+                tower.TowerType == RougeTowerType.Ice &&
+                tower.IceBranch == branch) return true;
+        }
+        return false;
+    }
+
+    private int CountAutoplayPermanentFrostTargets(RougeDefenseTower tower)
+    {
+        RougeTowerDefenseMap map = RougeTowerDefenseMapLoader.ActiveMap;
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        if (tower == null || map == null || loader == null ||
+            !map.WorldToCell(tower.transform.position, out Vector2Int center))
+            return 0;
+
+        int useful = 0;
+        for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++)
+        {
+            if (x == 0 && y == 0) continue;
+            Vector2Int cell = center + new Vector2Int(x, y);
+            if (!map.IsTowerPlace(cell)) continue;
+            RougeTowerPlaceEffect effect = loader.GetEffectiveTowerPlaceEffect(cell);
+            // Permanent frost should extend onto ordinary/frost pads, not erase an
+            // authored damage, range, economy or attack-speed puzzle piece.
+            if (effect != RougeTowerPlaceEffect.None &&
+                effect != RougeTowerPlaceEffect.Frost) continue;
+            useful++;
+        }
+        return useful;
+    }
+
     private bool ScheduleTowerDefenseAutoplayPlan(RougeTowerDefenseMap map,
         AutoplayBattleSnapshot baseSnapshot)
     {
         if (map == null || _towerDefenseAutoplayPlanScheduled ||
             !_positionsA.IsCreated || !_stateA.IsCreated ||
-            !_towerDefenseEnemyKinds.IsCreated) return false;
+            !_towerDefenseEnemyKinds.IsCreated || !_effectStateA.IsCreated)
+            return false;
 
         int cellCount = map.Width * map.Height;
         int typeCount = TowerDefenseVisuals.StandardTowerTypeCount;
@@ -2776,7 +4032,8 @@ public partial class RougeGameManager
         if (cellCount <= 0 || candidateCount <= 0) return false;
         int enemyLimit = Mathf.Min(_currentMaxEnemies,
             Mathf.Min(_positionsA.Length,
-                Mathf.Min(_stateA.Length, _towerDefenseEnemyKinds.Length)));
+                Mathf.Min(_stateA.Length, Mathf.Min(_towerDefenseEnemyKinds.Length,
+                    _effectStateA.Length))));
 
         EnsureAutoplayNativeArrayLength(ref _towerDefenseAutoplayPlanCells,
             cellCount);
@@ -2799,6 +4056,8 @@ public partial class RougeGameManager
             enemyLimit);
         EnsureAutoplayNativeArrayCapacity(ref _towerDefenseAutoplayPlanKinds,
             enemyLimit);
+        EnsureAutoplayNativeArrayCapacity(ref _towerDefenseAutoplayPlanEffects,
+            enemyLimit);
         EnsureAutoplayNativeArrayCapacity(
             ref _towerDefenseAutoplayPlanEnemyContributions, enemyLimit);
 
@@ -2810,6 +4069,8 @@ public partial class RougeGameManager
                 _towerDefenseAutoplayPlanStates, enemyLimit);
             NativeArray<byte>.Copy(_towerDefenseEnemyKinds,
                 _towerDefenseAutoplayPlanKinds, enemyLimit);
+            NativeArray<RougeEnemyEffectState>.Copy(_effectStateA,
+                _towerDefenseAutoplayPlanEffects, enemyLimit);
         }
 
         enemyBalance?.EnsureDefaults();
@@ -2863,8 +4124,9 @@ public partial class RougeGameManager
                 IsGround = map.IsGround(cell) ? (byte)1 : (byte)0
             };
             _towerDefenseAutoplayPlanRouteNext[cellIndex] =
-                TryGetNextAutoplayRouteCell(map, cell, out Vector2Int next)
-                    ? next.y * map.Width + next.x
+                (uint)cellIndex <
+                (uint)_towerDefenseAutoplayRouteNextByCell.Length
+                    ? _towerDefenseAutoplayRouteNextByCell[cellIndex]
                     : -1;
         }
 
@@ -2895,6 +4157,7 @@ public partial class RougeGameManager
             Positions = _towerDefenseAutoplayPlanPositions,
             States = _towerDefenseAutoplayPlanStates,
             Kinds = _towerDefenseAutoplayPlanKinds,
+            Effects = _towerDefenseAutoplayPlanEffects,
             HardFactors = _towerDefenseAutoplayPlanHardFactors,
             MaximumHealthByKind = _towerDefenseAutoplayPlanMaximumHealth,
             Cells = _towerDefenseAutoplayPlanCells,
@@ -3009,6 +4272,12 @@ public partial class RougeGameManager
         snapshot.ImminentElitePressure = totals.ImminentElitePressure;
         snapshot.ImminentBossPressure = totals.ImminentBossPressure;
         snapshot.NearBaseEnemyWeight = totals.NearBaseEnemyWeight;
+        snapshot.PositiveArmorPressure = totals.PositiveArmorPressure;
+        snapshot.UncoveredArmorPressure = totals.UncoveredArmorPressure;
+        snapshot.FastUncontrolledPressure = totals.FastUncontrolledPressure;
+        snapshot.VulnerablePressure = totals.VulnerablePressure;
+        snapshot.LateHealthRatioSum = totals.LateHealthRatioSum;
+        snapshot.LateHealthWeight = totals.LateHealthWeight;
         _towerDefenseAutoplayPlanResultsReady = true;
         return true;
     }
@@ -3031,6 +4300,7 @@ public partial class RougeGameManager
         DisposeAutoplayNativeArray(ref _towerDefenseAutoplayPlanKinds);
         DisposeAutoplayNativeArray(ref _towerDefenseAutoplayPlanHardFactors);
         DisposeAutoplayNativeArray(ref _towerDefenseAutoplayPlanMaximumHealth);
+        DisposeAutoplayNativeArray(ref _towerDefenseAutoplayPlanEffects);
         DisposeAutoplayNativeArray(
             ref _towerDefenseAutoplayPlanEnemyContributions);
         DisposeAutoplayNativeArray(ref _towerDefenseAutoplayPlanCells);
@@ -3211,12 +4481,16 @@ public partial class RougeGameManager
                 archetype = enemyBalance.enemyTypes[archetypeIndex];
             }
             float pressure = boss ? 24f : elite ? 4f : 1f;
-            if (_effectStateA.IsCreated && enemyIndex < _effectStateA.Length)
-            {
-                float maximumHealth = _effectStateA[enemyIndex].MaximumHealth;
-                if (maximumHealth > 0.001f)
-                    pressure *= 0.65f + Mathf.Clamp01(state.x / maximumHealth) * 0.35f;
-            }
+            bool hasEffects = _effectStateA.IsCreated &&
+                              enemyIndex < _effectStateA.Length;
+            RougeEnemyEffectState effects = hasEffects
+                ? _effectStateA[enemyIndex]
+                : default;
+            float maximumHealth = effects.MaximumHealth > 0.001f
+                ? effects.MaximumHealth
+                : Mathf.Max(0.01f, GetTowerDefenseEnemyHealth(kind));
+            float healthRatio = Mathf.Clamp01(state.x / maximumHealth);
+            pressure *= 0.65f + healthRatio * 0.35f;
             float goalThreat = 0f;
             float distanceWeight = 0f;
             if (snapshot.HasMainCell)
@@ -3229,8 +4503,9 @@ public partial class RougeGameManager
                 float nearBaseCrisis = CalculateAutoplayNearBaseCrisis(
                     routeDistance, TowerDefenseAutoplayDialogueThresholds
                         .nearBaseDistanceCells);
-                snapshot.NearBaseEnemyWeight += nearBaseCrisis *
-                    (boss ? 2f : elite ? 1.5f : 1f);
+                if (!boss)
+                    snapshot.NearBaseEnemyWeight += nearBaseCrisis *
+                        (elite ? 1.5f : 1f);
                 goalThreat = 1f - Mathf.Clamp01(routeDistance /
                     Mathf.Max(1f, maximumGoalDistance));
                 distanceWeight = 1f /
@@ -3238,9 +4513,6 @@ public partial class RougeGameManager
                 pressure *= 1f + goalThreat * 0.9f;
             }
 
-            float crowdPressure = !boss
-                ? pressure * (elite ? 0.35f : 1f)
-                : 0f;
             float hardFactor = elite ? 1f : 0f;
             if (!boss && archetype != null)
             {
@@ -3251,18 +4523,21 @@ public partial class RougeGameManager
                 hardFactor = Mathf.Max(hardFactor,
                     healthFactor * 0.7f + armorFactor * 0.6f);
             }
-            float hardPressure = !boss ? pressure * hardFactor : 0f;
+            float eliteShare = boss ? 0f : Mathf.Clamp01(hardFactor);
+            float crowdPressure = !boss ? pressure * (1f - eliteShare) : 0f;
+            float hardPressure = !boss ? pressure * eliteShare : 0f;
             float bossPressure = boss ? pressure : 0f;
             // state.z is the live navigation speed. Compare it with the current
             // standard-enemy speed so global level scaling does not mark the whole map.
             float effectiveSpeed = state.z;
-            if (_effectStateA.IsCreated && enemyIndex < _effectStateA.Length)
+            if (hasEffects)
             {
-                RougeEnemyEffectState effects = _effectStateA[enemyIndex];
                 effectiveSpeed *= effects.FreezeTimer > 0f
                     ? 0.05f
-                    : Mathf.Clamp(1f - effects.SlowPercent * 0.01f,
-                        0.05f, 1f);
+                    : effects.SlowTimer > 0f
+                        ? Mathf.Clamp(1f - effects.SlowPercent * 0.01f,
+                            0.05f, 1f)
+                        : 1f;
             }
             float speedRatio = effectiveSpeed / baselineRuntimeSpeed;
             float speedThreat = Mathf.InverseLerp(1.08f, 1.35f, speedRatio);
@@ -3276,11 +4551,25 @@ public partial class RougeGameManager
                 snapshot.ImminentElitePressure += imminentPressure * hardFactor;
             float urgentFactor = Mathf.Max(goalThreat, speedThreat);
             float urgentPressure = 0f;
-            if (urgentFactor >= 0.7f)
+            if (!boss && urgentFactor >= 0.7f)
             {
                 urgentPressure = pressure * (0.4f + urgentFactor * 0.8f);
                 snapshot.UrgentPressure += urgentPressure;
             }
+            float positiveArmor = Mathf.Max(0f, effects.Armor);
+            float armorDemand = pressure * Mathf.Clamp01(positiveArmor / 8f);
+            bool vulnerable = effects.VulnerabilityTimer > 0f ||
+                              effects.VulnerabilityDamageBonusTimer > 0f ||
+                              effects.VulnerabilityArmorPenetrationTimer > 0f;
+            snapshot.PositiveArmorPressure += armorDemand;
+            snapshot.UncoveredArmorPressure += armorDemand *
+                (vulnerable ? 0.2f : 1f);
+            snapshot.FastUncontrolledPressure += pressure * speedThreat;
+            if (vulnerable) snapshot.VulnerablePressure += pressure;
+            float lateWeight = pressure * Mathf.Clamp01((goalThreat - 0.45f) /
+                                                        0.55f);
+            snapshot.LateHealthRatioSum += healthRatio * lateWeight;
+            snapshot.LateHealthWeight += lateWeight;
             AccumulateAutoplayProjectedEnemyPressure(map, cell, pressure,
                 crowdPressure, hardPressure, bossPressure, urgentPressure,
                 speedRatio);
@@ -3308,6 +4597,194 @@ public partial class RougeGameManager
             peak = Mathf.Max(peak,
                 _towerDefenseAutoplayEnemyPressureByCell[i]);
         return peak;
+    }
+
+    private void UpdateAutoplayEnemyFlowHeatmap(RougeTowerDefenseMap map,
+        ref AutoplayBattleSnapshot snapshot)
+    {
+        if (map == null || !snapshot.HasMainCell)
+        {
+            snapshot.NearBaseEnemyWeight = 0f;
+            _towerDefenseAutoplayNearBaseCrisis = 0f;
+            _towerDefenseAutoplayNearBaseInstantRisk = 0f;
+            _towerDefenseAutoplayLastRealNearBaseRisk = 0f;
+            _towerDefenseAutoplayLastRealNearBaseRiskAt =
+                float.NegativeInfinity;
+            _towerDefenseAutoplayHeatmapRevision++;
+            _towerDefenseAutoplayHotspotRevision = -1;
+            _towerDefenseAutoplayNearBaseHotspots.Clear();
+            return;
+        }
+
+        int cellCount = map.Width * map.Height;
+        bool reset = _towerDefenseAutoplayHeatmapMap != map ||
+                     _towerDefenseAutoplayNonBossHeatByCell == null ||
+                     _towerDefenseAutoplayNonBossHeatByCell.Length < cellCount;
+        EnsureAutoplayScoreBuffer(ref _towerDefenseAutoplayNonBossHeatByCell,
+            cellCount);
+        if (reset)
+        {
+            Array.Clear(_towerDefenseAutoplayNonBossHeatByCell, 0, cellCount);
+            _towerDefenseAutoplayHeatmapMap = map;
+            _towerDefenseAutoplayHeatmapUpdatedAt = float.NegativeInfinity;
+            _towerDefenseAutoplayNearBaseInstantRisk = 0f;
+            _towerDefenseAutoplayLastRealNearBaseRisk = 0f;
+            _towerDefenseAutoplayLastRealNearBaseRiskAt =
+                float.NegativeInfinity;
+        }
+
+        float gameTime = Mathf.Max(0f, _survivalTime);
+        AutoplayFlowPressure flow = MeasureAutoplayEnemyFlow(gameTime);
+        _towerDefenseAutoplayEnemyFlowBacklog = flow.Confidence * Mathf.Clamp01(
+            (flow.SpawnPerSecond - flow.KillsPerSecond) /
+            Mathf.Max(1f, flow.SpawnPerSecond));
+        float halfLife = Mathf.Lerp(
+            TowerDefenseAutoplayHeatMinimumHalfLifeSeconds,
+            TowerDefenseAutoplayHeatMaximumHalfLifeSeconds,
+            _towerDefenseAutoplayEnemyFlowBacklog);
+        float elapsed = float.IsNegativeInfinity(
+            _towerDefenseAutoplayHeatmapUpdatedAt)
+            ? TowerDefenseAutoplayTickSeconds
+            : Mathf.Clamp(gameTime - _towerDefenseAutoplayHeatmapUpdatedAt,
+                0.02f, 30f);
+        float decay = Mathf.Pow(0.5f, elapsed / Mathf.Max(0.1f, halfLife));
+        _towerDefenseAutoplayHeatmapUpdatedAt = gameTime;
+
+        float peakInstantRisk = 0f;
+        for (int i = 0; i < cellCount; i++)
+        {
+            float crowd = (uint)i <
+                          (uint)_towerDefenseAutoplayActiveCrowdPressureByCell.Length
+                ? _towerDefenseAutoplayActiveCrowdPressureByCell[i]
+                : 0f;
+            float elite = (uint)i <
+                          (uint)_towerDefenseAutoplayActiveElitePressureByCell.Length
+                ? _towerDefenseAutoplayActiveElitePressureByCell[i]
+                : 0f;
+            float urgent = (uint)i <
+                           (uint)_towerDefenseAutoplayActiveUrgentPressureByCell.Length
+                ? _towerDefenseAutoplayActiveUrgentPressureByCell[i]
+                : 0f;
+            // Active channels already contain the two-to-four-cell movement
+            // projection and explicitly exclude Boss pressure.
+            float instant = Mathf.Max(crowd + elite * 1.35f, urgent * 1.1f);
+            float target = instant *
+                (1f + _towerDefenseAutoplayEnemyFlowBacklog * 0.3f);
+            _towerDefenseAutoplayNonBossHeatByCell[i] = Mathf.Max(target,
+                _towerDefenseAutoplayNonBossHeatByCell[i] * decay);
+
+            float routeDistance = (uint)i <
+                                  (uint)_towerDefenseAutoplayRouteDistanceByCell.Length
+                ? _towerDefenseAutoplayRouteDistanceByCell[i]
+                : float.PositiveInfinity;
+            if (float.IsInfinity(routeDistance)) continue;
+            float proximity = CalculateAutoplayNearBaseCrisis(routeDistance,
+                TowerDefenseAutoplayDialogueThresholds.nearBaseDistanceCells);
+            peakInstantRisk = Mathf.Max(peakInstantRisk, instant * proximity);
+        }
+
+        _towerDefenseAutoplayNearBaseInstantRisk =
+            Mathf.Clamp01(peakInstantRisk);
+        if (_towerDefenseAutoplayNearBaseInstantRisk > 0.0001f)
+        {
+            _towerDefenseAutoplayLastRealNearBaseRisk =
+                _towerDefenseAutoplayNearBaseInstantRisk;
+            _towerDefenseAutoplayLastRealNearBaseRiskAt = gameTime;
+        }
+
+        float peakRisk = 0f;
+        for (int i = 0; i < cellCount; i++)
+        {
+            float routeDistance = (uint)i <
+                                  (uint)_towerDefenseAutoplayRouteDistanceByCell.Length
+                ? _towerDefenseAutoplayRouteDistanceByCell[i]
+                : float.PositiveInfinity;
+            if (float.IsInfinity(routeDistance)) continue;
+            float proximity = CalculateAutoplayNearBaseCrisis(routeDistance,
+                TowerDefenseAutoplayDialogueThresholds.nearBaseDistanceCells);
+            peakRisk = Mathf.Max(peakRisk,
+                _towerDefenseAutoplayNonBossHeatByCell[i] * proximity);
+        }
+        snapshot.NearBaseEnemyWeight = Mathf.Clamp01(peakRisk);
+        _towerDefenseAutoplayHeatmapRevision++;
+    }
+
+    private float GetAutoplayTacticalNearBaseRisk(float gameTime)
+    {
+        if (_towerDefenseAutoplayNearBaseInstantRisk > 0.0001f)
+            return _towerDefenseAutoplayNearBaseInstantRisk;
+
+        // The analysis job and the managed decision alternate across autoplay
+        // ticks. Keep one sampling interval of tolerance, but never let the
+        // decaying heat field itself manufacture a sustained tactical crisis.
+        float sampleGrace = TowerDefenseAutoplayTickSeconds * 1.1f;
+        return gameTime - _towerDefenseAutoplayLastRealNearBaseRiskAt <=
+               sampleGrace
+            ? _towerDefenseAutoplayLastRealNearBaseRisk
+            : 0f;
+    }
+
+    private float GetAutoplayNearBaseHeatRiskAtCell(int index)
+    {
+        if ((uint)index >= (uint)_towerDefenseAutoplayNonBossHeatByCell.Length ||
+            (uint)index >= (uint)_towerDefenseAutoplayRouteDistanceByCell.Length)
+            return 0f;
+        float routeDistance = _towerDefenseAutoplayRouteDistanceByCell[index];
+        if (float.IsInfinity(routeDistance)) return 0f;
+        float proximity = CalculateAutoplayNearBaseCrisis(routeDistance,
+            TowerDefenseAutoplayDialogueThresholds.nearBaseDistanceCells);
+        return _towerDefenseAutoplayNonBossHeatByCell[index] * proximity;
+    }
+
+    private float GetAutoplayNearBaseHeatCoverage(RougeTowerDefenseMap map,
+        Vector2Int towerCell, float attackRange, bool uncoveredOnly,
+        out int peakCellIndex)
+    {
+        peakCellIndex = -1;
+        if (map == null || attackRange <= 0f ||
+            _towerDefenseAutoplayNearBaseCrisis <= 0.01f) return 0f;
+        float cellSize = Mathf.Max(0.1f, map.CellSize);
+        int radiusCells = Mathf.Max(1, Mathf.CeilToInt(attackRange / cellSize));
+        float rangeSquared = attackRange * attackRange;
+        Vector3 center = map.CellCenter(towerCell);
+        float peak = 0f;
+        float supportingHeat = 0f;
+        for (int y = Mathf.Max(0, towerCell.y - radiusCells);
+             y <= Mathf.Min(map.Height - 1, towerCell.y + radiusCells); y++)
+        for (int x = Mathf.Max(0, towerCell.x - radiusCells);
+             x <= Mathf.Min(map.Width - 1, towerCell.x + radiusCells); x++)
+        {
+            int index = y * map.Width + x;
+            float risk = GetAutoplayNearBaseHeatRiskAtCell(index);
+            if (risk <= 0f) continue;
+            float distanceSquared = (map.CellCenter(new Vector2Int(x, y)) -
+                                     center).sqrMagnitude;
+            if (distanceSquared > rangeSquared) continue;
+            float falloff = Mathf.Lerp(1f, 0.55f,
+                Mathf.Clamp01(Mathf.Sqrt(distanceSquared) / attackRange));
+            if (uncoveredOnly &&
+                (uint)index < (uint)_towerDefenseAutoplayCoverageByCell.Length)
+                risk /= 1f + _towerDefenseAutoplayCoverageByCell[index] * 0.7f;
+            risk *= falloff;
+            if (risk > peak)
+            {
+                peak = risk;
+                peakCellIndex = index;
+            }
+            supportingHeat += risk * 0.08f;
+        }
+        return Mathf.Clamp01(Mathf.Max(peak, supportingHeat));
+    }
+
+    private static bool AreAutoplayHeatCellsInSameHotspot(
+        RougeTowerDefenseMap map, int firstIndex, int secondIndex)
+    {
+        if (map == null || firstIndex < 0 || secondIndex < 0) return false;
+        int firstX = firstIndex % map.Width;
+        int firstY = firstIndex / map.Width;
+        int secondX = secondIndex % map.Width;
+        int secondY = secondIndex / map.Width;
+        return Mathf.Abs(firstX - secondX) + Mathf.Abs(firstY - secondY) <= 2;
     }
 
     private void AccumulateAutoplayTowerCoverage(RougeTowerDefenseMap map,
@@ -3400,8 +4877,9 @@ public partial class RougeGameManager
             float batchScale = Mathf.Sqrt(Mathf.Clamp(forecastBatches, 1, 12));
             float wavePressure = Mathf.Sqrt(Mathf.Clamp(spawner.spawnCount, 1, 64)) *
                                  Mathf.Lerp(0.42f, 1.15f, readiness) * batchScale;
-            float hardPressure = wavePressure * hardFactor;
-            float crowdPressure = wavePressure * (1f - hardFactor * 0.45f);
+            float eliteShare = Mathf.Clamp01(hardFactor);
+            float hardPressure = wavePressure * eliteShare;
+            float crowdPressure = wavePressure * (1f - eliteShare);
             snapshot.IncomingPressure += wavePressure;
             snapshot.IncomingCrowdPressure += crowdPressure;
             snapshot.IncomingElitePressure += hardPressure;
@@ -3561,8 +5039,13 @@ public partial class RougeGameManager
             flowDeficit *= 0.85f;
 
         float nearBaseIntensity = Mathf.Clamp01(snapshot.NearBaseEnemyWeight);
-        bool nearBase = nearBaseIntensity > 0.01f;
-        if (nearBase)
+        bool nearBase = nearBaseIntensity >=
+                        TowerDefenseAutoplayNearBaseEarlyWarning;
+        float tacticalNearBaseIntensity = Mathf.Clamp01(
+            GetAutoplayTacticalNearBaseRisk(gameTime));
+        bool tacticalNearBase = tacticalNearBaseIntensity >=
+                                TowerDefenseAutoplayNearBaseEarlyWarning;
+        if (tacticalNearBase)
         {
             if (float.IsNegativeInfinity(
                     _towerDefenseAutoplayNearBasePressureSince))
@@ -3573,18 +5056,26 @@ public partial class RougeGameManager
             _towerDefenseAutoplayNearBasePressureSince = float.NegativeInfinity;
         }
 
-        float nearBaseDuration = nearBase
+        float nearBaseDuration = tacticalNearBase
             ? Mathf.Max(0f, gameTime -
                 _towerDefenseAutoplayNearBasePressureSince)
             : 0f;
-        float nearBaseSustainProgress = nearBase
-            ? Mathf.Clamp01(nearBaseDuration / Mathf.Max(0.1f,
+        float nearBaseSustainProgress = tacticalNearBase
+            ? Mathf.Clamp01(nearBaseDuration /
+                TowerDefenseAutoplayNearBaseDecisionSustainSeconds)
+            : 0f;
+        float configuredDialogueSustainProgress = tacticalNearBase
+            ? Mathf.Clamp01(nearBaseDuration / Mathf.Max(0.5f,
                 TowerDefenseAutoplayDialogueThresholds.nearBaseSustainSeconds))
             : 0f;
-        float nearBaseProgress = nearBaseIntensity * nearBaseSustainProgress;
-        bool sustainedNearBase = nearBaseSustainProgress >= 0.999f &&
-            nearBaseProgress >= TowerDefenseAutoplayEmergencyNearBaseCrisis;
-        _towerDefenseAutoplayNearBaseCrisis = nearBaseProgress;
+        bool sustainedNearBase = tacticalNearBaseIntensity >=
+                TowerDefenseAutoplayImmediateNearBaseCrisis ||
+            (nearBaseSustainProgress >= 0.999f && tacticalNearBaseIntensity >=
+                TowerDefenseAutoplayEmergencyNearBaseCrisis);
+        // Persistent heat remains valuable for emotion, hotspot placement and
+        // release hysteresis. Only current/recent real non-Boss occupancy is
+        // allowed to enter the tactical sustained-crisis state.
+        _towerDefenseAutoplayNearBaseCrisis = nearBaseIntensity;
         _towerDefenseAutoplaySustainedNearBaseCrisis = sustainedNearBase;
 
         float recentDamageRatio = GetAutoplayRecentMainTowerDamageRatio(
@@ -3598,8 +5089,8 @@ public partial class RougeGameManager
 
         // Enemy stats and raw counts grow with game time, so they are deliberately
         // not tension inputs. Presence is ambient; actual loss of control comes from
-        // a sustained kill/spawn deficit, enemies holding inside the final two cells,
-        // or recent main-tower damage.
+        // a sustained kill/spawn deficit, the persistent non-Boss heat field in the
+        // final three-to-eight route cells, or recent main-tower damage.
         float tension = snapshot.ActiveEnemies > 0 || snapshot.BossEnemies > 0
             ? 0.22f
             : 0.08f;
@@ -3607,8 +5098,12 @@ public partial class RougeGameManager
         if (flowDeficit > 0.001f)
             tension = Mathf.Max(tension, Mathf.Lerp(0.28f, 0.66f, flowDeficit));
         if (nearBase)
+        {
+            float emotionalNearBaseIntensity = nearBaseIntensity *
+                Mathf.Lerp(0.55f, 1f, configuredDialogueSustainProgress);
             tension = Mathf.Max(tension,
-                Mathf.Lerp(0.26f, 0.72f, nearBaseProgress));
+                Mathf.Lerp(0.26f, 0.72f, emotionalNearBaseIntensity));
+        }
         if (recentDamageRatio > 0.0001f)
             tension = Mathf.Max(tension,
                 Mathf.Lerp(0.46f, 0.86f, damageStress));
@@ -3897,6 +5392,17 @@ public partial class RougeGameManager
             cellCount);
         EnsureAutoplayScoreBuffer(ref _towerDefenseAutoplayRouteTrafficByCell,
             cellCount);
+        EnsureAutoplayScoreBuffer(
+            ref _towerDefenseAutoplayRouteCoreTrafficByCell, cellCount);
+        if (_towerDefenseAutoplayRouteNextByCell == null ||
+            _towerDefenseAutoplayRouteNextByCell.Length < cellCount)
+            _towerDefenseAutoplayRouteNextByCell = new int[cellCount];
+        if (_towerDefenseAutoplayRoutePredecessorCountByCell == null ||
+            _towerDefenseAutoplayRoutePredecessorCountByCell.Length < cellCount)
+            _towerDefenseAutoplayRoutePredecessorCountByCell = new int[cellCount];
+        if (_towerDefenseAutoplayRouteTangentByCell == null ||
+            _towerDefenseAutoplayRouteTangentByCell.Length < cellCount)
+            _towerDefenseAutoplayRouteTangentByCell = new Vector2[cellCount];
         EnsureAutoplayScoreBuffer(ref _towerDefenseAutoplayCoverageByCell,
             cellCount);
         EnsureAutoplayScoreBuffer(
@@ -3961,6 +5467,10 @@ public partial class RougeGameManager
                     Mathf.Clamp(spawner.spawnCount, 1, 64));
                 topologyHash = MixAutoplayPriorHash(topologyHash,
                     Mathf.RoundToInt(spawner.spawnInterval * 100f));
+                topologyHash = MixAutoplayPriorHash(topologyHash,
+                    spawner.isActiveAndEnabled ? 1 : 0);
+                topologyHash = MixAutoplayPriorHash(topologyHash,
+                    spawner.HasReachedWaveLimit() ? 1 : 0);
             }
             else
             {
@@ -4018,8 +5528,23 @@ public partial class RougeGameManager
             cellCount);
         EnsureAutoplayScoreBuffer(ref _towerDefenseAutoplayRouteTrafficByCell,
             cellCount);
+        EnsureAutoplayScoreBuffer(
+            ref _towerDefenseAutoplayRouteCoreTrafficByCell, cellCount);
+        if (_towerDefenseAutoplayRouteNextByCell == null ||
+            _towerDefenseAutoplayRouteNextByCell.Length < cellCount)
+            _towerDefenseAutoplayRouteNextByCell = new int[cellCount];
+        if (_towerDefenseAutoplayRouteTangentByCell == null ||
+            _towerDefenseAutoplayRouteTangentByCell.Length < cellCount)
+            _towerDefenseAutoplayRouteTangentByCell = new Vector2[cellCount];
         Array.Clear(_towerDefenseAutoplayGroundValueByCell, 0, cellCount);
         Array.Clear(_towerDefenseAutoplayRouteTrafficByCell, 0, cellCount);
+        Array.Clear(_towerDefenseAutoplayRouteCoreTrafficByCell, 0, cellCount);
+        Array.Clear(_towerDefenseAutoplayRoutePredecessorCountByCell, 0,
+            cellCount);
+        Array.Clear(_towerDefenseAutoplayRouteTangentByCell, 0, cellCount);
+        for (int i = 0; i < cellCount; i++)
+            _towerDefenseAutoplayRouteNextByCell[i] = -1;
+        _towerDefenseAutoplayMaximumCoreTraffic = 1f;
         for (int i = 0; i < cellCount; i++)
             _towerDefenseAutoplayRouteDistanceByCell[i] = float.PositiveInfinity;
 
@@ -4077,15 +5602,22 @@ public partial class RougeGameManager
             }
         }
 
+        RebuildAutoplayRouteSkeleton(map);
+
         float maximumSourceDistance = 0f;
         for (int i = 0; i < _towerDefenseSpawners.Count; i++)
         {
             RougeEnemySpawnPoint spawner = _towerDefenseSpawners[i];
-            if (spawner == null || !map.WorldToCell(spawner.transform.position,
+            if (spawner == null || !spawner.isActiveAndEnabled ||
+                spawner.HasReachedWaveLimit() ||
+                !map.WorldToCell(spawner.transform.position,
                     out Vector2Int spawnCell)) continue;
-            float sourceWeight = Mathf.Sqrt(Mathf.Clamp(spawner.spawnCount, 1, 64)) /
-                                 Mathf.Sqrt(Mathf.Max(1f,
-                                     spawner.spawnInterval * 0.35f));
+            // Preserve the authored density ordering without letting a 0.1-second
+            // spawner numerically erase every other lane. The old Max(1, interval)
+            // flattened all intervals below 2.86 seconds to exactly the same weight.
+            float sourceWeight = Mathf.Sqrt(
+                Mathf.Clamp(spawner.spawnCount, 1, 64) /
+                Mathf.Max(0.1f, spawner.spawnInterval));
             AccumulateAutoplayRouteTraffic(map, spawnCell, sourceWeight,
                 ref maximumSourceDistance);
         }
@@ -4094,17 +5626,23 @@ public partial class RougeGameManager
                 out Vector2Int bossSpawnCell))
             AccumulateAutoplayRouteTraffic(map, bossSpawnCell, 2.2f,
                 ref maximumSourceDistance);
+        RebuildAutoplayCoreRoutePredecessorCounts(cellCount);
 
         float maximumTraffic = 0f;
+        float maximumCoreTraffic = 0f;
         float maximumFiniteDistance = 0f;
         for (int index = 0; index < cellCount; index++)
         {
             maximumTraffic = Mathf.Max(maximumTraffic,
                 _towerDefenseAutoplayRouteTrafficByCell[index]);
+            maximumCoreTraffic = Mathf.Max(maximumCoreTraffic,
+                _towerDefenseAutoplayRouteCoreTrafficByCell[index]);
             float distance = _towerDefenseAutoplayRouteDistanceByCell[index];
             if (!float.IsPositiveInfinity(distance))
                 maximumFiniteDistance = Mathf.Max(maximumFiniteDistance, distance);
         }
+        _towerDefenseAutoplayMaximumCoreTraffic = Mathf.Max(0.0001f,
+            maximumCoreTraffic);
         _towerDefenseAutoplayMaximumRouteDistance = Mathf.Max(1f,
             maximumSourceDistance > 0f ? maximumSourceDistance : maximumFiniteDistance);
 
@@ -4127,6 +5665,61 @@ public partial class RougeGameManager
             // rewarding raw empty floor area.
             _towerDefenseAutoplayGroundValueByCell[index] = 0.08f +
                 traffic * 4.6f + (traffic > 0.01f ? progress * 0.72f : 0f);
+        }
+    }
+
+    private void RebuildAutoplayRouteSkeleton(RougeTowerDefenseMap map)
+    {
+        int cellCount = map.Width * map.Height;
+        for (int index = 0; index < cellCount; index++)
+        {
+            int x = index % map.Width;
+            int y = index / map.Width;
+            Vector2Int cell = new Vector2Int(x, y);
+            if (!map.IsGround(cell) ||
+                float.IsPositiveInfinity(
+                    _towerDefenseAutoplayRouteDistanceByCell[index]) ||
+                !TryGetNextAutoplayRouteCell(map, cell, out Vector2Int next))
+                continue;
+
+            int nextIndex = next.y * map.Width + next.x;
+            _towerDefenseAutoplayRouteNextByCell[index] = nextIndex;
+        }
+
+        // Use a short look-ahead instead of a single grid edge. Eight-neighbour flow
+        // fields often alternate horizontal/diagonal steps along a visually straight
+        // lane; a one-step tangent would falsely describe that lane as a bend.
+        for (int index = 0; index < cellCount; index++)
+        {
+            if (_towerDefenseAutoplayRouteNextByCell[index] < 0) continue;
+            int lookahead = index;
+            for (int step = 0; step < 3; step++)
+            {
+                int nextIndex = _towerDefenseAutoplayRouteNextByCell[lookahead];
+                if ((uint)nextIndex >= (uint)cellCount || nextIndex == lookahead)
+                    break;
+                lookahead = nextIndex;
+            }
+            Vector2 delta = new Vector2(lookahead % map.Width - index % map.Width,
+                lookahead / map.Width - index / map.Width);
+            _towerDefenseAutoplayRouteTangentByCell[index] =
+                delta.sqrMagnitude > 0.0001f ? delta.normalized : Vector2.zero;
+        }
+    }
+
+    private void RebuildAutoplayCoreRoutePredecessorCounts(int cellCount)
+    {
+        Array.Clear(_towerDefenseAutoplayRoutePredecessorCountByCell, 0,
+            cellCount);
+        for (int index = 0; index < cellCount; index++)
+        {
+            if (_towerDefenseAutoplayRouteCoreTrafficByCell[index] <= 0.0001f)
+                continue;
+            int nextIndex = _towerDefenseAutoplayRouteNextByCell[index];
+            if ((uint)nextIndex >= (uint)cellCount || nextIndex == index ||
+                _towerDefenseAutoplayRouteCoreTrafficByCell[nextIndex] <= 0.0001f)
+                continue;
+            _towerDefenseAutoplayRoutePredecessorCountByCell[nextIndex]++;
         }
     }
 
@@ -4158,6 +5751,7 @@ public partial class RougeGameManager
         for (int step = 0; step < maximumSteps; step++)
         {
             int index = current.y * map.Width + current.x;
+            _towerDefenseAutoplayRouteCoreTrafficByCell[index] += weight;
             _towerDefenseAutoplayRouteTrafficByCell[index] += weight;
             for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)
@@ -4170,9 +5764,11 @@ public partial class RougeGameManager
                     shoulder.y * map.Width + shoulder.x] += weight * 0.12f;
             }
             if (current == _towerDefenseAutoplayRouteMainCell) break;
-            if (!TryGetNextAutoplayRouteCell(map, current, out Vector2Int next))
-                break;
-            current = next;
+            int nextIndex = _towerDefenseAutoplayRouteNextByCell[index];
+            if ((uint)nextIndex >= (uint)_towerDefenseAutoplayRouteNextByCell.Length ||
+                nextIndex == index) break;
+            current = new Vector2Int(nextIndex % map.Width,
+                nextIndex / map.Width);
         }
     }
 
@@ -4204,6 +5800,320 @@ public partial class RougeGameManager
             next = candidate;
         }
         return next != current;
+    }
+
+    private AutoplayRouteGeometry CalculateAutoplayRouteGeometry(
+        RougeTowerDefenseMap map, Vector2Int towerCell, float attackRange,
+        float aoeRadius, bool calculatePiercingLane)
+    {
+        AutoplayRouteGeometry geometry = default;
+        int cellCount = map != null ? map.Width * map.Height : 0;
+        if (cellCount <= 0 || attackRange <= 0.01f ||
+            _towerDefenseAutoplayRouteCoreTrafficByCell.Length < cellCount ||
+            _towerDefenseAutoplayRouteNextByCell.Length < cellCount ||
+            _towerDefenseAutoplayRouteTangentByCell.Length < cellCount)
+            return geometry;
+
+        float cellSize = Mathf.Max(0.1f, map.CellSize);
+        float rangeSquared = attackRange * attackRange;
+        float randomReach = attackRange + Mathf.Max(0f, aoeRadius);
+        float randomReachSquared = randomReach * randomReach;
+        float rangeCells = attackRange / cellSize;
+        float straightCrossingCells = Mathf.Max(1f, rangeCells * 2f + 1f);
+        Vector3 towerWorld = map.CellCenter(towerCell);
+        Vector2 towerPosition = new Vector2(towerWorld.x, towerWorld.z);
+        float weightedPathCells = 0f;
+        float rawPathCells = 0f;
+        float routeWeight = 0f;
+        float bottleneckSum = 0f;
+        float maximumMerge = 0f;
+        float earlySum = 0f;
+        float lateSum = 0f;
+        float doubleAngleX = 0f;
+        float doubleAngleY = 0f;
+        float directionWeight = 0f;
+        float randomLaneWorld = 0f;
+
+        for (int index = 0; index < cellCount; index++)
+        {
+            float coreTraffic = _towerDefenseAutoplayRouteCoreTrafficByCell[index];
+            if (coreTraffic <= 0.0001f) continue;
+            int x = index % map.Width;
+            int y = index / map.Width;
+            Vector3 routeWorld = map.CellCenter(new Vector2Int(x, y));
+            Vector2 offset = new Vector2(routeWorld.x - towerPosition.x,
+                routeWorld.z - towerPosition.y);
+            float distanceSquared = offset.sqrMagnitude;
+            float segmentCells = GetAutoplayRouteSegmentLengthCells(index,
+                map.Width);
+            float traffic = Mathf.Clamp01(coreTraffic /
+                _towerDefenseAutoplayMaximumCoreTraffic);
+
+            if (distanceSquared <= randomReachSquared && aoeRadius > 0.01f)
+            {
+                float edgeWeight = Mathf.Clamp01((randomReach -
+                    Mathf.Sqrt(distanceSquared)) / Mathf.Max(aoeRadius, cellSize));
+                randomLaneWorld += segmentCells * cellSize *
+                    Mathf.Lerp(0.45f, 1f, traffic) *
+                    Mathf.Lerp(0.35f, 1f, edgeWeight);
+            }
+            if (distanceSquared > rangeSquared) continue;
+
+            float distance = Mathf.Sqrt(distanceSquared);
+            float falloff = Mathf.Lerp(1f, 0.62f,
+                Mathf.Clamp01(distance / attackRange));
+            float weightedSegment = segmentCells * falloff *
+                Mathf.Lerp(0.38f, 1f, traffic);
+            weightedPathCells += weightedSegment;
+            rawPathCells += segmentCells * falloff;
+            routeWeight += weightedSegment;
+
+            int predecessors = (uint)index <
+                               (uint)_towerDefenseAutoplayRoutePredecessorCountByCell
+                                   .Length
+                ? _towerDefenseAutoplayRoutePredecessorCountByCell[index]
+                : 0;
+            // A tiny side route joining a dominant lane is not a full-strength
+            // chokepoint. Weight the discrete predecessor signal by real core flow.
+            float merge = Mathf.Clamp01((predecessors - 1f) / 2f) * traffic;
+            maximumMerge = Mathf.Max(maximumMerge, merge);
+            bottleneckSum += weightedSegment * (traffic * 0.38f + merge * 0.62f);
+
+            float distanceToGoal = _towerDefenseAutoplayRouteDistanceByCell[index];
+            float progress = float.IsPositiveInfinity(distanceToGoal)
+                ? 0f
+                : 1f - Mathf.Clamp01(distanceToGoal /
+                    _towerDefenseAutoplayMaximumRouteDistance);
+            earlySum += weightedSegment * (1f - progress);
+            lateSum += weightedSegment * progress;
+
+            Vector2 tangent = _towerDefenseAutoplayRouteTangentByCell[index];
+            if (tangent.sqrMagnitude <= 0.0001f) continue;
+            tangent.Normalize();
+            float tangentWeight = segmentCells * falloff *
+                Mathf.Lerp(0.72f, 1f, traffic);
+            // A beam is an unoriented axis: directions 180 degrees apart are the
+            // same lane, so measure coherence in doubled-angle space.
+            doubleAngleX += tangentWeight *
+                (tangent.x * tangent.x - tangent.y * tangent.y);
+            doubleAngleY += tangentWeight * 2f * tangent.x * tangent.y;
+            directionWeight += tangentWeight;
+        }
+
+        if (routeWeight <= 0.0001f) return geometry;
+        float pathRatio = weightedPathCells / straightCrossingCells;
+        float rawPathRatio = rawPathCells / straightCrossingCells;
+        geometry.PathDwell = Mathf.Clamp01(pathRatio);
+        geometry.Reuse = Mathf.Clamp01((rawPathRatio - 0.72f) * 0.78f +
+            weightedPathCells / Mathf.Max(0.001f, rawPathCells) * 0.24f +
+            maximumMerge * 0.42f);
+        geometry.Bottleneck = Mathf.Clamp01(
+            bottleneckSum / routeWeight * 0.82f + maximumMerge * 0.38f);
+        geometry.DirectionConsistency = directionWeight > 0.0001f
+            ? Mathf.Clamp01(Mathf.Sqrt(doubleAngleX * doubleAngleX +
+                doubleAngleY * doubleAngleY) / directionWeight)
+            : 0f;
+        if (calculatePiercingLane)
+            geometry.PiercingLane = CalculateAutoplayPiercingLaneScore(map,
+                towerPosition, attackRange);
+        geometry.EarlyExposure = geometry.PathDwell *
+            Mathf.Clamp01(earlySum / routeWeight);
+        geometry.LateExposure = geometry.PathDwell *
+            Mathf.Clamp01(lateSum / routeWeight);
+
+        if (aoeRadius > 0.01f && randomLaneWorld > 0.001f)
+        {
+            float hitRadius = Mathf.Max(cellSize * 0.26f, aoeRadius);
+            float corridorArea = randomLaneWorld * hitRadius * 2f +
+                                 Mathf.PI * hitRadius * hitRadius;
+            float landingArea = Mathf.PI * attackRange * attackRange;
+            geometry.RandomAreaHitChance = Mathf.Clamp01(1f -
+                Mathf.Exp(-corridorArea / Mathf.Max(0.01f, landingArea)));
+        }
+        return geometry;
+    }
+
+    private float CalculateAutoplayPiercingLaneScore(
+        RougeTowerDefenseMap map, Vector2 towerPosition, float attackRange)
+    {
+        int cellCount = map.Width * map.Height;
+        int downstreamIndex = -1;
+        int busiestIndex = -1;
+        int nearestIndex = -1;
+        float downstreamDistance = float.PositiveInfinity;
+        float busiestTraffic = 0f;
+        float nearestDistance = float.PositiveInfinity;
+        for (int targetIndex = 0; targetIndex < cellCount; targetIndex++)
+        {
+            float coreTraffic =
+                _towerDefenseAutoplayRouteCoreTrafficByCell[targetIndex];
+            if (coreTraffic <= 0.0001f) continue;
+            Vector2 targetPosition = GetAutoplayRouteWorldPosition(map,
+                targetIndex);
+            float targetDistance = Vector2.Distance(targetPosition,
+                towerPosition);
+            if (targetDistance <= 0.001f || targetDistance > attackRange) continue;
+            float routeDistance = _towerDefenseAutoplayRouteDistanceByCell[
+                targetIndex];
+            if (routeDistance < downstreamDistance)
+            {
+                downstreamDistance = routeDistance;
+                downstreamIndex = targetIndex;
+            }
+            if (coreTraffic > busiestTraffic)
+            {
+                busiestTraffic = coreTraffic;
+                busiestIndex = targetIndex;
+            }
+            if (targetDistance < nearestDistance)
+            {
+                nearestDistance = targetDistance;
+                nearestIndex = targetIndex;
+            }
+        }
+
+        // The tower aims at an actual target, not at an arbitrary mathematically
+        // perfect route cell. Three plausible anchors cover its downstream-first
+        // targeting, the dominant lane, and the nearest available target while
+        // reducing the old build-cell × route² topology rebuild to O(build × route).
+        float maximumScore = ScoreAutoplayPiercingAnchor(map, towerPosition,
+            attackRange, downstreamIndex);
+        if (busiestIndex != downstreamIndex)
+            maximumScore = Mathf.Max(maximumScore,
+                ScoreAutoplayPiercingAnchor(map, towerPosition, attackRange,
+                    busiestIndex));
+        if (nearestIndex != downstreamIndex && nearestIndex != busiestIndex)
+            maximumScore = Mathf.Max(maximumScore,
+                ScoreAutoplayPiercingAnchor(map, towerPosition, attackRange,
+                    nearestIndex));
+
+        float idealLaneCells = Mathf.Max(1f, attackRange * 2f /
+            Mathf.Max(0.1f, map.CellSize));
+        return Mathf.Clamp01(1f - Mathf.Exp(-maximumScore /
+            (idealLaneCells * 0.72f)));
+    }
+
+    private float ScoreAutoplayPiercingAnchor(RougeTowerDefenseMap map,
+        Vector2 towerPosition, float attackRange, int targetIndex)
+    {
+        int cellCount = map.Width * map.Height;
+        if ((uint)targetIndex >= (uint)cellCount) return 0f;
+        Vector2 direction = GetAutoplayRouteWorldPosition(map, targetIndex) -
+                            towerPosition;
+        float targetDistance = direction.magnitude;
+        if (targetDistance <= 0.001f || targetDistance > attackRange) return 0f;
+        direction /= targetDistance;
+        float beamLength = attackRange * 2f;
+        float beamRadius = Mathf.Max(map.CellSize * 0.28f,
+            PiercingLaserBeamRadius);
+        float score = 0f;
+        for (int routeIndex = 0; routeIndex < cellCount; routeIndex++)
+        {
+            float coreTraffic =
+                _towerDefenseAutoplayRouteCoreTrafficByCell[routeIndex];
+            if (coreTraffic <= 0.0001f) continue;
+            Vector2 offset = GetAutoplayRouteWorldPosition(map, routeIndex) -
+                             towerPosition;
+            float forward = Vector2.Dot(offset, direction);
+            if (forward < 0f || forward > beamLength) continue;
+            float lateral = Mathf.Abs(offset.x * direction.y -
+                                      offset.y * direction.x);
+            if (lateral > beamRadius) continue;
+
+            Vector2 tangent =
+                _towerDefenseAutoplayRouteTangentByCell[routeIndex];
+            float alignment = tangent.sqrMagnitude > 0.0001f
+                ? Mathf.Abs(Vector2.Dot(tangent.normalized, direction))
+                : 1f;
+            float traffic = Mathf.Clamp01(coreTraffic /
+                _towerDefenseAutoplayMaximumCoreTraffic);
+            float lateralFalloff = Mathf.Lerp(1f, 0.32f,
+                Mathf.Clamp01(lateral / beamRadius));
+            float forwardFalloff = Mathf.Lerp(1f, 0.72f,
+                Mathf.Clamp01(forward / beamLength));
+            score += GetAutoplayRouteSegmentLengthCells(routeIndex,
+                map.Width) * Mathf.Lerp(0.42f, 1f, traffic) *
+                Mathf.Lerp(0.48f, 1f, alignment) * lateralFalloff *
+                forwardFalloff;
+        }
+        return score;
+    }
+
+    private Vector2 GetAutoplayRouteWorldPosition(RougeTowerDefenseMap map,
+        int index)
+    {
+        Vector3 center = map.CellCenter(new Vector2Int(index % map.Width,
+            index / map.Width));
+        return new Vector2(center.x, center.z);
+    }
+
+    private float GetAutoplayRouteSegmentLengthCells(int index, int width)
+    {
+        int nextIndex = (uint)index <
+            (uint)_towerDefenseAutoplayRouteNextByCell.Length
+                ? _towerDefenseAutoplayRouteNextByCell[index]
+                : -1;
+        if ((uint)nextIndex >= (uint)_towerDefenseAutoplayRouteNextByCell.Length ||
+            nextIndex == index) return 1f;
+        int dx = nextIndex % width - index % width;
+        int dy = nextIndex / width - index / width;
+        return Mathf.Sqrt(dx * dx + dy * dy);
+    }
+
+    private static float ScoreAutoplayRouteGeometry(RougeTowerType type,
+        AutoplayRouteGeometry geometry, out float finisherFit,
+        out float setupFit)
+    {
+        float bend = (1f - geometry.DirectionConsistency) *
+                     Mathf.Lerp(0.35f, 1f, geometry.PathDwell);
+        finisherFit = 0f;
+        setupFit = 0f;
+        switch (type)
+        {
+            case RougeTowerType.MachineGun:
+                finisherFit = geometry.LateExposure;
+                setupFit = geometry.EarlyExposure * 0.32f;
+                return geometry.PathDwell * 26f + geometry.Reuse * 14f +
+                       geometry.Bottleneck * 30f + finisherFit * 72f;
+            case RougeTowerType.Laser:
+                finisherFit = geometry.LateExposure * 0.92f;
+                setupFit = geometry.EarlyExposure * 0.46f;
+                return geometry.PathDwell * 30f + geometry.Reuse * 20f +
+                       geometry.Bottleneck * 34f + finisherFit * 66f;
+            case RougeTowerType.Ice:
+                finisherFit = geometry.LateExposure * 0.38f;
+                setupFit = geometry.EarlyExposure;
+                return geometry.PathDwell * 42f + geometry.Reuse * 58f +
+                       geometry.Bottleneck * 60f + bend * 38f + setupFit * 24f;
+            case RougeTowerType.Cannon:
+                finisherFit = geometry.LateExposure * 0.22f;
+                setupFit = geometry.EarlyExposure * 0.72f;
+                return geometry.PathDwell * 45f + geometry.Reuse * 64f +
+                       geometry.Bottleneck * 45f + bend * 22f + setupFit * 20f;
+            case RougeTowerType.Flame:
+                finisherFit = geometry.LateExposure * 0.28f;
+                setupFit = geometry.EarlyExposure;
+                return geometry.PathDwell * 50f + geometry.Reuse * 58f +
+                       geometry.Bottleneck * 44f + bend * 28f + setupFit * 46f;
+            case RougeTowerType.OrbitSphere:
+                finisherFit = geometry.LateExposure * 0.35f;
+                setupFit = geometry.EarlyExposure * 0.78f;
+                return geometry.PathDwell * 52f + geometry.Reuse * 72f +
+                       geometry.Bottleneck * 52f + bend * 34f;
+            case RougeTowerType.PiercingLaser:
+                finisherFit = geometry.LateExposure * 0.48f;
+                setupFit = geometry.EarlyExposure * 0.62f;
+                return geometry.PiercingLane * 142f +
+                       geometry.DirectionConsistency * 28f +
+                       geometry.PathDwell * 22f;
+            case RougeTowerType.RocketBarrage:
+                finisherFit = geometry.LateExposure * 0.18f;
+                setupFit = geometry.EarlyExposure * 0.82f;
+                return geometry.RandomAreaHitChance * 145f +
+                       geometry.Reuse * 42f + geometry.Bottleneck * 32f;
+            default:
+                return geometry.PathDwell * 35f + geometry.Reuse * 25f;
+        }
     }
 
     private void RebuildTowerDefenseAutoplayBuildPriors(RougeTowerDefenseMap map)
@@ -4241,20 +6151,51 @@ public partial class RougeGameManager
                     RougeTowerBuffMath.GetMultiplier(buffs.Range);
                 float groundCoverage = GetAutoplayGroundCoverageValue(map, cell,
                     attackRange);
+                AutoplayRouteGeometry geometry =
+                    CalculateAutoplayRouteGeometry(map, cell, attackRange,
+                        stats.AoeRadius,
+                        type == RougeTowerType.PiercingLaser);
+                float rawGeometryScore = ScoreAutoplayRouteGeometry(type,
+                    geometry, out float finisherFit, out float setupFit);
+                // Keep the established 0..60 scale, but preserve ordering among the
+                // many good U-bends, chokepoints and beam lanes that used to hard-cap
+                // at exactly 60 and become indistinguishable.
+                float geometryScore = Mathf.Min(60f, rawGeometryScore) +
+                    20f * (1f - Mathf.Exp(-Mathf.Max(0f,
+                        rawGeometryScore - 60f) / 45f));
+                float singleTargetRealization = 1f;
+                if (type == RougeTowerType.RocketBarrage)
+                {
+                    float ratio = stats.AoeRadius /
+                                  Mathf.Max(0.1f, attackRange);
+                    singleTargetRealization = Mathf.Clamp01(ratio * ratio);
+                }
+                else if (type == RougeTowerType.OrbitSphere)
+                {
+                    float representativeRadius = Mathf.Max(
+                        stats.OrbitSphereRadius,
+                        attackRange * 0.65f);
+                    float halfAngle = Mathf.Asin(Mathf.Clamp01(
+                        stats.OrbitSphereRadius /
+                        Mathf.Max(0.1f, representativeRadius)));
+                    singleTargetRealization = Mathf.Clamp01(
+                        Mathf.Max(1, stats.ProjectileCount) * halfAngle /
+                        Mathf.PI);
+                }
                 float tileScore = GetAutoplayTileAffinity(type, effect);
                 float coverageScore = Mathf.Sqrt(Mathf.Max(0f, groundCoverage)) * 25f;
                 float opportunityPenalty = GetAutoplayOpportunityPenalty(type, effect);
                 float combatPower = EstimateAutoplayCombatPower(type, stats, buffs);
                 float bossDamageScore = IsAutoplayBossDamageTower(type)
-                    ? Mathf.Log(1f + EstimateAutoplaySingleTargetPower(stats, buffs)) *
+                    ? Mathf.Log(1f + EstimateAutoplaySingleTargetPower(type, stats,
+                        buffs)) *
                       30f
                     : 0f;
                 float powerScore = Mathf.Log(1f + combatPower) * 24f;
-                float priorityTileBonus = tileScore >= 95f
-                    ? 130f + (tileScore - 95f) * 1.4f
-                    : tileScore > 0f ? 18f : 0f;
+                float priorityTileBonus = GetAutoplayPriorityTileBonus(tileScore);
                 float fixedScore = Mathf.Max(1f, 45f + tileScore * 1.35f +
-                    priorityTileBonus + coverageScore + powerScore -
+                    priorityTileBonus + coverageScore + powerScore +
+                    geometryScore -
                     opportunityPenalty);
                 _towerDefenseAutoplayBuildPriors[typeIndex * cellCount + cellIndex] =
                     new AutoplayBuildPrior
@@ -4264,11 +6205,24 @@ public partial class RougeGameManager
                         OriginalCost = originalCost,
                         PaidCost = paidCost,
                         AttackRange = attackRange,
+                        CombatPower = combatPower,
                         FixedScore = fixedScore,
                         TileScore = tileScore,
                         CoverageScore = coverageScore,
                         BossDamageScore = bossDamageScore,
-                        OpportunityPenalty = opportunityPenalty
+                        OpportunityPenalty = opportunityPenalty,
+                        GeometryScore = geometryScore,
+                        PathDwell = geometry.PathDwell,
+                        RouteReuse = geometry.Reuse,
+                        Bottleneck = geometry.Bottleneck,
+                        DirectionConsistency = geometry.DirectionConsistency,
+                        PiercingLaneScore = geometry.PiercingLane,
+                        RandomAreaHitChance = geometry.RandomAreaHitChance,
+                        SingleTargetRealization = singleTargetRealization,
+                        EarlyRouteExposure = geometry.EarlyExposure,
+                        LateRouteExposure = geometry.LateExposure,
+                        FinisherFit = finisherFit,
+                        SetupFit = setupFit
                     };
             }
         }
@@ -4281,10 +6235,16 @@ public partial class RougeGameManager
         if (_towerDefenseAutoplayUpgradeGrowthPriors == null ||
             _towerDefenseAutoplayUpgradeGrowthPriors.Length < priorCount)
             _towerDefenseAutoplayUpgradeGrowthPriors = new float[priorCount];
+        if (_towerDefenseAutoplayUpgradeAbsoluteGainPriors == null ||
+            _towerDefenseAutoplayUpgradeAbsoluteGainPriors.Length < priorCount)
+            _towerDefenseAutoplayUpgradeAbsoluteGainPriors =
+                new float[priorCount];
         if (_towerDefenseAutoplayUpgradeRangePriors == null ||
             _towerDefenseAutoplayUpgradeRangePriors.Length < priorCount)
             _towerDefenseAutoplayUpgradeRangePriors = new float[priorCount];
         Array.Clear(_towerDefenseAutoplayUpgradeGrowthPriors, 0, priorCount);
+        Array.Clear(_towerDefenseAutoplayUpgradeAbsoluteGainPriors, 0,
+            priorCount);
         Array.Clear(_towerDefenseAutoplayUpgradeRangePriors, 0, priorCount);
 
         for (int typeIndex = 0;
@@ -4298,7 +6258,16 @@ public partial class RougeGameManager
                 EstimateAutoplayCombatPower(type, currentStats, default));
             float nextPower = Mathf.Max(currentPower,
                 EstimateAutoplayCombatPower(type, nextStats, default));
-            float growthRatio = Mathf.Max(0f, nextPower / currentPower - 1f);
+            float currentRawPower = Mathf.Max(0.01f,
+                EstimateAutoplayCombatPower(type, currentStats, default, false));
+            float nextRawPower = Mathf.Max(currentRawPower,
+                EstimateAutoplayCombatPower(type, nextStats, default, false));
+            // Ice has a fixed strategic-control value in the composite estimate. It
+            // must not dilute the actual damage gained by an upgrade; branch/control
+            // value is added separately when the concrete tower is scored.
+            float growthRatio = Mathf.Clamp(
+                Mathf.Max(nextPower / currentPower,
+                    nextRawPower / currentRawPower) - 1f, 0f, 4f);
             float rangeRatio = currentStats.AttackRadius > 0.01f
                 ? Mathf.Max(0f,
                     nextStats.AttackRadius / currentStats.AttackRadius - 1f)
@@ -4306,6 +6275,9 @@ public partial class RougeGameManager
             int priorIndex = typeIndex * levelStride + level;
             _towerDefenseAutoplayUpgradeGrowthPriors[priorIndex] =
                 55f + growthRatio * 210f + rangeRatio * 100f;
+            _towerDefenseAutoplayUpgradeAbsoluteGainPriors[priorIndex] =
+                Mathf.Max(nextPower - currentPower,
+                    nextRawPower - currentRawPower);
             _towerDefenseAutoplayUpgradeRangePriors[priorIndex] = rangeRatio;
         }
         // Branch-specific combat formulas are intentionally not expanded into a
@@ -4327,14 +6299,12 @@ public partial class RougeGameManager
         out AutoplayBuildChoice bestAffordable,
         out AutoplayBuildChoice fastestDefensive)
     {
-        AutoplayBuildChoice objectiveOverall = default;
-        AutoplayBuildChoice objectiveAffordable = default;
-        AutoplayBuildChoice personalityOverall = default;
-        AutoplayBuildChoice personalityAffordable = default;
         bestOverall = default;
         bestAffordable = default;
         fastestDefensive = default;
+        _towerDefenseAutoplayBuildChoiceScratch.Clear();
         if (map == null) return;
+        bool missingFunctionGroup = HasMissingEnabledAutoplayFunctionGroup();
 
         for (int orderOffset = 0; orderOffset < TowerDefenseAutoplayBuildOrder.Length;
              orderOffset++)
@@ -4343,6 +6313,12 @@ public partial class RougeGameManager
                              TowerDefenseAutoplayBuildOrder.Length;
             RougeTowerType type = TowerDefenseAutoplayBuildOrder[orderIndex];
             if (IsTowerTypeDisabled(type)) continue;
+            // Fill every enabled battlefield role once, including when autoplay takes
+            // over a player-built homogeneous formation mid-match. Laser after
+            // MachineGun is not a missing role merely because it is a different type.
+            bool openingFunctionGroupRepeated =
+                IsAutoplayOpeningFunctionGroupRepeated(type);
+            bool typeSaturated = IsAutoplayBuildTypeSaturated(type);
             float bestOpenTileAffinity = GetBestOpenAutoplayTileAffinity(map, type);
 
             for (int y = 0; y < map.Height; y++)
@@ -4357,24 +6333,28 @@ public partial class RougeGameManager
                 if (!prior.IsValid) continue;
                 AutoplayBuildChoice choice = ScoreAutoplayBuildChoice(map, snapshot,
                     type, orderIndex, cell, prior, bestOpenTileAffinity);
-                if (IsBetterAutoplayEmergencyBuild(choice, fastestDefensive))
+                bool closesNearBaseHeat = choice.NearBaseHeatCoverage >=
+                                          TowerDefenseAutoplayNearBaseEarlyWarning;
+                bool emergencyHeatResponse = closesNearBaseHeat &&
+                    _towerDefenseAutoplayStrategyMode ==
+                    AutoplayStrategyMode.Emergency;
+                // Formation diversity yields only when that already represented role
+                // is the one candidate that can stop a live near-base breach.
+                if (openingFunctionGroupRepeated && !emergencyHeatResponse) continue;
+                // A matching special tile improves where a type should go; it must not
+                // waive composition safety. Otherwise machine gun can claim several
+                // economy/direct-hit pads and exceed half the formation again.
+                if (typeSaturated && !emergencyHeatResponse) continue;
+                if (IsBetterAutoplayEmergencyBuild(choice, fastestDefensive,
+                        snapshot, missingFunctionGroup))
                     fastestDefensive = choice;
-                if (!objectiveOverall.IsValid || choice.ObjectiveEfficiency >
-                    objectiveOverall.ObjectiveEfficiency)
-                    objectiveOverall = choice;
-                if (!personalityOverall.IsValid || choice.Efficiency >
-                    personalityOverall.Efficiency)
-                    personalityOverall = choice;
-                if (choice.PaidCost <= _towerDefenseGold &&
-                    (!objectiveAffordable.IsValid || choice.ObjectiveEfficiency >
-                     objectiveAffordable.ObjectiveEfficiency))
-                    objectiveAffordable = choice;
-                if (choice.PaidCost <= _towerDefenseGold &&
-                    (!personalityAffordable.IsValid || choice.Efficiency >
-                     personalityAffordable.Efficiency))
-                    personalityAffordable = choice;
+                _towerDefenseAutoplayBuildChoiceScratch.Add(choice);
             }
         }
+        ScoreAutoplayBuildCapitalChoices(out AutoplayBuildChoice objectiveOverall,
+            out AutoplayBuildChoice objectiveAffordable,
+            out AutoplayBuildChoice personalityOverall,
+            out AutoplayBuildChoice personalityAffordable);
         float regretBudget = GetAutoplayPersonalityRegretBudget(snapshot);
         bestOverall = SelectAutoplayPersonalityBuildChoice(objectiveOverall,
             personalityOverall, regretBudget);
@@ -4382,32 +6362,132 @@ public partial class RougeGameManager
             objectiveAffordable, personalityAffordable, regretBudget);
     }
 
+    private void ScoreAutoplayBuildCapitalChoices(
+        out AutoplayBuildChoice objectiveOverall,
+        out AutoplayBuildChoice objectiveAffordable,
+        out AutoplayBuildChoice personalityOverall,
+        out AutoplayBuildChoice personalityAffordable)
+    {
+        objectiveOverall = default;
+        objectiveAffordable = default;
+        personalityOverall = default;
+        personalityAffordable = default;
+        float maximumObjectiveEfficiency = 0f;
+        float maximumObjectiveUtility = 0f;
+        float maximumStyledEfficiency = 0f;
+        float maximumStyledUtility = 0f;
+        int minimumPositiveCost = int.MaxValue;
+        for (int i = 0; i < _towerDefenseAutoplayBuildChoiceScratch.Count; i++)
+        {
+            AutoplayBuildChoice choice =
+                _towerDefenseAutoplayBuildChoiceScratch[i];
+            maximumObjectiveEfficiency = Mathf.Max(maximumObjectiveEfficiency,
+                choice.ObjectiveEfficiency);
+            maximumObjectiveUtility = Mathf.Max(maximumObjectiveUtility,
+                choice.ObjectiveUtility);
+            maximumStyledEfficiency = Mathf.Max(maximumStyledEfficiency,
+                choice.Efficiency);
+            maximumStyledUtility = Mathf.Max(maximumStyledUtility,
+                choice.Utility);
+            if (choice.PaidCost > 0)
+                minimumPositiveCost = Mathf.Min(minimumPositiveCost,
+                    choice.PaidCost);
+        }
+
+        int referenceCost = minimumPositiveCost == int.MaxValue
+            ? 0
+            : minimumPositiveCost * 2;
+        float wealth = GetAutoplayCapitalWealth(_towerDefenseGold, referenceCost);
+        for (int i = 0; i < _towerDefenseAutoplayBuildChoiceScratch.Count; i++)
+        {
+            AutoplayBuildChoice choice =
+                _towerDefenseAutoplayBuildChoiceScratch[i];
+            choice.ObjectiveCapitalScore = GetAutoplayNormalizedCapitalScore(
+                choice.ObjectiveEfficiency, choice.ObjectiveUtility,
+                maximumObjectiveEfficiency, maximumObjectiveUtility, wealth);
+            choice.CapitalScore = GetAutoplayNormalizedCapitalScore(
+                choice.Efficiency, choice.Utility, maximumStyledEfficiency,
+                maximumStyledUtility, wealth);
+            _towerDefenseAutoplayBuildChoiceScratch[i] = choice;
+
+            if (!objectiveOverall.IsValid || choice.ObjectiveCapitalScore >
+                objectiveOverall.ObjectiveCapitalScore)
+                objectiveOverall = choice;
+            if (!personalityOverall.IsValid || choice.CapitalScore >
+                personalityOverall.CapitalScore)
+                personalityOverall = choice;
+            if (choice.PaidCost > _towerDefenseGold) continue;
+            if (!objectiveAffordable.IsValid || choice.ObjectiveCapitalScore >
+                objectiveAffordable.ObjectiveCapitalScore)
+                objectiveAffordable = choice;
+            if (!personalityAffordable.IsValid || choice.CapitalScore >
+                personalityAffordable.CapitalScore)
+                personalityAffordable = choice;
+        }
+    }
+
+    private static float GetAutoplayCapitalWealth(int spendableGold,
+        int referenceCost)
+    {
+        if (referenceCost <= 0) return 1f;
+        float progress = Mathf.InverseLerp(Mathf.Max(100, referenceCost),
+            Mathf.Max(400, referenceCost * 4f), Mathf.Max(0, spendableGold));
+        return Mathf.SmoothStep(0f, 1f, progress);
+    }
+
+    private static float GetAutoplayNormalizedCapitalScore(float efficiency,
+        float utility, float maximumEfficiency, float maximumUtility,
+        float wealth)
+    {
+        if (!float.IsFinite(efficiency)) efficiency = 0f;
+        if (!float.IsFinite(utility)) utility = 0f;
+        if (!float.IsFinite(maximumEfficiency) || maximumEfficiency < 0f)
+            maximumEfficiency = 0f;
+        if (!float.IsFinite(maximumUtility) || maximumUtility < 0f)
+            maximumUtility = 0f;
+        if (!float.IsFinite(wealth)) wealth = 0f;
+        float normalizedEfficiency = maximumEfficiency > 0.0001f
+            ? Mathf.Max(0f, efficiency) / maximumEfficiency
+            : 0f;
+        float normalizedUtility = maximumUtility > 0.0001f
+            ? Mathf.Max(0f, utility) / maximumUtility
+            : 0f;
+        return Mathf.Lerp(normalizedEfficiency, normalizedUtility,
+            Mathf.Clamp01(wealth));
+    }
+
     private bool IsBetterAutoplayEmergencyBuild(AutoplayBuildChoice candidate,
-        AutoplayBuildChoice current)
+        AutoplayBuildChoice current, AutoplayBattleSnapshot snapshot,
+        bool missingFunctionGroup)
     {
         if (!candidate.IsValid) return false;
         if (!current.IsValid) return true;
-        bool candidateDefensive = candidate.GoalDefenseScore >= 120f ||
+        bool candidateCoversHeat = candidate.NearBaseHeatCoverage >=
+                                   TowerDefenseAutoplayNearBaseEarlyWarning;
+        bool currentCoversHeat = current.NearBaseHeatCoverage >=
+                                 TowerDefenseAutoplayNearBaseEarlyWarning;
+        if (candidateCoversHeat != currentCoversHeat) return candidateCoversHeat;
+        bool candidateDefensive = candidateCoversHeat ||
                                   candidate.DominantPressureLayer ==
                                   AutoplayPressureLayer.Urgent;
-        bool currentDefensive = current.GoalDefenseScore >= 120f ||
+        bool currentDefensive = currentCoversHeat ||
                                 current.DominantPressureLayer ==
                                 AutoplayPressureLayer.Urgent;
         if (candidateDefensive != currentDefensive) return candidateDefensive;
 
-        int candidateShortfall = Mathf.Max(0,
-            candidate.PaidCost - _towerDefenseGold);
-        int currentShortfall = Mathf.Max(0, current.PaidCost - _towerDefenseGold);
-        if (candidateShortfall != currentShortfall)
-            return candidateShortfall < currentShortfall;
+        bool candidateAffordable = candidate.PaidCost <= _towerDefenseGold;
+        bool currentAffordable = current.PaidCost <= _towerDefenseGold;
+        if (candidateAffordable != currentAffordable) return candidateAffordable;
 
-        float candidateScore = candidate.GoalDefenseScore * 1.4f +
-                               candidate.PressureScore +
-                               candidate.ObjectiveEfficiency * 4f;
-        float currentScore = current.GoalDefenseScore * 1.4f +
-                             current.PressureScore +
-                             current.ObjectiveEfficiency * 4f;
-        return candidateScore > currentScore;
+        float candidateScore = GetAutoplayEmergencyPurchaseScore(
+            GetAutoplayBuildCapitalGain(candidate, snapshot,
+                missingFunctionGroup), candidate.PaidCost);
+        float currentScore = GetAutoplayEmergencyPurchaseScore(
+            GetAutoplayBuildCapitalGain(current, snapshot,
+                missingFunctionGroup), current.PaidCost);
+        if (!Mathf.Approximately(candidateScore, currentScore))
+            return candidateScore > currentScore;
+        return candidate.PaidCost < current.PaidCost;
     }
 
     private static AutoplayBuildChoice SelectAutoplayPersonalityBuildChoice(
@@ -4418,12 +6498,14 @@ public partial class RougeGameManager
         if (!personality.IsValid) return objective;
         if (regretBudget <= 0f)
         {
+            objective.Utility = objective.ObjectiveUtility;
             objective.Efficiency = objective.ObjectiveEfficiency;
+            objective.CapitalScore = objective.ObjectiveCapitalScore;
             return objective;
         }
-        float minimumQuality = objective.ObjectiveEfficiency *
+        float minimumQuality = objective.ObjectiveCapitalScore *
                                (1f - Mathf.Clamp01(regretBudget));
-        return personality.ObjectiveEfficiency >= minimumQuality
+        return personality.ObjectiveCapitalScore >= minimumQuality
             ? personality
             : objective;
     }
@@ -4459,6 +6541,90 @@ public partial class RougeGameManager
                 prior.AttackRange, type, out objectiveUncoveredPressure,
                 out uncoveredPressure);
         }
+        float geometryPowerFactor = 1f;
+        if (type == RougeTowerType.PiercingLaser)
+        {
+            // The spatial job samples a circle for every tower. A piercing beam only
+            // realizes that crowd/route value when its forward capsule actually follows
+            // the lane; preserve the single-Boss channel but discount off-axis circles.
+            float laneFactor = Mathf.Lerp(0.42f, 1f,
+                prior.PiercingLaneScore);
+            geometryPowerFactor = Mathf.Lerp(0.55f, 1f,
+                prior.PiercingLaneScore);
+            channels.Total *= laneFactor;
+            channels.Crowd *= laneFactor;
+            channels.Elite *= Mathf.Lerp(0.65f, 1f,
+                prior.PiercingLaneScore);
+            channels.Urgent *= Mathf.Lerp(0.72f, 1f,
+                prior.PiercingLaneScore);
+            marginalRouteCoverage *= Mathf.Lerp(0.48f, 1f,
+                prior.PiercingLaneScore);
+            if (snapshot.BossEnemies <= 0)
+            {
+                objectiveUncoveredPressure *= laneFactor;
+                uncoveredPressure *= laneFactor;
+            }
+        }
+        else if (type == RougeTowerType.RocketBarrage)
+        {
+            // Rockets choose random landing points inside their whole attack disk.
+            // Route-corridor probability is meaningful for crowds, but a single
+            // elite/Boss only occupies its own AOE disk. Keeping those probabilities
+            // separate prevents a busy lane from pretending every random rocket hits
+            // the one target that matters.
+            float crowdHitFactor = Mathf.Lerp(0.24f, 1f,
+                prior.RandomAreaHitChance);
+            float singleHitFactor = Mathf.Clamp(prior.SingleTargetRealization,
+                0.01f, 1f);
+            float crowdShare = channels.Total > 0.0001f
+                ? Mathf.Clamp01(channels.Crowd / channels.Total)
+                : 0.5f;
+            geometryPowerFactor = Mathf.Lerp(singleHitFactor,
+                crowdHitFactor, crowdShare);
+            channels.Total *= crowdHitFactor;
+            channels.Crowd *= crowdHitFactor;
+            channels.Elite *= singleHitFactor;
+            channels.Boss *= singleHitFactor;
+            channels.Urgent *= Mathf.Lerp(singleHitFactor, crowdHitFactor,
+                0.35f);
+            marginalRouteCoverage *= crowdHitFactor;
+            objectiveUncoveredPressure *= crowdHitFactor;
+            uncoveredPressure *= crowdHitFactor;
+        }
+        else if (type == RougeTowerType.OrbitSphere)
+        {
+            // Dense lanes can realize much of a sweep, while one target is only hit
+            // during the angular duty cycle of the rotating beams.
+            float sweepFit = Mathf.Clamp01(prior.PathDwell * 0.42f +
+                prior.RouteReuse * 0.34f + prior.Bottleneck * 0.24f);
+            float crowdHitFactor = Mathf.Lerp(0.32f, 1f, sweepFit);
+            float singleHitFactor = Mathf.Clamp(prior.SingleTargetRealization,
+                0.02f, 1f);
+            float crowdShare = channels.Total > 0.0001f
+                ? Mathf.Clamp01(channels.Crowd / channels.Total)
+                : 0.5f;
+            geometryPowerFactor = Mathf.Lerp(singleHitFactor,
+                crowdHitFactor, crowdShare);
+            channels.Total *= crowdHitFactor;
+            channels.Crowd *= crowdHitFactor;
+            channels.Elite *= singleHitFactor;
+            channels.Boss *= singleHitFactor;
+            channels.Urgent *= Mathf.Lerp(singleHitFactor, crowdHitFactor,
+                0.35f);
+            marginalRouteCoverage *= crowdHitFactor;
+            objectiveUncoveredPressure *= crowdHitFactor;
+            uncoveredPressure *= crowdHitFactor;
+        }
+        float realizationFactor = GetAutoplayPressureRealizationFactor(
+            prior.CombatPower);
+        channels.Total *= realizationFactor;
+        channels.Crowd *= realizationFactor;
+        channels.Elite *= realizationFactor;
+        channels.Boss *= realizationFactor;
+        channels.Urgent *= realizationFactor;
+        marginalRouteCoverage *= realizationFactor;
+        objectiveUncoveredPressure *= realizationFactor;
+        uncoveredPressure *= realizationFactor;
         float objectiveLocalPressure = CombineAutoplayPressureForTower(type,
             channels, out _, false);
         float localPressure = CombineAutoplayPressureForTower(type, channels,
@@ -4483,38 +6649,47 @@ public partial class RougeGameManager
               (threatAligned ? 14f : 42f);
         float threatFit = GetAutoplayThreatFit(type, snapshot) *
             Mathf.Lerp(0.18f, 1f, AutoplayThreatReadingSkill);
-        float objectiveBossPreparationScore = IsAutoplayBossDamageTower(type)
+        float objectiveBossPreparationScore = snapshot.BossEnemies <= 0 &&
+            IsAutoplayBossDamageTower(type)
             ? snapshot.BossPreparation * (105f + prior.BossDamageScore +
                 prior.CoverageScore * 1.15f) *
-              GetAutoplayBossReadinessUrgency(snapshot)
+              GetAutoplayBossReadinessUrgency()
             : 0f;
         float bossPreparationScore = objectiveBossPreparationScore *
                                      TowerDefenseAutoplayCommander.BossConcern;
         float objectiveGoalDefenseScore = GetAutoplayGoalDefenseScore(map,
             snapshot, cell,
-            prior.AttackRange) * Mathf.Lerp(0.16f, 1f,
-            AutoplayCrisisResponseSkill);
+            prior.AttackRange) * realizationFactor *
+            Mathf.Lerp(0.16f, 1f, AutoplayCrisisResponseSkill);
+        float nearBaseHeatCoverage = GetAutoplayNearBaseHeatCoverage(map, cell,
+            prior.AttackRange, true, out int nearBaseHeatCellIndex) *
+            realizationFactor;
+        objectiveGoalDefenseScore += nearBaseHeatCoverage * 190f;
         float goalDefenseScore = objectiveGoalDefenseScore *
             TowerDefenseAutoplayCommander.DefenseBias;
-        bool closesConfirmedNearBaseGap =
-            _towerDefenseAutoplaySustainedNearBaseCrisis &&
-            _towerDefenseAutoplayNearBaseCrisis >=
-                TowerDefenseAutoplayEmergencyNearBaseCrisis &&
-            objectiveGoalDefenseScore >= 145f &&
-            objectiveUncoveredPressure >= 0.75f;
         float repeatedTypePenalty = existingTypeCount <= 0
             ? 0f
             : existingTypeCount * existingTypeCount *
               (type == RougeTowerType.MachineGun ? 42f : 18f);
-        if (closesConfirmedNearBaseGap)
-            repeatedTypePenalty *= type == RougeTowerType.MachineGun ? 0.18f : 0.35f;
         saturationPenalty += repeatedTypePenalty;
-        float priorityTileBonus = prior.TileScore >= 95f
-            ? 130f + (prior.TileScore - 95f) * 1.4f
-            : prior.TileScore > 0f ? 18f : 0f;
+        if (IsAutoplayDedicatedEffect(prior.PlaceEffect))
+        {
+            int sameEffectTypeCount = CountAutoplayTowersOnEffect(type,
+                prior.PlaceEffect);
+            saturationPenalty += sameEffectTypeCount *
+                (prior.PlaceEffect == RougeTowerPlaceEffect.Bounty &&
+                 type == RougeTowerType.MachineGun ? 105f : 52f);
+        }
+        float priorityTileBonus = GetAutoplayPriorityTileBonus(prior.TileScore);
         float rawTileContribution = prior.TileScore * 1.35f + priorityTileBonus;
         bool emergencyStrategy = _towerDefenseAutoplayStrategyMode ==
                                  AutoplayStrategyMode.Emergency;
+        float finisherDemand = Mathf.Clamp01(snapshot.UrgentPressure / 3f +
+            nearBaseHeatCoverage * 0.7f + (emergencyStrategy ? 0.42f : 0f));
+        float routeTimingScore = (prior.SetupFit *
+            Mathf.Lerp(1f, 0.2f, finisherDemand) + prior.FinisherFit *
+            Mathf.Lerp(0.25f, 1f, finisherDemand)) * 44f *
+            AutoplayMapReadingSkill;
         if (emergencyStrategy)
         {
             objectiveGoalDefenseScore *= 1.35f;
@@ -4523,17 +6698,19 @@ public partial class RougeGameManager
         float emergencyTilePenalty = emergencyStrategy
             ? rawTileContribution * 0.85f
             : 0f;
+        float hiddenGeometry = prior.GeometryScore *
+                               (1f - AutoplayMapReadingSkill);
         float objectiveFixedScore = prior.FixedScore - prior.CoverageScore * 0.72f -
             rawTileContribution * (1f - AutoplayMapReadingSkill) +
             prior.OpportunityPenalty * (1f - AutoplayMapReadingSkill) -
-            emergencyTilePenalty;
+            emergencyTilePenalty - hiddenGeometry;
         float learnedFixedScore = prior.FixedScore - prior.CoverageScore * 0.72f -
             rawTileContribution * (1f - AutoplayMapReadingSkill) +
             rawTileContribution *
             (TowerDefenseAutoplayCommander.SpecialTileBias - 1f) *
             AutoplayMapReadingSkill +
             prior.OpportunityPenalty * (1f - AutoplayMapReadingSkill) -
-            emergencyTilePenalty;
+            emergencyTilePenalty - hiddenGeometry;
         float missedTilePenalty = bestOpenTileAffinity >= 95f &&
                                    prior.TileScore < 95f
             ? 58f + (bestOpenTileAffinity - Mathf.Max(0f, prior.TileScore)) * 0.55f
@@ -4556,13 +6733,15 @@ public partial class RougeGameManager
             dominantLayer = AutoplayPressureLayer.Boss;
         float dynamicScore = pressureScore + diversityScore + threatFit +
                              bossPreparationScore +
-                             goalDefenseScore + marginalCoverageScore -
+                             goalDefenseScore + marginalCoverageScore +
+                             routeTimingScore -
                              missedTilePenalty -
                              saturationPenalty;
         float utility = Mathf.Max(1f, learnedFixedScore + dynamicScore);
         float objectiveDynamicScore = objectivePressureScore + diversityScore +
             threatFit + objectiveBossPreparationScore +
-            objectiveGoalDefenseScore + marginalCoverageScore -
+            objectiveGoalDefenseScore + marginalCoverageScore +
+            routeTimingScore -
             objectiveMissedTilePenalty -
             saturationPenalty;
         float objectiveUtility = Mathf.Max(1f, objectiveFixedScore +
@@ -4588,6 +6767,7 @@ public partial class RougeGameManager
             PaidCost = prior.PaidCost,
             Utility = utility,
             Efficiency = efficiency,
+            ObjectiveUtility = objectiveUtility,
             ObjectiveEfficiency = objectiveEfficiency,
             FixedScore = learnedFixedScore,
             DynamicScore = dynamicScore,
@@ -4596,7 +6776,11 @@ public partial class RougeGameManager
             PressureScore = pressureScore,
             DiversityScore = diversityScore,
             GoalDefenseScore = goalDefenseScore,
+            NearBaseHeatCoverage = nearBaseHeatCoverage,
+            NearBaseHeatCellIndex = nearBaseHeatCellIndex,
             OpportunityPenalty = prior.OpportunityPenalty + missedTilePenalty,
+            GeometryScore = prior.GeometryScore + routeTimingScore,
+            MarginalPower = prior.CombatPower * geometryPowerFactor,
             DominantPressureLayer = dominantLayer
         };
     }
@@ -4638,39 +6822,213 @@ public partial class RougeGameManager
     }
 
     private void EvaluateAutoplayUpgradeChoices(RougeTowerDefenseMap map,
-        AutoplayBattleSnapshot snapshot, out AutoplayUpgradeChoice bestOverall,
-        out AutoplayUpgradeChoice bestAffordable)
+        AutoplayBattleSnapshot snapshot, int emergencyHeatCellIndex,
+        int maximumCoreUpgradeCost,
+        out AutoplayUpgradeChoice bestOverall,
+        out AutoplayUpgradeChoice bestAffordable,
+        out AutoplayUpgradeChoice bestAffordableCore,
+        out AutoplayUpgradeChoice bestAffordableHeat)
     {
-        AutoplayUpgradeChoice objectiveOverall = default;
-        AutoplayUpgradeChoice objectiveAffordable = default;
-        AutoplayUpgradeChoice personalityOverall = default;
-        AutoplayUpgradeChoice personalityAffordable = default;
+        bestOverall = default;
+        bestAffordable = default;
+        bestAffordableCore = default;
+        bestAffordableHeat = default;
+        _towerDefenseAutoplayUpgradeChoiceScratch.Clear();
+
+        float maximumObservedCoreRate = 0f;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (!IsAutoplayStandardTower(tower) || !tower.CanUpgrade) continue;
+            int paidCost = GetTowerDefenseAutoplayPaidCost(tower.UpgradeCost);
+            bool realizable = paidCost <= _towerDefenseGold &&
+                (paidCost <= 0 || paidCost <= maximumCoreUpgradeCost);
+            if (!realizable) continue;
+            float observedRate = GetAutoplayObservedUpgradeCoreRate(tower,
+                out float observedConfidence);
+            if (observedConfidence >= 0.65f)
+                maximumObservedCoreRate = Mathf.Max(maximumObservedCoreRate,
+                    observedRate);
+        }
+
         for (int i = 0; i < _defenseTowers.Count; i++)
         {
             RougeDefenseTower tower = _defenseTowers[i];
             if (!IsAutoplayStandardTower(tower) || !tower.CanUpgrade) continue;
             AutoplayUpgradeChoice choice = ScoreAutoplayUpgradeChoice(map, snapshot,
                 tower);
-            if (!objectiveOverall.IsValid || choice.ObjectiveEfficiency >
-                objectiveOverall.ObjectiveEfficiency)
-                objectiveOverall = choice;
-            if (!personalityOverall.IsValid || choice.Efficiency >
-                personalityOverall.Efficiency)
-                personalityOverall = choice;
-            if (choice.PaidCost <= _towerDefenseGold &&
-                (!objectiveAffordable.IsValid || choice.ObjectiveEfficiency >
-                 objectiveAffordable.ObjectiveEfficiency))
-                objectiveAffordable = choice;
-            if (choice.PaidCost <= _towerDefenseGold &&
-                (!personalityAffordable.IsValid || choice.Efficiency >
-                 personalityAffordable.Efficiency))
-                personalityAffordable = choice;
+            _towerDefenseAutoplayUpgradeChoiceScratch.Add(choice);
+        }
+
+        ScoreAutoplayUpgradeCapitalChoices(
+            out AutoplayUpgradeChoice objectiveOverall,
+            out AutoplayUpgradeChoice objectiveAffordable,
+            out AutoplayUpgradeChoice personalityOverall,
+            out AutoplayUpgradeChoice personalityAffordable);
+        float objectiveCoreFloor = objectiveAffordable.IsValid
+            ? objectiveAffordable.ObjectiveCapitalScore * 0.88f
+            : 0f;
+
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
+        {
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            bool affordable = choice.PaidCost <= _towerDefenseGold;
+
+            bool coversEmergencyHeat = affordable &&
+                choice.NearBaseHeatCoverage >=
+                    TowerDefenseAutoplayNearBaseEarlyWarning &&
+                (emergencyHeatCellIndex < 0 ||
+                 AreAutoplayHeatCellsInSameHotspot(map,
+                     choice.NearBaseHeatCellIndex, emergencyHeatCellIndex));
+            float emergencyUpgradeScore = coversEmergencyHeat
+                ? GetAutoplayEmergencyPurchaseScore(
+                    GetAutoplayUpgradeCapitalGain(choice), choice.PaidCost)
+                : 0f;
+            float bestEmergencyUpgradeScore = bestAffordableHeat.IsValid
+                ? GetAutoplayEmergencyPurchaseScore(
+                    GetAutoplayUpgradeCapitalGain(bestAffordableHeat),
+                    bestAffordableHeat.PaidCost)
+                : 0f;
+            if (coversEmergencyHeat &&
+                (!bestAffordableHeat.IsValid || emergencyUpgradeScore >
+                 bestEmergencyUpgradeScore))
+            {
+                choice.Utility = choice.ObjectiveUtility;
+                choice.Efficiency = choice.ObjectiveEfficiency;
+                choice.CapitalScore = choice.ObjectiveCapitalScore;
+                bestAffordableHeat = choice;
+            }
+
+            bool coreSpendFits = choice.PaidCost <= 0 ||
+                                 choice.PaidCost <= maximumCoreUpgradeCost;
+            bool provenCore = affordable && coreSpendFits &&
+                maximumObservedCoreRate > 0.001f &&
+                choice.ObservedCoreConfidence >= 0.65f &&
+                choice.ObservedCoreRate >= maximumObservedCoreRate * 0.65f &&
+                choice.ObjectiveCapitalScore >= objectiveCoreFloor;
+            if (provenCore && IsBetterAutoplayCoreUpgrade(choice,
+                    bestAffordableCore))
+            {
+                choice.Utility = choice.ObjectiveUtility;
+                choice.Efficiency = choice.ObjectiveEfficiency;
+                choice.CapitalScore = choice.ObjectiveCapitalScore;
+                bestAffordableCore = choice;
+            }
         }
         float regretBudget = GetAutoplayPersonalityRegretBudget(snapshot);
         bestOverall = SelectAutoplayPersonalityUpgradeChoice(objectiveOverall,
             personalityOverall, regretBudget);
         bestAffordable = SelectAutoplayPersonalityUpgradeChoice(
             objectiveAffordable, personalityAffordable, regretBudget);
+    }
+
+    private void ScoreAutoplayUpgradeCapitalChoices(
+        out AutoplayUpgradeChoice objectiveOverall,
+        out AutoplayUpgradeChoice objectiveAffordable,
+        out AutoplayUpgradeChoice personalityOverall,
+        out AutoplayUpgradeChoice personalityAffordable)
+    {
+        objectiveOverall = default;
+        objectiveAffordable = default;
+        personalityOverall = default;
+        personalityAffordable = default;
+        float maximumObjectiveEfficiency = 0f;
+        float maximumObjectiveUtility = 0f;
+        float maximumStyledEfficiency = 0f;
+        float maximumStyledUtility = 0f;
+        int minimumPositiveCost = int.MaxValue;
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
+        {
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            maximumObjectiveEfficiency = Mathf.Max(maximumObjectiveEfficiency,
+                choice.ObjectiveEfficiency);
+            maximumObjectiveUtility = Mathf.Max(maximumObjectiveUtility,
+                choice.ObjectiveUtility);
+            maximumStyledEfficiency = Mathf.Max(maximumStyledEfficiency,
+                choice.Efficiency);
+            maximumStyledUtility = Mathf.Max(maximumStyledUtility,
+                choice.Utility);
+            if (choice.PaidCost > 0)
+                minimumPositiveCost = Mathf.Min(minimumPositiveCost,
+                    choice.PaidCost);
+        }
+
+        int referenceCost = minimumPositiveCost == int.MaxValue
+            ? 0
+            : minimumPositiveCost * 2;
+        float wealth = GetAutoplayCapitalWealth(_towerDefenseGold, referenceCost);
+        for (int i = 0; i < _towerDefenseAutoplayUpgradeChoiceScratch.Count; i++)
+        {
+            AutoplayUpgradeChoice choice =
+                _towerDefenseAutoplayUpgradeChoiceScratch[i];
+            choice.ObjectiveCapitalScore = GetAutoplayNormalizedCapitalScore(
+                choice.ObjectiveEfficiency, choice.ObjectiveUtility,
+                maximumObjectiveEfficiency, maximumObjectiveUtility, wealth);
+            choice.CapitalScore = GetAutoplayNormalizedCapitalScore(
+                choice.Efficiency, choice.Utility, maximumStyledEfficiency,
+                maximumStyledUtility, wealth);
+            _towerDefenseAutoplayUpgradeChoiceScratch[i] = choice;
+
+            if (!objectiveOverall.IsValid || choice.ObjectiveCapitalScore >
+                objectiveOverall.ObjectiveCapitalScore)
+                objectiveOverall = choice;
+            if (!personalityOverall.IsValid || choice.CapitalScore >
+                personalityOverall.CapitalScore)
+                personalityOverall = choice;
+            if (choice.PaidCost > _towerDefenseGold) continue;
+            if (!objectiveAffordable.IsValid || choice.ObjectiveCapitalScore >
+                objectiveAffordable.ObjectiveCapitalScore)
+                objectiveAffordable = choice;
+            if (!personalityAffordable.IsValid || choice.CapitalScore >
+                personalityAffordable.CapitalScore)
+                personalityAffordable = choice;
+        }
+    }
+
+    private static bool IsBetterAutoplayCoreUpgrade(
+        AutoplayUpgradeChoice candidate, AutoplayUpgradeChoice current)
+    {
+        if (!candidate.IsValid) return false;
+        if (!current.IsValid) return true;
+        // Live output is the primary evidence. Static upgrade efficiency breaks ties
+        // only when two candidates perform within roughly ten percent of one another;
+        // otherwise cheap machine-gun upgrades would win after merely entering the
+        // core set and the observation signal would have no practical effect.
+        if (candidate.ObservedCoreRate > current.ObservedCoreRate * 1.1f)
+            return true;
+        if (current.ObservedCoreRate > candidate.ObservedCoreRate * 1.1f)
+            return false;
+        return candidate.ObjectiveCapitalScore > current.ObjectiveCapitalScore;
+    }
+
+    private float GetAutoplayObservedUpgradeCoreRate(RougeDefenseTower tower,
+        out float confidence)
+    {
+        confidence = 0f;
+        if (!IsAutoplayStandardTower(tower) ||
+            !_towerDefenseAutoplayTowerObservations.TryGetValue(tower,
+                out AutoplayTowerObservation observation))
+            return 0f;
+
+        int typeIndex = (int)tower.TowerType;
+        float typeWeight = _towerDefenseAutoplayPerformanceWeightByType[typeIndex];
+        if (typeWeight <= 0.001f) return 0f;
+        float towerWeight = EstimateAutoplayObservedTowerWeight(tower);
+        float recentRate = _towerDefenseAutoplayRecentDamageRateByType[typeIndex] *
+                           towerWeight / typeWeight;
+        float longRate = observation.ObservedDamage /
+                         Mathf.Max(1f, observation.ObservedSeconds);
+        bool hasMeasuredOutput = observation.ObservedDamage >= 20f ||
+                                 recentRate >= 0.25f;
+        if (!hasMeasuredOutput) return 0f;
+
+        confidence = Mathf.Clamp01(observation.ObservedSeconds / 18f);
+        float utilityAdjustment = 1f +
+            GetAutoplayTowerUtilityFactor(tower.TowerType) * 0.25f;
+        return Mathf.Max(0f, recentRate * 0.7f + longRate * 0.3f) *
+               utilityAdjustment;
     }
 
     private static AutoplayUpgradeChoice SelectAutoplayPersonalityUpgradeChoice(
@@ -4681,14 +7039,155 @@ public partial class RougeGameManager
         if (!personality.IsValid) return objective;
         if (regretBudget <= 0f)
         {
+            objective.Utility = objective.ObjectiveUtility;
             objective.Efficiency = objective.ObjectiveEfficiency;
+            objective.CapitalScore = objective.ObjectiveCapitalScore;
             return objective;
         }
-        float minimumQuality = objective.ObjectiveEfficiency *
+        float minimumQuality = objective.ObjectiveCapitalScore *
                                (1f - Mathf.Clamp01(regretBudget));
-        return personality.ObjectiveEfficiency >= minimumQuality
+        return personality.ObjectiveCapitalScore >= minimumQuality
             ? personality
             : objective;
+    }
+
+    private float GetAutoplayUpgradeBranchValue(RougeDefenseTower tower,
+        AutoplayBattleSnapshot snapshot, AutoplayUpgradeChoice scoredChoice,
+        int choiceIndex)
+    {
+        if (tower == null || !tower.RequiresUpgradeChoice ||
+            (uint)choiceIndex > 1u) return 0f;
+
+        float nonBossEnemies = Mathf.Max(0,
+            snapshot.ActiveEnemies - snapshot.BossEnemies);
+        float crowdDemand = Mathf.Clamp01((snapshot.IncomingCrowdPressure * 0.22f +
+            nonBossEnemies * 0.09f +
+            (scoredChoice.DominantPressureLayer == AutoplayPressureLayer.Crowd
+                ? 1.2f
+                : 0f)) / 4f);
+        float hardTargetDemand = Mathf.Clamp01((snapshot.EliteEnemies +
+            snapshot.BossEnemies * 2f + snapshot.IncomingElitePressure * 0.24f +
+            (scoredChoice.DominantPressureLayer == AutoplayPressureLayer.Boss
+                ? 1.4f
+                : 0f)) / 4f);
+        float armorDemand = Mathf.Clamp01(Mathf.Log(1f +
+            Mathf.Max(0f, scoredChoice.UncoveredArmorPressure)) / Mathf.Log(7f));
+        float controlDemand = Mathf.Clamp01(Mathf.Log(1f +
+            Mathf.Max(0f, scoredChoice.FastUncontrolledPressure)) / Mathf.Log(6f));
+        float urgentDemand = Mathf.Clamp01((snapshot.UrgentPressure +
+            (scoredChoice.DominantPressureLayer == AutoplayPressureLayer.Urgent
+                ? 1.5f
+                : 0f)) / 4f);
+        float chokeFit = Mathf.Clamp01(Mathf.Max(scoredChoice.RouteReuse,
+            scoredChoice.Bottleneck));
+        float setupFit = Mathf.Clamp01(scoredChoice.EarlyRouteExposure * 0.75f +
+                                       chokeFit * 0.45f);
+        float finisherFit = Mathf.Clamp01(scoredChoice.LateRouteExposure * 0.8f +
+                                          urgentDemand * 0.35f);
+        float fit;
+
+        // A specialization is part of the product being bought. Model the chosen
+        // route's real role before the upgrade enters the common capital auction;
+        // otherwise every branch looks like the same anonymous +105 utility.
+        switch (tower.TowerType)
+        {
+            case RougeTowerType.Ice:
+                if (tower.NeedsIceBranchChoice)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(controlDemand, Mathf.Max(crowdDemand, chokeFit))
+                        : Mathf.Max(armorDemand, hardTargetDemand);
+                else if (tower.UsesIceFreeze)
+                {
+                    if (choiceIndex == 0)
+                        fit = Mathf.Max(urgentDemand,
+                            Mathf.Max(controlDemand, crowdDemand));
+                    else
+                    {
+                        float frostTargets = Mathf.Clamp01(
+                            CountAutoplayPermanentFrostTargets(tower) / 4f);
+                        fit = Mathf.Max(frostTargets,
+                            Mathf.Max(setupFit, chokeFit)) * (1f - urgentDemand * 0.35f);
+                    }
+                }
+                else
+                {
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(hardTargetDemand,
+                            Mathf.Clamp01(scoredChoice.VulnerablePressure / 6f))
+                        : armorDemand;
+                }
+                return Mathf.Min(245f, 135f + fit * 100f +
+                    (tower.IsOnFrostTile ? 10f : 0f));
+
+            case RougeTowerType.MachineGun:
+                if (tower.NeedsMachineGunBranchChoice)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(hardTargetDemand, finisherFit)
+                        : Mathf.Max(crowdDemand, chokeFit);
+                else if (tower.UsesMachineGunCritical)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(0.45f, hardTargetDemand)
+                        : armorDemand;
+                else
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, chokeFit)
+                        : Mathf.Max(hardTargetDemand, finisherFit);
+                return 78f + fit * 92f;
+
+            case RougeTowerType.Cannon:
+                if (tower.NeedsCannonBranchChoice)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, finisherFit)
+                        : Mathf.Max(chokeFit, setupFit);
+                else if (tower.UsesCannonInnerBlast)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, chokeFit)
+                        : Mathf.Max(crowdDemand, setupFit);
+                else
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(urgentDemand, controlDemand)
+                        : Mathf.Max(chokeFit, setupFit);
+                return 100f + fit * 105f;
+
+            case RougeTowerType.Flame:
+                if (tower.NeedsFlameBranchChoice)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, Mathf.Max(chokeFit, finisherFit))
+                        : Mathf.Max(hardTargetDemand, setupFit);
+                else if (tower.UsesFlamethrower)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, chokeFit)
+                        : Mathf.Max(hardTargetDemand, finisherFit);
+                else
+                {
+                    bool hasFreezeSource =
+                        HasAutoplayIceBranch(RougeIceTowerBranch.Freeze);
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, setupFit)
+                        : hasFreezeSource
+                            ? Mathf.Max(hardTargetDemand, armorDemand)
+                            : 0f;
+                }
+                return 105f + fit * 112f;
+
+            case RougeTowerType.Laser:
+                if (tower.NeedsLaserBranchChoice)
+                    fit = choiceIndex == 0
+                        ? armorDemand
+                        : Mathf.Max(crowdDemand, chokeFit);
+                else if (tower.UsesLaserArmorBreak)
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(armorDemand, hardTargetDemand)
+                        : Mathf.Max(hardTargetDemand, finisherFit);
+                else
+                    fit = choiceIndex == 0
+                        ? Mathf.Max(crowdDemand, chokeFit)
+                        : Mathf.Max(hardTargetDemand, finisherFit);
+                return 105f + fit * 118f;
+
+            default:
+                return 0f;
+        }
     }
 
     private AutoplayUpgradeChoice ScoreAutoplayUpgradeChoice(
@@ -4703,14 +7202,20 @@ public partial class RougeGameManager
             (uint)_towerDefenseAutoplayUpgradeGrowthPriors.Length
             ? _towerDefenseAutoplayUpgradeGrowthPriors[priorIndex]
             : 55f;
+        float absolutePowerGain = (uint)priorIndex <
+            (uint)_towerDefenseAutoplayUpgradeAbsoluteGainPriors.Length
+            ? _towerDefenseAutoplayUpgradeAbsoluteGainPriors[priorIndex]
+            : 0f;
         float rangeRatio = (uint)priorIndex <
             (uint)_towerDefenseAutoplayUpgradeRangePriors.Length
             ? _towerDefenseAutoplayUpgradeRangePriors[priorIndex]
             : 0f;
-        float branchValue = tower.RequiresUpgradeChoice ? 105f : 0f;
-        float growthScore = cachedGrowth + branchValue;
-        float growthRatio = Mathf.Max(0f, (cachedGrowth - 55f -
-            rangeRatio * 100f) / 210f);
+        // The cached delta is the clean type×level baseline. Real towers may already
+        // sit on damage/speed pads, receive reinforcement aura, or carry a branch
+        // that multiplies their throughput; upgrading those instances creates a
+        // larger absolute gain. Keep the realization bounded so one temporary buff
+        // cannot overwhelm the rest of the capital market.
+        absolutePowerGain *= GetAutoplayInstalledUpgradeRealization(tower);
 
         float objectiveLocalPressure = 0f;
         float localPressure = 0f;
@@ -4726,6 +7231,35 @@ public partial class RougeGameManager
             localPressure = CombineAutoplayPressureForTower(tower.TowerType,
                 channels, out dominantLayer, true);
         }
+        AutoplayBuildPrior placementPrior = default;
+        if (map != null && map.WorldToCell(tower.transform.position,
+                out Vector2Int placementCell))
+        {
+            int placementIndex = (int)tower.TowerType * map.Width * map.Height +
+                                 placementCell.y * map.Width + placementCell.x;
+            if ((uint)placementIndex <
+                (uint)_towerDefenseAutoplayBuildPriors.Length)
+                placementPrior = _towerDefenseAutoplayBuildPriors[placementIndex];
+        }
+        float lateHealthRatio = snapshot.LateHealthWeight > 0.001f
+            ? Mathf.Clamp01(snapshot.LateHealthRatioSum /
+                            snapshot.LateHealthWeight)
+            : 0.5f;
+        AutoplayUpgradeChoice specializationContext = new AutoplayUpgradeChoice
+        {
+            Tower = tower,
+            SpecializationChoiceIndex = -1,
+            UncoveredArmorPressure = snapshot.UncoveredArmorPressure,
+            FastUncontrolledPressure = snapshot.FastUncontrolledPressure,
+            VulnerablePressure = snapshot.VulnerablePressure,
+            LateHealthRatio = lateHealthRatio,
+            EarlyRouteExposure = placementPrior.EarlyRouteExposure,
+            LateRouteExposure = placementPrior.LateRouteExposure,
+            RouteReuse = placementPrior.RouteReuse,
+            Bottleneck = placementPrior.Bottleneck,
+            MarginalPower = absolutePowerGain,
+            DominantPressureLayer = dominantLayer
+        };
         float objectivePressureScore = Mathf.Log(1f +
             Mathf.Max(0f, objectiveLocalPressure)) * 58f *
             Mathf.Lerp(0.34f, 1f, AutoplayThreatReadingSkill);
@@ -4734,39 +7268,70 @@ public partial class RougeGameManager
         float threatFit = GetAutoplayThreatFit(tower.TowerType, snapshot) * 0.55f *
             Mathf.Lerp(0.18f, 1f, AutoplayThreatReadingSkill);
         float objectiveBossPreparationScore = 0f;
-        if (IsAutoplayBossDamageTower(tower.TowerType))
+        if (snapshot.BossEnemies <= 0 &&
+            IsAutoplayBossDamageTower(tower.TowerType))
         {
             float routeCoverage = 0f;
             if (map != null && map.WorldToCell(tower.transform.position,
                     out Vector2Int preparationCell))
                 routeCoverage = GetAutoplayGroundCoverageValue(map,
                     preparationCell, tower.AttackRange);
+            float marginalRangeCoverage = Mathf.Sqrt(Mathf.Max(0f,
+                routeCoverage)) * Mathf.Clamp01(rangeRatio * 4f) * 18f;
             objectiveBossPreparationScore = snapshot.BossPreparation *
-                (105f + Mathf.Log(1f + Mathf.Max(0f, tower.Damage) /
-                    Mathf.Max(0.03f, tower.EffectiveAttackInterval) *
-                    Mathf.Max(1, tower.AttackProjectileCount)) * 30f +
-                    Mathf.Sqrt(Mathf.Max(0f, routeCoverage)) * 22f) *
-                GetAutoplayBossReadinessUrgency(snapshot);
+                (80f + Mathf.Log(1f + Mathf.Max(0f,
+                    absolutePowerGain)) * 38f + marginalRangeCoverage) *
+                GetAutoplayBossReadinessUrgency();
             if (objectiveBossPreparationScore >= 45f &&
                 dominantLayer != AutoplayPressureLayer.Urgent)
                 dominantLayer = AutoplayPressureLayer.Boss;
         }
         float bossPreparationScore = objectiveBossPreparationScore *
             TowerDefenseAutoplayCommander.BossConcern;
+        specializationContext.DominantPressureLayer = dominantLayer;
+        int specializationChoiceIndex = tower.RequiresUpgradeChoice
+            ? GetAutoplayUpgradeChoice(tower, specializationContext, out _)
+            : -1;
+        float branchValue = GetAutoplayUpgradeBranchValue(tower, snapshot,
+            specializationContext, specializationChoiceIndex);
+        // Relative growth recognizes efficient transitions; absolute gain keeps a
+        // wealthy controller from preferring another cheap low-tier purchase over a
+        // large upgrade that adds far more realized output. Branch value is based on
+        // the exact specialization that will be executed, not a generic tower bonus.
+        float absoluteGrowthScore = Mathf.Log(1f +
+            Mathf.Max(0f, absolutePowerGain)) * 32f;
+        float growthScore = cachedGrowth + absoluteGrowthScore + branchValue;
+        float growthRatio = Mathf.Max(0f, (cachedGrowth - 55f -
+            rangeRatio * 100f) / 210f);
         int duplicateCount = _towerDefenseAutoplayTypeCounts[(int)tower.TowerType];
         // Once an area/function is already covered, consolidating its installed
         // towers is preferable to buying yet another copy of the same type.
-        float consolidationBonus = Mathf.Min(24f,
-            Mathf.Max(0, duplicateCount - 1) * 6f);
+        float consolidationBonus = Mathf.Min(72f,
+            Mathf.Max(0, duplicateCount - 1) * 18f);
+        float nearBaseHeatCoverage = 0f;
+        int nearBaseHeatCellIndex = -1;
+        float heatReinforcement = 0f;
+        if (map != null && map.WorldToCell(tower.transform.position,
+                out Vector2Int heatCell))
+        {
+            // An upgrade reinforces an installed defense; unlike a new build, its own
+            // existing coverage must not divide away the hotspot it is defending.
+            nearBaseHeatCoverage = GetAutoplayNearBaseHeatCoverage(map, heatCell,
+                tower.AttackRange * (1f + rangeRatio), false,
+                out nearBaseHeatCellIndex);
+            heatReinforcement = nearBaseHeatCoverage *
+                (80f + growthRatio * 170f);
+        }
         float utility = Mathf.Max(1f, growthScore + pressureScore *
             Mathf.Clamp(0.35f + growthRatio, 0.35f, 1.25f) + threatFit +
-            bossPreparationScore + consolidationBonus);
+            bossPreparationScore + consolidationBonus + heatReinforcement);
         float objectiveUtility = Mathf.Max(1f, growthScore +
             objectivePressureScore *
             Mathf.Clamp(0.35f + growthRatio, 0.35f, 1.25f) + threatFit +
-            objectiveBossPreparationScore + consolidationBonus);
+            objectiveBossPreparationScore + consolidationBonus +
+            heatReinforcement);
         float costDivisor = Mathf.Max(paidCost <= 0 ? 65f : 100f,
-            paidCost + 145f);
+            paidCost + 180f);
         float objectiveEfficiency = objectiveUtility * 100f / costDivisor;
         float styledEfficiency = utility * 100f / costDivisor;
         float efficiency = ApplyAutoplayPersonalityPreference(styledEfficiency,
@@ -4778,17 +7343,34 @@ public partial class RougeGameManager
                 out Vector2Int uncertaintyCell))
             efficiency = ApplyAutoplayJudgmentUncertainty(efficiency,
                 tower.TowerType, uncertaintyCell);
+        float observedCoreRate = GetAutoplayObservedUpgradeCoreRate(tower,
+            out float observedCoreConfidence);
         return new AutoplayUpgradeChoice
         {
             IsValid = true,
             Tower = tower,
+            SpecializationChoiceIndex = specializationChoiceIndex,
             OriginalCost = originalCost,
             PaidCost = paidCost,
             Utility = utility,
             Efficiency = efficiency,
+            ObjectiveUtility = objectiveUtility,
             ObjectiveEfficiency = objectiveEfficiency,
             PressureScore = pressureScore,
             GrowthScore = growthScore,
+            NearBaseHeatCoverage = nearBaseHeatCoverage,
+            NearBaseHeatCellIndex = nearBaseHeatCellIndex,
+            ObservedCoreRate = observedCoreRate,
+            ObservedCoreConfidence = observedCoreConfidence,
+            MarginalPower = absolutePowerGain,
+            UncoveredArmorPressure = snapshot.UncoveredArmorPressure,
+            FastUncontrolledPressure = snapshot.FastUncontrolledPressure,
+            VulnerablePressure = snapshot.VulnerablePressure,
+            LateHealthRatio = lateHealthRatio,
+            EarlyRouteExposure = placementPrior.EarlyRouteExposure,
+            LateRouteExposure = placementPrior.LateRouteExposure,
+            RouteReuse = placementPrior.RouteReuse,
+            Bottleneck = placementPrior.Bottleneck,
             DominantPressureLayer = dominantLayer
         };
     }
@@ -4965,15 +7547,26 @@ public partial class RougeGameManager
             urgentWeight = 0.42f;
         }
 
-        float totalContribution = channels.Total * 0.22f;
+        float classifiedPressure = channels.Crowd + channels.Elite +
+                                   channels.Boss;
+        float unclassifiedPressure = Mathf.Max(0f,
+            channels.Total - classifiedPressure);
+        float totalContribution = unclassifiedPressure * 0.75f;
         float crowdContribution = channels.Crowd * crowdWeight *
             (applyPersonality ? TowerDefenseAutoplayCommander.CrowdConcern : 1f);
         float eliteContribution = channels.Elite * eliteWeight *
             (applyPersonality ? TowerDefenseAutoplayCommander.EliteConcern : 1f);
         float bossContribution = channels.Boss * bossWeight *
             (applyPersonality ? TowerDefenseAutoplayCommander.BossConcern : 1f);
-        float urgentContribution = channels.Urgent * urgentWeight *
+        float baseContribution = totalContribution + crowdContribution +
+                                 eliteContribution + bossContribution;
+        float urgentRatio = channels.Total > 0.0001f
+            ? Mathf.Clamp01(channels.Urgent / channels.Total)
+            : 0f;
+        float effectiveUrgentWeight = urgentWeight *
             (applyPersonality ? TowerDefenseAutoplayCommander.UrgentConcern : 1f);
+        float urgentContribution = baseContribution * urgentRatio *
+                                   effectiveUrgentWeight * 0.45f;
 
         dominantLayer = AutoplayPressureLayer.Total;
         float dominantValue = totalContribution;
@@ -4995,8 +7588,7 @@ public partial class RougeGameManager
         if (urgentContribution > dominantValue)
             dominantLayer = AutoplayPressureLayer.Urgent;
 
-        return totalContribution + crowdContribution + eliteContribution +
-               bossContribution + urgentContribution;
+        return baseContribution + urgentContribution;
     }
 
     private float GetAutoplayDiversityScore(RougeTowerType type)
@@ -5011,6 +7603,88 @@ public partial class RougeGameManager
             ? 82f
             : groupCount == 1 ? 14f : -Mathf.Max(0, groupCount - 2) * 6f;
         return typeDiversity + functionDiversity;
+    }
+
+    private bool IsAutoplayBuildTypeSaturated(RougeTowerType type)
+    {
+        int total = 0;
+        for (int i = 0; i < _towerDefenseAutoplayTypeCounts.Length; i++)
+            total += _towerDefenseAutoplayTypeCounts[i];
+        int typeCount = _towerDefenseAutoplayTypeCounts[(int)type];
+        if (total < 2 || typeCount < 2 ||
+            !HasEnabledAutoplayAlternativeType(type)) return false;
+        float projectedShare = (typeCount + 1f) / (total + 1f);
+        if (projectedShare <= 0.5f) return false;
+
+        // A projected-share hard cap deadlocks a two-type ruleset at a tie: adding
+        // either fifth tower temporarily exceeds 50%, so both candidates disappear.
+        // Let a tie break once, then stop only the resulting strict leader until an
+        // enabled alternative catches up. This keeps the anti-spam guard recoverable.
+        int strongestAlternativeCount = 0;
+        for (int i = 0; i < TowerDefenseAutoplayBuildOrder.Length; i++)
+        {
+            RougeTowerType alternative = TowerDefenseAutoplayBuildOrder[i];
+            if (alternative == type || IsTowerTypeDisabled(alternative)) continue;
+            strongestAlternativeCount = Mathf.Max(strongestAlternativeCount,
+                _towerDefenseAutoplayTypeCounts[(int)alternative]);
+        }
+        return typeCount > strongestAlternativeCount;
+    }
+
+    private bool IsAutoplayOpeningFunctionGroupRepeated(RougeTowerType type)
+    {
+        int selectedGroup = GetAutoplayFunctionGroup(type);
+        if (_towerDefenseAutoplayFunctionCounts[selectedGroup] <= 0) return false;
+        for (int group = 0; group < _towerDefenseAutoplayFunctionCounts.Length;
+             group++)
+            if (_towerDefenseAutoplayFunctionCounts[group] == 0 &&
+                HasEnabledAutoplayTowerInFunctionGroup(group))
+                return true;
+        return false;
+    }
+
+    private bool HasMissingEnabledAutoplayFunctionGroup()
+    {
+        for (int group = 0; group < _towerDefenseAutoplayFunctionCounts.Length;
+             group++)
+            if (_towerDefenseAutoplayFunctionCounts[group] == 0 &&
+                HasEnabledAutoplayTowerInFunctionGroup(group))
+                return true;
+        return false;
+    }
+
+    private bool HasEnabledAutoplayAlternativeType(RougeTowerType selected)
+    {
+        for (int i = 0; i < TowerDefenseAutoplayBuildOrder.Length; i++)
+        {
+            RougeTowerType type = TowerDefenseAutoplayBuildOrder[i];
+            if (type != selected && !IsTowerTypeDisabled(type)) return true;
+        }
+        return false;
+    }
+
+    private bool HasEnabledAutoplayTowerInFunctionGroup(int group)
+    {
+        for (int i = 0; i < TowerDefenseAutoplayBuildOrder.Length; i++)
+        {
+            RougeTowerType type = TowerDefenseAutoplayBuildOrder[i];
+            if (!IsTowerTypeDisabled(type) &&
+                GetAutoplayFunctionGroup(type) == group) return true;
+        }
+        return false;
+    }
+
+    private int CountAutoplayTowersOnEffect(RougeTowerType type,
+        RougeTowerPlaceEffect effect)
+    {
+        int count = 0;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (IsAutoplayStandardTower(tower) && tower.TowerType == type &&
+                tower.TowerPlaceEffect == effect) count++;
+        }
+        return count;
     }
 
     private static int GetAutoplayFunctionGroup(RougeTowerType type)
@@ -5042,13 +7716,6 @@ public partial class RougeGameManager
                 score += 95f;
             else if (type == RougeTowerType.Ice) score += 28f;
         }
-        if (snapshot.BossPreparation > 0f)
-        {
-            if (IsAutoplayBossDamageTower(type))
-                score += snapshot.BossPreparation * 125f;
-            else if (type == RougeTowerType.Ice)
-                score += snapshot.BossPreparation * 22f;
-        }
         int crowd = Mathf.Max(0, snapshot.ActiveEnemies - snapshot.BossEnemies -
             snapshot.EliteEnemies);
         if (crowd >= 8)
@@ -5064,6 +7731,29 @@ public partial class RougeGameManager
                 type == RougeTowerType.Cannon || type == RougeTowerType.Flame)
                 score += 42f;
         }
+        float armorSignal = Mathf.Clamp01(Mathf.Log(1f +
+            snapshot.UncoveredArmorPressure) / Mathf.Log(9f));
+        if (armorSignal > 0f)
+        {
+            // Laser can grow into permanent armor break; Ice and critical machine gun
+            // provide the complementary vulnerability/penetration routes. Raw damage
+            // towers receive only a small fallback bonus, so armor is not mistaken for
+            // a generic request to buy more DPS.
+            if (type == RougeTowerType.Laser) score += armorSignal * 82f;
+            else if (type == RougeTowerType.Ice) score += armorSignal * 48f;
+            else if (type == RougeTowerType.MachineGun) score += armorSignal * 34f;
+            else if (type == RougeTowerType.PiercingLaser ||
+                     type == RougeTowerType.Cannon) score += armorSignal * 18f;
+        }
+        float controlSignal = Mathf.Clamp01(Mathf.Log(1f +
+            snapshot.FastUncontrolledPressure) / Mathf.Log(7f));
+        if (type == RougeTowerType.Ice) score += controlSignal * 88f;
+        float vulnerableSignal = Mathf.Clamp01(Mathf.Log(1f +
+            snapshot.VulnerablePressure) / Mathf.Log(9f));
+        if (vulnerableSignal > 0f &&
+            (type == RougeTowerType.PiercingLaser || type == RougeTowerType.Cannon ||
+             type == RougeTowerType.Flame))
+            score += vulnerableSignal * 28f;
         return score;
     }
 
@@ -5078,6 +7768,11 @@ public partial class RougeGameManager
              type == RougeTowerType.RocketBarrage ||
              type == RougeTowerType.OrbitSphere || type == RougeTowerType.Ice))
             return true;
+        if (snapshot.UncoveredArmorPressure >= 1.25f &&
+            (type == RougeTowerType.Laser || type == RougeTowerType.Ice ||
+             type == RougeTowerType.MachineGun)) return true;
+        if (snapshot.FastUncontrolledPressure >= 0.9f &&
+            type == RougeTowerType.Ice) return true;
         return snapshot.UrgentPressure >= 2f && type == RougeTowerType.Ice;
     }
 
@@ -5089,7 +7784,7 @@ public partial class RougeGameManager
                type == RougeTowerType.Flame;
     }
 
-    private float GetAutoplayBossReadinessUrgency(
+    private void UpdateAutoplayBossReadinessUrgency(
         AutoplayBattleSnapshot snapshot)
     {
         int desiredFocusedTowers = snapshot.BossEnemies > 0
@@ -5097,43 +7792,239 @@ public partial class RougeGameManager
             : snapshot.BossPreparation >= 0.72f
                 ? 5
                 : snapshot.BossPreparation >= 0.28f ? 3 : 0;
-        if (desiredFocusedTowers <= 0) return 1f;
-        int focusedTowers = _towerDefenseAutoplayTypeCounts[
-                                (int)RougeTowerType.MachineGun] +
-                            _towerDefenseAutoplayTypeCounts[
-                                (int)RougeTowerType.Laser] +
-                            _towerDefenseAutoplayTypeCounts[
-                                (int)RougeTowerType.PiercingLaser] +
-                            _towerDefenseAutoplayTypeCounts[
-                                (int)RougeTowerType.Flame];
-        int deficit = Mathf.Max(0, desiredFocusedTowers - focusedTowers);
-        return 1f + deficit * 0.24f;
+        if (desiredFocusedTowers <= 0)
+        {
+            _towerDefenseAutoplayBossReadinessUrgency = 1f;
+            return;
+        }
+        RougeTowerStats baselineStats = TowerDefenseVisuals.GetStats(
+            RougeTowerType.MachineGun, 1);
+        float baselinePower = Mathf.Max(1f,
+            EstimateAutoplaySingleTargetPower(RougeTowerType.MachineGun,
+                baselineStats, default));
+        float installedPower = 0f;
+        for (int i = 0; i < _defenseTowers.Count; i++)
+        {
+            RougeDefenseTower tower = _defenseTowers[i];
+            if (!IsAutoplayStandardTower(tower) ||
+                !IsAutoplayBossDamageTower(tower.TowerType)) continue;
+            // Rotating flame cannot select BossFirst and therefore cannot satisfy the
+            // commander's dedicated focused-fire readiness budget.
+            if (tower.UsesRotatingFlamethrower) continue;
+            installedPower += EstimateAutoplayInstalledSingleTargetPower(tower);
+        }
+        float focusedPowerUnits = installedPower / baselinePower;
+        float deficit = Mathf.Max(0f, desiredFocusedTowers - focusedPowerUnits);
+        _towerDefenseAutoplayBossReadinessUrgency = 1f + deficit * 0.24f;
+    }
+
+    private float GetAutoplayBossReadinessUrgency()
+    {
+        return _towerDefenseAutoplayBossReadinessUrgency;
     }
 
     private static float EstimateAutoplayCombatPower(RougeTowerType type,
-        RougeTowerStats stats, RougeTowerBuffLevels buffs)
+        RougeTowerStats stats, RougeTowerBuffLevels buffs,
+        bool includeIceControl = true)
     {
         float damage = stats.Damage * RougeTowerBuffMath.GetMultiplier(buffs.Damage);
-        float interval = stats.AttackInterval /
-            RougeTowerBuffMath.GetMultiplier(buffs.AttackSpeed);
-        float power = damage / Mathf.Max(0.03f, interval);
-        power *= 1f + Mathf.Max(0, stats.TargetCount - 1) * 0.12f;
-        power *= 1f + Mathf.Max(0, stats.ProjectileCount - 1) * 0.14f;
-        if (stats.AoeRadius > 0f) power *= 1f + Mathf.Min(1.2f,
-            stats.AoeRadius * 0.08f);
-        if (type == RougeTowerType.Ice) power += 85f;
-        return power;
+        float speed = RougeTowerBuffMath.GetMultiplier(buffs.AttackSpeed);
+        float interval = stats.AttackInterval / Mathf.Max(0.01f, speed);
+        int targets = Mathf.Max(1, stats.TargetCount);
+        int projectiles = Mathf.Max(1, stats.ProjectileCount);
+        switch (type)
+        {
+            case RougeTowerType.MachineGun:
+                // Extra barrels fan out rather than creating guaranteed independent
+                // hits. Crowd density decides the remaining value at decision time.
+                return damage / Mathf.Max(0.03f, interval) *
+                       (1f + Mathf.Max(0, targets - 1) * 0.55f);
+            case RougeTowerType.Ice:
+            {
+                float direct = damage / Mathf.Max(0.03f, interval);
+                return direct + (includeIceControl ? 70f : 0f);
+            }
+            case RougeTowerType.Cannon:
+            {
+                float burstTime = Mathf.Max(0, projectiles - 1) *
+                                  TowerProjectileBurstInterval /
+                                  Mathf.Max(0.01f, speed);
+                return damage * projectiles /
+                       Mathf.Max(0.03f, interval + burstTime);
+            }
+            case RougeTowerType.Flame:
+            {
+                int ticks = stats.TickInterval > 0f
+                    ? Mathf.Max(1, Mathf.CeilToInt(stats.EffectDuration /
+                                                  stats.TickInterval))
+                    : 1;
+                float burstTime = Mathf.Max(0, projectiles - 1) *
+                                  TowerProjectileBurstInterval /
+                                  Mathf.Max(0.01f, speed);
+                return damage * ticks * projectiles /
+                       Mathf.Max(0.03f, interval + burstTime);
+            }
+            case RougeTowerType.Laser:
+                return damage / Mathf.Max(0.03f, interval) * targets;
+            case RougeTowerType.PiercingLaser:
+            {
+                float cycle = interval + PiercingLaserChargeDuration /
+                    Mathf.Max(0.01f, speed) + PiercingLaserFireDuration;
+                return damage / Mathf.Max(0.03f, cycle);
+            }
+            case RougeTowerType.OrbitSphere:
+            {
+                float range = stats.AttackRadius *
+                              RougeTowerBuffMath.GetMultiplier(buffs.Range);
+                float minimumRadius = stats.OrbitSphereRadius * 1.5f;
+                float travel = 2f * Mathf.Max(0f, range - minimumRadius) /
+                               Mathf.Max(0.01f,
+                                   stats.OrbitRadialSpeed * speed);
+                float active = travel + stats.OrbitOuterHoldDuration;
+                float duty = active /
+                    Mathf.Max(0.03f, active + interval);
+                float tick = stats.TickInterval /
+                             Mathf.Max(0.01f, speed);
+                return damage / Mathf.Max(0.02f, tick) * projectiles * duty;
+            }
+            case RougeTowerType.RocketBarrage:
+            {
+                float salvo = Mathf.Max(0, projectiles - 1) *
+                              stats.ProjectileInterval /
+                              Mathf.Max(0.01f, speed);
+                float cycle = Mathf.Max(interval, salvo);
+                return damage * projectiles / Mathf.Max(0.03f, cycle);
+            }
+            default:
+                return damage / Mathf.Max(0.03f, interval);
+        }
     }
 
-    private static float EstimateAutoplaySingleTargetPower(RougeTowerStats stats,
-        RougeTowerBuffLevels buffs)
+    private static float GetAutoplayPressureRealizationFactor(float combatPower)
     {
-        float damage = stats.Damage *
-            RougeTowerBuffMath.GetMultiplier(buffs.Damage);
-        float interval = stats.AttackInterval /
-            RougeTowerBuffMath.GetMultiplier(buffs.AttackSpeed);
-        return damage / Mathf.Max(0.03f, interval) *
-               Mathf.Max(1, stats.ProjectileCount);
+        // A candidate may cover a hotspot geometrically without having enough output
+        // to serve all of it. Keep a floor for control/utility actions, then approach
+        // full pressure credit only as sustained capacity rises.
+        float capacity = 1f - Mathf.Exp(-Mathf.Max(0f, combatPower) / 115f);
+        return Mathf.Lerp(0.28f, 1f, capacity);
+    }
+
+    private static float EstimateAutoplaySingleTargetPower(RougeTowerType type,
+        RougeTowerStats stats, RougeTowerBuffLevels buffs)
+    {
+        return EstimateAutoplayCombatPower(type, stats, buffs, false);
+    }
+
+    private static float GetAutoplayInstalledUpgradeRealization(
+        RougeDefenseTower tower)
+    {
+        if (tower == null) return 1f;
+        RougeTowerStats baseStats = TowerDefenseVisuals.GetStats(
+            tower.TowerType, tower.Level);
+        float baseline = Mathf.Max(0.01f,
+            EstimateAutoplayCombatPower(tower.TowerType, baseStats, default,
+                false));
+        float installed = Mathf.Max(0.01f,
+            EstimateAutoplayInstalledCombatPower(tower));
+        return Mathf.Clamp(installed / baseline, 0.65f, 3f);
+    }
+
+    private static float EstimateAutoplayInstalledCombatPower(
+        RougeDefenseTower tower)
+    {
+        if (tower == null) return 0f;
+        float damage = Mathf.Max(0f, tower.Damage);
+        float interval = Mathf.Max(0.03f, tower.EffectiveAttackInterval);
+        float speed = Mathf.Max(0.01f, tower.AttackSpeedMultiplier);
+        int targets = Mathf.Max(1, tower.AttackTargetCount);
+        int projectiles = Mathf.Max(1, tower.AttackProjectileCount);
+        switch (tower.TowerType)
+        {
+            case RougeTowerType.MachineGun:
+                return damage / interval *
+                       (1f + Mathf.Max(0, targets - 1) * 0.55f);
+            case RougeTowerType.Ice:
+                return damage / interval;
+            case RougeTowerType.Cannon:
+            {
+                float burstTime = Mathf.Max(0, projectiles - 1) *
+                                  TowerProjectileBurstInterval / speed;
+                return damage * projectiles /
+                       Mathf.Max(0.03f, interval + burstTime);
+            }
+            case RougeTowerType.Flame:
+            {
+                if (tower.UsesFlamethrower) return damage / interval;
+                int ticks = tower.TickInterval > 0f
+                    ? Mathf.Max(1, Mathf.CeilToInt(tower.EffectDuration /
+                                                  tower.TickInterval))
+                    : 1;
+                float burstTime = Mathf.Max(0, projectiles - 1) *
+                                  TowerProjectileBurstInterval / speed;
+                return damage * ticks * projectiles /
+                       Mathf.Max(0.03f, interval + burstTime);
+            }
+            case RougeTowerType.Laser:
+                return damage / interval * targets;
+            case RougeTowerType.PiercingLaser:
+                return damage / Mathf.Max(0.03f,
+                    interval + PiercingLaserChargeDuration / speed +
+                    PiercingLaserFireDuration);
+            case RougeTowerType.OrbitSphere:
+            {
+                float minimumRadius = tower.OrbitSphereRadius * 1.5f;
+                float travel = 2f * Mathf.Max(0f,
+                    tower.AttackRange - minimumRadius) /
+                    Mathf.Max(0.01f, tower.OrbitRadialSpeed * speed);
+                float active = travel + tower.OrbitOuterHoldDuration;
+                float duty = active / Mathf.Max(0.03f, active + interval);
+                float tick = tower.TickInterval / speed;
+                return damage / Mathf.Max(0.02f, tick) * projectiles * duty;
+            }
+            case RougeTowerType.RocketBarrage:
+            {
+                float salvo = Mathf.Max(0, projectiles - 1) *
+                              tower.ProjectileInterval / speed;
+                float cycle = Mathf.Max(interval, salvo);
+                return damage * projectiles / Mathf.Max(0.03f, cycle);
+            }
+            default:
+                return damage / interval;
+        }
+    }
+
+    private static float EstimateAutoplayInstalledSingleTargetPower(
+        RougeDefenseTower tower)
+    {
+        if (tower == null) return 0f;
+        float damage = Mathf.Max(0f, tower.Damage);
+        float interval = Mathf.Max(0.03f, tower.EffectiveAttackInterval);
+        int targets = Mathf.Max(1, tower.AttackTargetCount);
+        int projectiles = Mathf.Max(1, tower.AttackProjectileCount);
+        switch (tower.TowerType)
+        {
+            case RougeTowerType.MachineGun:
+                return damage / interval *
+                       (1f + Mathf.Max(0, targets - 1) * 0.55f);
+            case RougeTowerType.Laser:
+                return damage / interval * targets;
+            case RougeTowerType.PiercingLaser:
+                return damage / Mathf.Max(0.03f,
+                    interval + PiercingLaserChargeDuration +
+                    PiercingLaserFireDuration);
+            case RougeTowerType.Flame:
+                if (tower.UsesFlamethrower) return damage / interval;
+                int ticks = tower.TickInterval > 0f
+                    ? Mathf.Max(1, Mathf.CeilToInt(tower.EffectDuration /
+                                                  tower.TickInterval))
+                    : 1;
+                float burstTime = Mathf.Max(0, projectiles - 1) *
+                                  TowerProjectileBurstInterval;
+                return damage * ticks * projectiles /
+                       Mathf.Max(0.03f, interval + burstTime);
+            default:
+                return damage / interval * projectiles;
+        }
     }
 
     private static float GetAutoplayOpportunityPenalty(RougeTowerType type,
@@ -5169,8 +8060,8 @@ public partial class RougeGameManager
         // Spending on a near-optimal tower now is safer than waiting through another
         // wave for a tiny efficiency gain. This also prevents personality nudges from
         // turning into long, fragile hoarding plans.
-        if (bestAffordable.ObjectiveEfficiency >=
-            bestOverall.ObjectiveEfficiency *
+        if (bestAffordable.ObjectiveCapitalScore >=
+            bestOverall.ObjectiveCapitalScore *
             (1f - TowerDefenseAutoplayPersonalityRegretBudget))
             return false;
         int shortfall = Mathf.Max(0, bestOverall.PaidCost - _towerDefenseGold);
@@ -5180,7 +8071,7 @@ public partial class RougeGameManager
             Mathf.Max(0.9f, TowerDefenseAutoplayCommander.SaveBias);
         return bestOverall.PaidCost > bestAffordable.PaidCost &&
                shortfall <= acceptableShortfall &&
-               bestOverall.Efficiency > bestAffordable.Efficiency *
+               bestOverall.CapitalScore > bestAffordable.CapitalScore *
                     qualityThreshold;
     }
 
@@ -5253,6 +8144,16 @@ public partial class RougeGameManager
     }
 
 
+    private static float GetAutoplayPriorityTileBonus(float tileScore)
+    {
+        if (tileScore <= 0f) return 0f;
+        // Special tiles matter, but crossing an arbitrary score threshold must not
+        // suddenly be worth another whole tower. Keep the preference continuous so
+        // geometry and actual output can still overturn a merely decent pairing.
+        return Mathf.Lerp(12f, 72f,
+            Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(55f, 130f, tileScore)));
+    }
+
     private static float GetAutoplayTileAffinity(RougeTowerType type,
         RougeTowerPlaceEffect effect)
     {
@@ -5265,28 +8166,55 @@ public partial class RougeGameManager
             case RougeTowerPlaceEffect.Discount:
                 return 108f;
             case RougeTowerPlaceEffect.DamageAmplifier:
-                return type == RougeTowerType.Cannon || type == RougeTowerType.Flame ||
-                       type == RougeTowerType.PiercingLaser ||
-                       type == RougeTowerType.RocketBarrage ? 122f : 82f;
+                return type == RougeTowerType.MachineGun ? 126f
+                    : type == RougeTowerType.Laser ? 124f
+                    : type == RougeTowerType.PiercingLaser ? 122f
+                    : type == RougeTowerType.RocketBarrage ? 122f
+                    : type == RougeTowerType.Cannon || type == RougeTowerType.Flame
+                        ? 121f
+                        : 82f;
             case RougeTowerPlaceEffect.RangeAmplifier:
-                return type == RougeTowerType.Ice || type == RougeTowerType.Laser ||
-                       type == RougeTowerType.PiercingLaser ? 122f : 78f;
+                return type == RougeTowerType.Ice ? 126f
+                    : type == RougeTowerType.OrbitSphere ? 123f
+                    : type == RougeTowerType.Flame ? 121f
+                    : type == RougeTowerType.PiercingLaser ? 118f
+                    : type == RougeTowerType.RocketBarrage ? 42f
+                    : 78f;
             case RougeTowerPlaceEffect.AttackSpeedAmplifier:
-                return type == RougeTowerType.MachineGun || type == RougeTowerType.Laser ||
-                       type == RougeTowerType.Flame ? 122f : 76f;
+                // Slow, heavy attack cycles gain the most tactical value from attack
+                // speed. Machine gun and laser already fire rapidly and pay the same
+                // severe range penalty, so they should not monopolize this pad.
+                return type == RougeTowerType.PiercingLaser ? 126f
+                    : type == RougeTowerType.Cannon ? 124f
+                    : type == RougeTowerType.RocketBarrage ? 123f
+                    : type == RougeTowerType.Flame ? 122f
+                    : 76f;
             case RougeTowerPlaceEffect.Bounty:
                 return type == RougeTowerType.MachineGun || type == RougeTowerType.Laser
                     ? 104f : 72f;
             case RougeTowerPlaceEffect.Echo:
-                return type == RougeTowerType.MachineGun || type == RougeTowerType.Laser ||
-                       type == RougeTowerType.RocketBarrage ? 126f : 70f;
+                // Most towers repeat the complete attack (roughly +100%). Machine gun,
+                // laser and rocket instead receive only 1.5x targets/projectiles, so
+                // treating those three as the best Echo users had the ranking reversed.
+                return type == RougeTowerType.PiercingLaser ? 126f
+                    : type == RougeTowerType.Cannon ? 124f
+                    : type == RougeTowerType.Flame ? 122f
+                    : type == RougeTowerType.OrbitSphere ? 121f
+                    : type == RougeTowerType.Ice ? 116f
+                    : 96f;
             case RougeTowerPlaceEffect.AccumulatedWealth:
                 return type == RougeTowerType.MachineGun ? 96f : 68f;
             case RougeTowerPlaceEffect.Explosion:
                 return type == RougeTowerType.MachineGun || type == RougeTowerType.Flame
                     ? 98f : 72f;
             case RougeTowerPlaceEffect.Frost:
-                return type == RougeTowerType.Ice ? 120f : 64f;
+                // Frost is most valuable on frequent direct hits. Ice already supplies
+                // stronger native control, while area attacks receive only half slow.
+                return type == RougeTowerType.MachineGun ? 126f
+                    : type == RougeTowerType.Laser ? 124f
+                    : type == RougeTowerType.PiercingLaser ? 110f
+                    : type == RougeTowerType.Ice ? 62f
+                    : 88f;
             case RougeTowerPlaceEffect.Relocation:
                 return 58f;
             default:
@@ -5348,6 +8276,52 @@ public partial class RougeGameManager
         for (int i = 0; i < _defenseTowers.Count; i++)
             if (IsAutoplayStandardTower(_defenseTowers[i])) count++;
         return count;
+    }
+
+    private void ResetAutoplayExpansionSchedule(int standardTowerCount,
+        float gameTime)
+    {
+        _towerDefenseAutoplayExpansionBaselineTowerCount = Mathf.Max(
+            TowerDefenseAutoplayOpeningTowerCount, standardTowerCount);
+        _towerDefenseAutoplayNextExpansionGameTime =
+            standardTowerCount >= TowerDefenseAutoplayOpeningTowerCount
+                ? gameTime + TowerDefenseAutoplayExpansionInterval
+                : float.PositiveInfinity;
+    }
+
+    private void AdvanceAutoplayExpansionSchedule(int standardTowerCount,
+        float gameTime)
+    {
+        if (standardTowerCount < TowerDefenseAutoplayOpeningTowerCount) return;
+        if (float.IsPositiveInfinity(
+                _towerDefenseAutoplayNextExpansionGameTime))
+        {
+            _towerDefenseAutoplayExpansionBaselineTowerCount = Mathf.Max(
+                TowerDefenseAutoplayOpeningTowerCount, standardTowerCount);
+            _towerDefenseAutoplayNextExpansionGameTime =
+                gameTime + TowerDefenseAutoplayExpansionInterval;
+            return;
+        }
+
+        if (gameTime < _towerDefenseAutoplayNextExpansionGameTime ||
+            standardTowerCount <=
+            _towerDefenseAutoplayExpansionBaselineTowerCount) return;
+
+        // A tower built for an emergency can satisfy the next scheduled expansion,
+        // but elapsed time never accumulates a queue of historical build debt.
+        _towerDefenseAutoplayExpansionBaselineTowerCount++;
+        _towerDefenseAutoplayNextExpansionGameTime =
+            gameTime + TowerDefenseAutoplayExpansionInterval;
+    }
+
+    private void DeferAutoplayExpansionSchedule(float gameTime)
+    {
+        // The timer opens a planning window; it is not a debt that must be paid with a
+        // tower. Recheck soon enough to react to a changed wave without hammering the
+        // same skipped expansion on every 0.65-second capital tick.
+        float retrySeconds = Mathf.Clamp(TowerDefenseAutoplayExpansionInterval * 0.35f,
+            5f, 20f);
+        _towerDefenseAutoplayNextExpansionGameTime = gameTime + retrySeconds;
     }
 
     private bool HasAutoplayUpgradeableTower()

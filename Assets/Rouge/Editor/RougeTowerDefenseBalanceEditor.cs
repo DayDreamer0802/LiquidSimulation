@@ -10,10 +10,12 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
     {
         Towers,
         Enemies,
-        Bosses
+        Bosses,
+        MainTower
     }
 
-    private static readonly string[] TabLabels = { "Towers / Levels", "Enemies", "Bosses" };
+    private static readonly string[] TabLabels =
+        { "Towers / Levels", "Enemies", "Bosses", "Main Tower" };
     private static readonly Dictionary<string, Texture2D> ResourceTextureCache =
         new Dictionary<string, Texture2D>();
 
@@ -23,6 +25,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
     [SerializeField] private Vector2 _towerScroll;
     [SerializeField] private Vector2 _enemyScroll;
     [SerializeField] private Vector2 _bossScroll;
+    [SerializeField] private Vector2 _mainTowerScroll;
     [SerializeField] private int _selectedTowerIndex;
     private string _status;
     private bool _hasUnsavedChanges;
@@ -147,6 +150,10 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             case BalanceTab.Bosses:
                 DrawBossBalances(_serializedProfile.FindProperty("bossBalances"));
                 break;
+            case BalanceTab.MainTower:
+                DrawMainTowerBalance(
+                    _serializedProfile.FindProperty("mainTowerBalance"));
+                break;
         }
     }
 
@@ -156,6 +163,7 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         {
             case BalanceTab.Enemies: return _enemyScroll;
             case BalanceTab.Bosses: return _bossScroll;
+            case BalanceTab.MainTower: return _mainTowerScroll;
             default: return _towerScroll;
         }
     }
@@ -170,9 +178,27 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             case BalanceTab.Bosses:
                 _bossScroll = value;
                 break;
+            case BalanceTab.MainTower:
+                _mainTowerScroll = value;
+                break;
             default:
                 _towerScroll = value;
                 break;
+        }
+    }
+
+    private static void DrawMainTowerBalance(SerializedProperty balance)
+    {
+        EditorGUILayout.Space(8f);
+        EditorGUILayout.LabelField("Main Tower", EditorStyles.largeLabel);
+        EditorGUILayout.HelpBox(
+            "This value is authoritative at runtime and overrides any health " +
+            "serialized on a scene or prefab main-tower component.",
+            MessageType.Info);
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+        {
+            EditorGUILayout.PropertyField(balance.FindPropertyRelative("maxHealth"),
+                new GUIContent("Maximum Health"));
         }
     }
 

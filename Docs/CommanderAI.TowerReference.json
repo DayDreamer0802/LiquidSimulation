@@ -5,7 +5,7 @@
   "referenceOnly": true,
   "source": {
     "balance": "Assets/Resources/Config/tower_defense_balance.json",
-    "balanceVersion": 14,
+    "balanceVersion": 15,
     "towerEnumsAndRules": [
       "Assets/Rouge/RougeTowerDefenseEntities.cs",
       "Assets/Rouge/RougeDefenseTower.cs",

@@ -206,6 +206,7 @@ public struct RougeTowerTargetRequest
     public float BossRangePadding;
     public int TargetCount;
     public int PriorityMode;
+    public int CleanupFirst;
 }
 
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Standard)]
@@ -534,7 +535,8 @@ public unsafe struct FindTowerTargetsJob : IJobParallelFor
         int* headPtr = (int*)CellHeads.GetUnsafeReadOnlyPtr();
         int* nextPtr = (int*)CellNext.GetUnsafeReadOnlyPtr();
         bool bossFirst = request.PriorityMode == (int)RougeTowerTargetPriority.BossFirst;
-        float queryRange = request.Range + (bossFirst
+        bool cleanupFirst = request.CleanupFirst != 0 && !bossFirst;
+        float queryRange = request.Range + (bossFirst || cleanupFirst
             ? math.max(0f, request.BossRangePadding)
             : 0f);
         float2 extent = new float2(queryRange);
@@ -543,6 +545,7 @@ public unsafe struct FindTowerTargetsJob : IJobParallelFor
         int2 maxCell = RougeMortonGridUtility.WorldToGrid(
             request.Position + extent, GridOrigin, InvCellSize, GridDim);
         int found = 0;
+        bool foundCleanupTarget = false;
 
         for (int y = minCell.y; y <= maxCell.y; y++)
         {
@@ -555,11 +558,29 @@ public unsafe struct FindTowerTargetsJob : IJobParallelFor
                     float4 enemyPosition = enemyPositionPtr[enemyIndex];
                     float distanceSq = math.lengthsq(enemyPosition.xz - request.Position);
                     byte enemyKind = EnemyKinds[enemyIndex];
-                    bool bossCandidate = bossFirst && (enemyKind & 0x80) != 0;
+                    bool isBoss = (enemyKind & 0x80) != 0;
+                    bool bossCandidate = (bossFirst || cleanupFirst) && isBoss;
                     float candidateRange = request.Range + (bossCandidate
                         ? math.max(0f, enemyPosition.w)
                         : 0f);
                     if (distanceSq > candidateRange * candidateRange) continue;
+                    if (cleanupFirst)
+                    {
+                        // A cleanup guard may fall back to the Boss only while no
+                        // ordinary enemy is in range. Do not mix the Boss into spare
+                        // multi-target slots once a cleanup target exists.
+                        if (isBoss && foundCleanupTarget) continue;
+                        if (!isBoss && !foundCleanupTarget)
+                        {
+                            for (int result = 0; result < resultCapacity; result++)
+                            {
+                                resultPtr[result] = -1;
+                                distancePtr[result] = float.MaxValue;
+                            }
+                            found = 0;
+                            foundCleanupTarget = true;
+                        }
+                    }
                     int candidatePriority = bossFirst ? GetTargetPriority(enemyKind) : 0;
                     float candidateSortDistance = distanceSq;
                     if (!bossFirst)

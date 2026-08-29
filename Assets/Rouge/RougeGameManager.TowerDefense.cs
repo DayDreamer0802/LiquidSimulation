@@ -90,6 +90,8 @@ public partial class RougeGameManager
     [SerializeField] private bool towerDefenseEnabled = true;
     [SerializeField, Min(0)] private int towerDefenseStartingGold = DefaultTowerDefenseStartingGold;
     [SerializeField] private RougeMainTower mainTower;
+    [SerializeField] private RougeMainTowerBalanceConfig mainTowerBalance =
+        new RougeMainTowerBalanceConfig();
     [SerializeField] private RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     [SerializeField] private RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     [SerializeField] private List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -423,17 +425,20 @@ public partial class RougeGameManager
         UnityEngine.Random.InitState(TowerDefenseFixedRandomSeed);
         if (RougeTowerDefenseBalanceJson.TryLoad(out RougeTowerDefenseBalanceJsonData jsonBalance))
         {
+            mainTowerBalance = jsonBalance.mainTowerBalance;
             towerBalance = jsonBalance.towerBalance;
             enemyBalance = jsonBalance.enemyBalance;
             bossBalances = jsonBalance.bossBalances;
             bossBalance = jsonBalance.bossBalance;
             tacticalSkillBalance = jsonBalance.tacticalSkillBalance;
         }
+        mainTowerBalance ??= new RougeMainTowerBalanceConfig();
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalances ??= new List<RougeBossBalanceConfig>();
         bossBalance ??= new RougeBossBalanceConfig();
         tacticalSkillBalance ??= new RougeTacticalSkillBalanceConfig();
+        mainTowerBalance.EnsureDefaults();
         towerBalance.EnsureDefaults();
         enemyBalance.EnsureDefaults();
         EnsureBossBalanceDefaults();
@@ -962,6 +967,7 @@ public partial class RougeGameManager
             return;
         }
 
+        mainTower.ConfigureMaxHealth(mainTowerBalance.maxHealth);
         mainTower.ResetHealth();
     }
 
@@ -1038,7 +1044,13 @@ public partial class RougeGameManager
                     for (int x = -1; x <= 1; x++)
                     {
                         if (x == 0 && y == 0) continue;
-                        loader.SetPermanentTowerPlaceEffect(center + new Vector2Int(x, y),
+                        Vector2Int frostCell = center + new Vector2Int(x, y);
+                        RougeTowerPlaceEffect existingEffect =
+                            loader.GetEffectiveTowerPlaceEffect(frostCell);
+                        if (existingEffect != RougeTowerPlaceEffect.None &&
+                            existingEffect != RougeTowerPlaceEffect.Frost)
+                            continue;
+                        loader.SetPermanentTowerPlaceEffect(frostCell,
                             RougeTowerPlaceEffect.Frost);
                     }
                 }
@@ -2380,6 +2392,7 @@ public partial class RougeGameManager
             }
             tower.ClearChargeTarget();
         }
+        tower.SetAutoplayCleanupFirst(false);
         _defenseTowers.Remove(tower);
         StopPiercingLaserAttacksForTower(tower);
         StopOrbitSphereAttacksForTower(tower);
@@ -2469,6 +2482,11 @@ public partial class RougeGameManager
             {
                 if (x == 0 && y == 0) continue;
                 Vector2Int cell = center + new Vector2Int(x, y);
+                RougeTowerPlaceEffect existingEffect =
+                    loader.GetEffectiveTowerPlaceEffect(cell);
+                if (existingEffect != RougeTowerPlaceEffect.None &&
+                    existingEffect != RougeTowerPlaceEffect.Frost)
+                    continue;
                 if (!loader.SetPermanentTowerPlaceEffect(cell,
                         RougeTowerPlaceEffect.Frost))
                     continue;
@@ -3784,8 +3802,10 @@ public partial class RougeGameManager
                 : tower.AttackTargetCount;
             bool bossFirst = tower.IsTargetedDamage &&
                 tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+            bool cleanupFirst = tower.IsTargetedDamage &&
+                tower.AutoplayCleanupFirst && !bossFirst;
             float bossRangePadding = 0f;
-            if (bossFirst && _bossSpawned && _positionsA.IsCreated &&
+            if ((bossFirst || cleanupFirst) && _bossSpawned && _positionsA.IsCreated &&
                 _bossEnemyIndex >= 0 && _bossEnemyIndex < _positionsA.Length)
                 bossRangePadding = math.max(0f, _positionsA[_bossEnemyIndex].w);
             _towerTargetRequests[i] = new RougeTowerTargetRequest
@@ -3798,7 +3818,8 @@ public partial class RougeGameManager
                     : math.clamp(requestedTargets, 1, FindTowerTargetsJob.MaxTargetsPerTower),
                 PriorityMode = tower.IsTargetedDamage
                     ? (int)tower.TargetPriority
-                    : (int)RougeTowerTargetPriority.NearestToGoal
+                    : (int)RougeTowerTargetPriority.NearestToGoal,
+                CleanupFirst = cleanupFirst ? 1 : 0
             };
         }
         _towerTargetRequestCount = count;

@@ -337,7 +337,7 @@ public static class RougeSettingsPrefabBuilder
             view.healthFill = fill;
 
             Text healthText = CreateText("Health Text", track.transform,
-                "主塔核心  1500 / 1500", 17, Color.white,
+                "主塔核心  500 / 500", 17, Color.white,
                 TextAnchor.MiddleCenter, FontStyle.Bold);
             Stretch(healthText.rectTransform, 10f, 0f, 10f, 0f);
             view.healthText = healthText;

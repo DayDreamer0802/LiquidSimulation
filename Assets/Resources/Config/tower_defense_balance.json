@@ -1,5 +1,8 @@
 {
-    "version": 14,
+    "version": 15,
+    "mainTowerBalance": {
+        "maxHealth": 500.0
+    },
     "towerBalance": {
         "sellRefundMultiplier": 0.33000001311302187,
         "iceTowerSpecialization": {

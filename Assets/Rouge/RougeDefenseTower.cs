@@ -127,6 +127,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [SerializeField] private RougeTowerPlaceEffect chargedTileEffect;
     [System.NonSerialized] internal float attackTimer;
     [System.NonSerialized] internal int targetIndex = -1;
+    [System.NonSerialized] private bool autoplayCleanupFirst;
     [System.NonSerialized] internal int projectileBurstShotsRemaining;
     [System.NonSerialized] internal int projectileBurstShotIndex;
     [System.NonSerialized] internal float projectileBurstTimer;
@@ -257,6 +258,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public bool IsSpecialTower => IsChargeTower || IsReinforcementTower;
     public bool IsTargetedDamage => isTargetedDamage;
     public RougeTowerTargetPriority TargetPriority => targetPriority;
+    internal bool AutoplayCleanupFirst => autoplayCleanupFirst;
     public RougeIceTowerBranch IceBranch => towerType == RougeTowerType.Ice
         ? iceBranch
         : RougeIceTowerBranch.None;
@@ -818,6 +820,14 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
             : RougeTowerTargetPriority.BossFirst;
         targetIndex = -1;
         RefreshFocusedModeBuff();
+    }
+
+    internal bool SetAutoplayCleanupFirst(bool enabled)
+    {
+        if (autoplayCleanupFirst == enabled) return false;
+        autoplayCleanupFirst = enabled;
+        targetIndex = -1;
+        return true;
     }
 
     internal void SetRangeVisibility(bool visible, bool valid = true)

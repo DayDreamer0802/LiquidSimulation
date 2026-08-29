@@ -4,7 +4,7 @@ using UnityEngine;
 public sealed class RougeMainTower : MonoBehaviour
 {
     [Header("Health")]
-    [Min(1f)] public float maxHealth = 1500f;
+    [Min(1f)] public float maxHealth = 500f;
     [Min(0.1f)] public float contactRadius = 3.2f;
     [Min(0f)] public float damagePerEnemy = 18f;
     [Header("Hit AOE")]
@@ -18,6 +18,11 @@ public sealed class RougeMainTower : MonoBehaviour
     public float CurrentHealth => currentHealth;
     public float HealthNormalized => maxHealth > 0f ? Mathf.Clamp01(currentHealth / maxHealth) : 0f;
     public bool IsDestroyed => currentHealth <= 0f;
+
+    internal void ConfigureMaxHealth(float configuredMaxHealth)
+    {
+        maxHealth = Mathf.Max(1f, configuredMaxHealth);
+    }
 
     internal void ResetHealth()
     {

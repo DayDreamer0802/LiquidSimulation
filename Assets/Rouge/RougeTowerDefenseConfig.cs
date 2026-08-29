@@ -894,9 +894,22 @@ public sealed class RougeTacticalSkillBalanceConfig
 }
 
 [Serializable]
+public sealed class RougeMainTowerBalanceConfig
+{
+    [Min(1f)] public float maxHealth = 500f;
+
+    public void EnsureDefaults()
+    {
+        maxHealth = Mathf.Max(1f, maxHealth);
+    }
+}
+
+[Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 14;
+    public int version = 15;
+    public RougeMainTowerBalanceConfig mainTowerBalance =
+        new RougeMainTowerBalanceConfig();
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -907,6 +920,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
     public void EnsureDefaults()
     {
         int loadedVersion = version;
+        mainTowerBalance ??= new RougeMainTowerBalanceConfig();
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalance ??= new RougeBossBalanceConfig();
@@ -1008,6 +1022,8 @@ public sealed class RougeTowerDefenseBalanceJsonData
         if (loadedVersion < 14)
             towerBalance.flameTowerSpecialization =
                 new RougeFlameTowerSpecializationConfig();
+        if (loadedVersion < 15)
+            mainTowerBalance.maxHealth = 500f;
         for (int i = bossBalances.Count - 1; i >= 0; i--)
         {
             if (bossBalances[i] == null)
@@ -1029,12 +1045,15 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 14);
+        mainTowerBalance.EnsureDefaults();
+        version = Mathf.Max(version, 15);
     }
 }
 
 public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
 {
+    public RougeMainTowerBalanceConfig mainTowerBalance =
+        new RougeMainTowerBalanceConfig();
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -1044,6 +1063,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
 
     public void EnsureDefaults()
     {
+        mainTowerBalance ??= new RougeMainTowerBalanceConfig();
         towerBalance ??= new RougeTowerBalanceConfig();
         enemyBalance ??= new RougeEnemyBalanceConfig();
         bossBalance ??= new RougeBossBalanceConfig();
@@ -1065,6 +1085,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
+        mainTowerBalance.EnsureDefaults();
     }
 
     public RougeTowerDefenseBalanceJsonData ToJsonData()
@@ -1072,7 +1093,8 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 14,
+            version = 15,
+            mainTowerBalance = mainTowerBalance,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,
@@ -1085,6 +1107,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
     {
         data ??= new RougeTowerDefenseBalanceJsonData();
         data.EnsureDefaults();
+        mainTowerBalance = data.mainTowerBalance;
         towerBalance = data.towerBalance;
         enemyBalance = data.enemyBalance;
         bossBalances = data.bossBalances;
