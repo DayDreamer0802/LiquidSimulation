@@ -1345,6 +1345,12 @@ public partial class RougeGameManager
             return;
         }
 
+        // Target-priority switching is a realtime combat order, not a capital
+        // decision. Check it every rendered frame so a tower does not wait for the
+        // next planner result after the boss crosses its range boundary.
+        if (TryApplyAutoplayBossTargeting(out string bossDecision))
+            SetAutoplayDecision(bossDecision, true);
+
         // Poll the worker every rendered frame. IsCompleted is non-blocking; the
         // main thread only consumes a plan after all Burst jobs have finished.
         if (_towerDefenseAutoplayPlanScheduled)
@@ -1459,8 +1465,7 @@ public partial class RougeGameManager
         RougeTowerDefenseMap map, AutoplayBattleSnapshot snapshot)
     {
 
-        bool liveBoss = _bossSpawned && _bossEnemyIndex >= 0 &&
-                        _bossCurrentHealth > 0f;
+        bool liveBoss = TryGetAutoplayLiveBossTarget(out _, out _);
         if (liveBoss && !_towerDefenseAutoplayObservedLiveBoss)
         {
             _towerDefenseAutoplayObservedLiveBoss = true;
@@ -1484,12 +1489,6 @@ public partial class RougeGameManager
             CalculateTowerDefenseAutoplayTension(snapshot);
         UpdateAutoplayEmotionDialogue(_towerDefenseAutoplayTensionTarget);
         UpdateTowerDefenseAutoplayDialogue(snapshot);
-
-        if (TryApplyAutoplayBossTargeting(map, snapshot, out string bossDecision))
-        {
-            SetAutoplayDecision(bossDecision, true);
-            return;
-        }
 
         int standardTowerCount = CountAutoplayStandardTowers();
         int buildCellCount = CountAutoplayBuildCells(map);
@@ -1796,24 +1795,25 @@ public partial class RougeGameManager
                 : "这会儿很安静，金币先留给下一波。", false);
     }
 
-    private bool TryApplyAutoplayBossTargeting(RougeTowerDefenseMap map,
-        AutoplayBattleSnapshot snapshot, out string decision)
+    private bool TryApplyAutoplayBossTargeting(out string decision)
     {
         decision = string.Empty;
-        bool liveBoss = _bossSpawned && _bossEnemyIndex >= 0 &&
-                        _bossCurrentHealth > 0f;
+        bool liveBoss = TryGetAutoplayLiveBossTarget(out Vector3 bossPosition,
+            out float bossRadius);
         int focused = 0;
         int released = 0;
 
-        // Focus mode has a real DPS penalty on several tower families. Keep it only
-        // while the priority target is inside this tower's range and local cleanup is
-        // safe. Release stale overrides as one squad order instead of spending one
-        // entire AI tick per tower.
+        // Boss focus is a hard combat order: every targeted tower that can switch
+        // priority focuses the boss as soon as it enters that tower's real attack
+        // range, then returns to normal targeting only after the boss leaves it.
+        // Release stale overrides as one squad order instead of spending one entire
+        // AI tick per tower.
         for (int i = _towerDefenseAutoplayBossOverrides.Count - 1; i >= 0; i--)
         {
             RougeDefenseTower tower = _towerDefenseAutoplayBossOverrides[i];
-            bool keep = liveBoss && ShouldAutoplayUseBossFocus(tower, map,
-                snapshot);
+            bool keep = liveBoss && ShouldAutoplayUseBossFocus(tower,
+                bossPosition, bossRadius) &&
+                tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
             if (keep) continue;
             _towerDefenseAutoplayBossOverrides.RemoveAt(i);
             if (!IsAutoplayStandardTower(tower) ||
@@ -1829,9 +1829,21 @@ public partial class RougeGameManager
             {
                 RougeDefenseTower tower = _defenseTowers[i];
                 if (!IsAutoplayStandardTower(tower) || !tower.IsTargetedDamage ||
-                    tower.TargetPriority == RougeTowerTargetPriority.BossFirst ||
-                    !ShouldAutoplayUseBossFocus(tower, map, snapshot))
+                    !tower.CanToggleTargetPriority)
                     continue;
+
+                bool shouldFocus = ShouldAutoplayUseBossFocus(tower,
+                    bossPosition, bossRadius);
+                if (tower.TargetPriority == RougeTowerTargetPriority.BossFirst)
+                {
+                    // Normalize any pre-existing/untracked focus mode as well. During
+                    // autoplay, being outside the boss body is always normal targeting.
+                    if (shouldFocus) continue;
+                    tower.ToggleTargetPriority();
+                    released++;
+                    continue;
+                }
+                if (!shouldFocus) continue;
 
                 tower.ToggleTargetPriority();
                 if (tower.TargetPriority != RougeTowerTargetPriority.BossFirst)
@@ -1848,33 +1860,45 @@ public partial class RougeGameManager
             ? $"Boss 火力配额：{focused} 座入圈塔开始集火，{released} 座转回清漏。"
             : focused > 0
                 ? $"Boss 入圈：{focused} 座塔协同集火，圈外火力继续清场。"
-                : $"Boss 离开射界或近端告急：{released} 座塔解除集火惩罚。";
+                : $"Boss 离开射界：{released} 座塔恢复普通索敌。";
         return true;
     }
 
     private static bool ShouldAutoplayFocusBoss(RougeDefenseTower tower)
     {
-        return tower != null && (IsAutoplayBossDamageTower(tower.TowerType) ||
-                                 tower.TowerType == RougeTowerType.Cannon) &&
+        return tower != null && tower.IsTargetedDamage &&
                tower.CanToggleTargetPriority;
     }
 
-    private bool ShouldAutoplayUseBossFocus(RougeDefenseTower tower,
-        RougeTowerDefenseMap map, AutoplayBattleSnapshot snapshot)
+    private bool TryGetAutoplayLiveBossTarget(out Vector3 bossPosition,
+        out float bossRadius)
     {
-        if (!ShouldAutoplayFocusBoss(tower) || map == null) return false;
-        Vector3 delta = tower.transform.position - _bossWorldPosition;
-        delta.y = 0f;
-        if (delta.sqrMagnitude > tower.AttackRange * tower.AttackRange)
-            return false;
-        if (!map.WorldToCell(tower.transform.position, out Vector2Int cell))
-            return false;
+        bossPosition = _bossWorldPosition;
+        bossRadius = Mathf.Max(0f, bossBalance.radius);
+        if (!_bossSpawned || _bossEnemyIndex < 0) return false;
 
-        AutoplayPressureChannels channels = GetAutoplayActivePressureChannels(map,
-            cell, tower.AttackRange);
-        bool cleanupCrisis = channels.Urgent >= 2f &&
-                             snapshot.UrgentPressure >= 3f;
-        return !cleanupCrisis;
+        if (_positionsA.IsCreated && _stateA.IsCreated &&
+            _bossEnemyIndex < _positionsA.Length &&
+            _bossEnemyIndex < _stateA.Length)
+        {
+            if (_stateA[_bossEnemyIndex].x <= 0f) return false;
+            float4 position = _positionsA[_bossEnemyIndex];
+            bossPosition = new Vector3(position.x, renderHeight, position.z);
+            bossRadius = Mathf.Max(0f, position.w);
+            return true;
+        }
+
+        return _bossCurrentHealth > 0f;
+    }
+
+    private static bool ShouldAutoplayUseBossFocus(RougeDefenseTower tower,
+        Vector3 bossPosition, float bossRadius)
+    {
+        if (!ShouldAutoplayFocusBoss(tower)) return false;
+        Vector3 delta = tower.transform.position - bossPosition;
+        delta.y = 0f;
+        float focusRange = tower.AttackRange + Mathf.Max(0f, bossRadius);
+        return delta.sqrMagnitude <= focusRange * focusRange;
     }
 
     private void RestoreAllAutoplayBossPriorityOverrides()

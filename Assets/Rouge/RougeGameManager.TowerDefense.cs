@@ -3782,10 +3782,17 @@ public partial class RougeGameManager
             int requestedTargets = rotatesFlameTargets
                 ? tower.AttackProjectileCount
                 : tower.AttackTargetCount;
+            bool bossFirst = tower.IsTargetedDamage &&
+                tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+            float bossRangePadding = 0f;
+            if (bossFirst && _bossSpawned && _positionsA.IsCreated &&
+                _bossEnemyIndex >= 0 && _bossEnemyIndex < _positionsA.Length)
+                bossRangePadding = math.max(0f, _positionsA[_bossEnemyIndex].w);
             _towerTargetRequests[i] = new RougeTowerTargetRequest
             {
                 Position = new float2(position.x, position.z),
                 Range = tower.AttackRange,
+                BossRangePadding = bossRangePadding,
                 TargetCount = usesSingleAimDirection || !tower.IsTargetedDamage
                     ? 1
                     : math.clamp(requestedTargets, 1, FindTowerTargetsJob.MaxTargetsPerTower),
@@ -4263,18 +4270,24 @@ public partial class RougeGameManager
         return false;
     }
 
-    private bool IsEnemyTargetValid(int index, Vector3 origin, float rangeSq, out Vector3 position)
+    private bool IsEnemyTargetValid(int index, Vector3 origin, float rangeSq,
+        out Vector3 position)
     {
         position = default;
-        if (index < 0 || index >= _currentMaxEnemies || index >= _stateA.Length || _stateA[index].x <= 0f) return false;
+        if (index < 0 || index >= _currentMaxEnemies ||
+            index >= _stateA.Length || _stateA[index].x <= 0f) return false;
         float4 p = _positionsA[index];
-        int visualFlags = (int)math.floor(math.max(_stateA[index].w, 0f) / 10f + 0.0001f);
+        int visualFlags = (int)math.floor(
+            math.max(_stateA[index].w, 0f) / 10f + 0.0001f);
         if (p.y > renderHeight + 0.05f || (visualFlags & 4) != 0) return false;
         float dx = p.x - origin.x;
         float dz = p.z - origin.z;
-        float squareRange = math.sqrt(math.max(0f, rangeSq));
-        if (math.max(math.abs(dx), math.abs(dz)) > squareRange) return false;
-        position = new Vector3(p.x, Mathf.Max(renderHeight + 0.8f, p.y + 0.8f), p.z);
+        float targetRange = math.sqrt(math.max(0f, rangeSq));
+        if (_bossSpawned && index == _bossEnemyIndex)
+            targetRange += math.max(0f, p.w);
+        if (dx * dx + dz * dz > targetRange * targetRange) return false;
+        position = new Vector3(p.x,
+            Mathf.Max(renderHeight + 0.8f, p.y + 0.8f), p.z);
         return true;
     }
 
@@ -4552,6 +4565,13 @@ public partial class RougeGameManager
         int configuredJets = Mathf.Max(1, tower.AttackProjectileCount);
         bool focusedFan = tower.UsesFanFlamethrower &&
             tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+        bool focusedBossFlame = _bossSpawned &&
+            tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
+        float focusedBossRangePadding = Mathf.Max(0f, bossBalance.radius);
+        if (focusedBossFlame && _positionsA.IsCreated &&
+            _bossEnemyIndex >= 0 && _bossEnemyIndex < _positionsA.Length)
+            focusedBossRangePadding = Mathf.Max(0f,
+                _positionsA[_bossEnemyIndex].w);
         int emittedJets = focusedFan ? 1 : configuredJets;
         float coneAngle = flame.flamethrowerAngle + (focusedFan
             ? configuredJets * flame.focusedAnglePerProjectile
@@ -4585,6 +4605,9 @@ public partial class RougeGameManager
                 Position = new float2(origin3.x, origin3.z),
                 Direction = direction,
                 Radius = tower.AttackRange,
+                // Boss-first fire needs a larger broadphase. The simulation applies
+                // this padding to the boss body, never to ordinary enemies.
+                Length = focusedBossFlame ? focusedBossRangePadding : 0f,
                 Damage = tower.Damage * Mathf.Max(1, shotCount),
                 AuxA = coneAngle * 0.5f,
                 SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1,

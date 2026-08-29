@@ -203,6 +203,7 @@ public struct RougeTowerTargetRequest
 {
     public float2 Position;
     public float Range;
+    public float BossRangePadding;
     public int TargetCount;
     public int PriorityMode;
 }
@@ -532,13 +533,15 @@ public unsafe struct FindTowerTargetsJob : IJobParallelFor
         float* flowDistancePtr = (float*)FlowDistances.GetUnsafeReadOnlyPtr();
         int* headPtr = (int*)CellHeads.GetUnsafeReadOnlyPtr();
         int* nextPtr = (int*)CellNext.GetUnsafeReadOnlyPtr();
-        float2 extent = new float2(request.Range);
+        bool bossFirst = request.PriorityMode == (int)RougeTowerTargetPriority.BossFirst;
+        float queryRange = request.Range + (bossFirst
+            ? math.max(0f, request.BossRangePadding)
+            : 0f);
+        float2 extent = new float2(queryRange);
         int2 minCell = RougeMortonGridUtility.WorldToGrid(
             request.Position - extent, GridOrigin, InvCellSize, GridDim);
         int2 maxCell = RougeMortonGridUtility.WorldToGrid(
             request.Position + extent, GridOrigin, InvCellSize, GridDim);
-        float rangeSq = request.Range * request.Range;
-        bool bossFirst = request.PriorityMode == (int)RougeTowerTargetPriority.BossFirst;
         int found = 0;
 
         for (int y = minCell.y; y <= maxCell.y; y++)
@@ -549,9 +552,15 @@ public unsafe struct FindTowerTargetsJob : IJobParallelFor
                 for (int enemyIndex = headPtr[cell]; enemyIndex >= 0; enemyIndex = nextPtr[enemyIndex])
                 {
                     if (enemyStatePtr[enemyIndex].x <= 0f) continue;
-                    float distanceSq = math.lengthsq(enemyPositionPtr[enemyIndex].xz - request.Position);
-                    if (distanceSq > rangeSq) continue;
-                    int candidatePriority = bossFirst ? GetTargetPriority(EnemyKinds[enemyIndex]) : 0;
+                    float4 enemyPosition = enemyPositionPtr[enemyIndex];
+                    float distanceSq = math.lengthsq(enemyPosition.xz - request.Position);
+                    byte enemyKind = EnemyKinds[enemyIndex];
+                    bool bossCandidate = bossFirst && (enemyKind & 0x80) != 0;
+                    float candidateRange = request.Range + (bossCandidate
+                        ? math.max(0f, enemyPosition.w)
+                        : 0f);
+                    if (distanceSq > candidateRange * candidateRange) continue;
+                    int candidatePriority = bossFirst ? GetTargetPriority(enemyKind) : 0;
                     float candidateSortDistance = distanceSq;
                     if (!bossFirst)
                     {
@@ -1478,6 +1487,12 @@ public unsafe struct BuildSkillAreaGridJob : IJob
             return;
         }
 
+        // A focused flamethrower can touch a boss before its centre enters the
+        // authored cone length. Length carries that boss-only broadphase padding;
+        // the narrow phase still rejects ordinary enemies outside Radius.
+        if (skill.Type == 22)
+            radius += math.max(skill.Length, 0f);
+
         float2 circleExtent = new float2(radius, radius);
         min = skill.Position - circleExtent;
         max = skill.Position + circleExtent;
@@ -2010,7 +2025,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             break;
                         case 22:
                             ProcessTowerCone(ref health, ref flashTimer, ref vel,
-                                ref tornadoMark, ref effects, pos, skill);
+                                ref tornadoMark, ref effects, pos, skill,
+                                isBoss ? math.max(0f, radius) : 0f);
                             break;
                     }
                     int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
@@ -3065,12 +3081,12 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
     private void ProcessTowerCone(ref float health, ref float flashTimer,
         ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects,
-        float3 pos, RougeSkillArea skill)
+        float3 pos, RougeSkillArea skill, float targetRadius)
     {
         if (math.abs(pos.y - RenderHeight) > 5f) return;
         float2 offset = pos.xz - skill.Position;
         float distanceSq = math.lengthsq(offset);
-        float range = math.max(0f, skill.Radius);
+        float range = math.max(0f, skill.Radius) + math.max(0f, targetRadius);
         if (distanceSq > range * range) return;
         if (distanceSq > 0.0001f)
         {
