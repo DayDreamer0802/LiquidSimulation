@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 2,
+  "protocol": "red-vs-blue.commander/2",
+  "commanderId": "lan",
+  "defaultLocale": "zh-CN",
+  "visuals": {
+    "portraitResourceFolder": "Commanders/lan/Portraits"
+  },
+  "talent": {
+    "costMultiplier": 1
+  },
+  "personality": {
+    "concerns": {
+      "crowd": 1,
+      "elite": 1.05,
+      "boss": 1.12,
+      "urgent": 1.15
+    },
+    "biases": {
+      "save": 1.08,
+      "build": 1,
+      "controlTower": 1.08,
+      "focusedTower": 1.04,
+      "areaTower": 0.98,
+      "defense": 1.14,
+      "specialTile": 1.16,
+      "upgrade": 1.03,
+      "redeploy": 1.1
+    }
+  },
+  "strategy": {
+    "buildOrder": [
+      "MachineGun",
+      "Ice",
+      "Cannon",
+      "Flame",
+      "Laser",
+      "RocketBarrage",
+      "OrbitSphere",
+      "PiercingLaser"
+    ],
+    "openingTowerCount": 3,
+    "expansionIntervalSeconds": 38,
+    "capitalActionIntervalSeconds": 0.65,
+    "emergencyActionIntervalSeconds": 0.24,
+    "strategyHoldSeconds": 2.5,
+    "waveForecastSeconds": 18,
+    "bossPreparationLeadSeconds": 150,
+    "saleCooldownSeconds": 45,
+    "minimumTowerAgeBeforeSaleSeconds": 35,
+    "personalityRegretBudget": 0.08,
+    "bossRegretBudget": 0.035,
+    "maximumPreferenceShift": 0.04,
+    "skills": {
+      "mapReading": 1,
+      "threatReading": 1,
+      "crisisResponse": 1,
+      "adaptation": 1
+    },
+    "thresholds": {
+      "emergencyMainTowerHealthRatio": 0.45,
+      "emergencyUrgentPressureMinimum": 3,
+      "emergencyUrgentPressureFraction": 0.2,
+      "emergencyImminentPressure": 16,
+      "prepareBossProgress": 0.32,
+      "economyMaximumActiveEnemies": 4,
+      "economyMaximumIncomingPressure": 5,
+      "economyMinimumNextWaveSeconds": 6,
+      "economyMinimumMainTowerHealthRatio": 0.78,
+      "highUrgentPressure": 5,
+      "highPeakPressure": 14,
+      "mediumUrgentPressure": 2,
+      "mediumActiveEnemies": 16,
+      "mediumIncomingPressure": 9,
+      "highBossPreparation": 0.72,
+      "mediumBossPreparation": 0.28,
+      "criticalCrisisHealthRatio": 0.35,
+      "lowCrisisHealthRatio": 0.7,
+      "redeployMinimumExtraTowers": 2,
+      "redeployMinimumHealthRatio": 0.72,
+      "redeployMaximumUrgentPressure": 1.5,
+      "redeployMaximumActiveEnemies": 18,
+      "redeployMaximumBossPreparation": 0.18,
+      "immediateDefenseHealthRatio": 0.9,
+      "immediateDefenseUrgentPressure": 1,
+      "immediateDefenseActiveEnemies": 10,
+      "valuableSpecialTileScore": 105,
+      "coverageUrgentPressure": 2,
+      "coverageActiveEnemies": 12,
+      "coverageHealthRatio": 0.7
+    },
+    "modePriorities": {
+      "opening": 4,
+      "economy": 1,
+      "hold": 2,
+      "prepareBoss": 3,
+      "bossFight": 5,
+      "emergency": 6
+    }
+  },
+  "dialogue": {
+    "startingAffinity": 15,
+    "familiarThreshold": 30,
+    "closeThreshold": 70,
+    "intervalMinimumSeconds": 14,
+    "intervalMaximumSeconds": 22,
+    "preemptionCooldownSeconds": 7,
+    "recentHistorySize": 4,
+    "thresholds": {
+      "baseCriticalHealthRatio": 0.25,
+      "baseLowHealthRatio": 0.5,
+      "urgentPressureMinimum": 2,
+      "urgentPressureFraction": 0.18,
+      "hardConcernMinimum": 2,
+      "hardVersusCrowdFactor": 0.42,
+      "crowdEnemyCount": 8,
+      "crowdConcernMinimum": 6,
+      "flowObservationWindowSeconds": 8,
+      "lowKillSpawnRatio": 0.8,
+      "nearBaseDistanceCells": 3,
+      "nearBaseSustainSeconds": 1.5,
+      "economyObservationWindowSeconds": 30,
+      "lowIncomeSpendRatio": 0.75
+    },
+    "triggers": {
+      "lateFirstTakeoverMinutes": [
+        3,
+        6,
+        9,
+        12
+      ],
+      "mainTowerBurstWindowSeconds": 4,
+      "mainTowerBurstHealthLossPercent": 10,
+      "mainTowerHitDialogueChance": 0.3,
+      "mainTowerHitDialogueCooldownSeconds": 8,
+      "mainTowerBurstDialogueCooldownSeconds": 12,
+      "towerBuildDialogueChance": 0.3,
+      "towerBuildDialogueCooldownSeconds": 28,
+      "towerUpgradeDialogueChance": 0.28,
+      "towerUpgradeDialogueCooldownSeconds": 32,
+      "pressureReliefMinimumHighSeconds": 6,
+      "pressureReliefConfirmLowSeconds": 2,
+      "pressureReliefDialogueCooldownSeconds": 30,
+      "bossHealthWarningRatio": 0.5,
+      "bossHealthCriticalRatio": 0.25,
+      "portraitClickDialogueCooldownSeconds": 0.35,
+      "portraitRapidClickCount": 5,
+      "portraitRapidClickWindowSeconds": 2,
+      "portraitRapidClickDialogueCooldownSeconds": 1.5
+    },
+    "emotions": {
+      "focusedTensionThreshold": 0.3,
+      "tenseTensionThreshold": 0.58,
+      "criticalTensionThreshold": 0.82,
+      "transitionConfirmSeconds": 2,
+      "transitionDialogueCooldownSeconds": 8,
+      "calmIntervalMultiplier": 1.12,
+      "focusedIntervalMultiplier": 1.03,
+      "tenseIntervalMultiplier": 0.94,
+      "criticalIntervalMultiplier": 0.86
+    },
+    "sets": [
+      {
+        "category": "TakeoverFirst",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverQuickReturn",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverFrequentToggle",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverReturn",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverHighPressure",
+        "priority": 10,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverLateTier1",
+        "priority": 2,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverLateTier2",
+        "priority": 3,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverLateTier3",
+        "priority": 4,
+        "battleState": false
+      },
+      {
+        "category": "TakeoverLateTier4",
+        "priority": 5,
+        "battleState": false
+      },
+      {
+        "category": "ReleaseFirst",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "Calm",
+        "priority": 1,
+        "battleState": true
+      },
+      {
+        "category": "Crowd",
+        "priority": 5,
+        "battleState": true
+      },
+      {
+        "category": "Hard",
+        "priority": 6,
+        "battleState": true
+      },
+      {
+        "category": "BossArrival",
+        "priority": 11,
+        "battleState": true
+      },
+      {
+        "category": "Boss",
+        "priority": 8,
+        "battleState": true
+      },
+      {
+        "category": "BossHealthHalf",
+        "priority": 8,
+        "battleState": false
+      },
+      {
+        "category": "BossHealthQuarter",
+        "priority": 10,
+        "battleState": false
+      },
+      {
+        "category": "Urgent",
+        "priority": 7,
+        "battleState": true
+      },
+      {
+        "category": "BaseLow",
+        "priority": 9,
+        "battleState": true
+      },
+      {
+        "category": "BaseCritical",
+        "priority": 10,
+        "battleState": true
+      },
+      {
+        "category": "BaseFirstDamage",
+        "priority": 6,
+        "battleState": false
+      },
+      {
+        "category": "BaseDamaged",
+        "priority": 7,
+        "battleState": false
+      },
+      {
+        "category": "BaseBurstDamage",
+        "priority": 12,
+        "battleState": false
+      },
+      {
+        "category": "BuildTower",
+        "priority": 2,
+        "battleState": false
+      },
+      {
+        "category": "UpgradeTower",
+        "priority": 2,
+        "battleState": false
+      },
+      {
+        "category": "PressureRelieved",
+        "priority": 6,
+        "battleState": false
+      },
+      {
+        "category": "EmotionToCalm",
+        "priority": 1,
+        "battleState": false
+      },
+      {
+        "category": "EmotionToFocused",
+        "priority": 3,
+        "battleState": false
+      },
+      {
+        "category": "EmotionToTense",
+        "priority": 6,
+        "battleState": false
+      },
+      {
+        "category": "EmotionToCritical",
+        "priority": 11,
+        "battleState": false
+      },
+      {
+        "category": "PortraitClickCalm",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitClickFocused",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitClickTense",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitClickCritical",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitRapidClickCalm",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitRapidClickFocused",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitRapidClickTense",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "PortraitRapidClickCritical",
+        "priority": 20,
+        "battleState": false
+      },
+      {
+        "category": "Saving",
+        "priority": 4,
+        "battleState": false
+      },
+      {
+        "category": "GreatTile",
+        "priority": 3,
+        "battleState": false
+      },
+      {
+        "category": "Branch",
+        "priority": 3,
+        "battleState": false
+      },
+      {
+        "category": "Discount",
+        "priority": 2,
+        "battleState": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,334 @@
+// 《Red vs Blue》指挥官包注释模板。
+// JSONC 可以写注释；游戏读取的正式 .json 绝对不能含注释。
+// 本文件最外层只是为了同时展示两个独立文件。不要导入或输出这个包装对象：
+//   1) 把 "commander.json" 的值单独保存为 <id>/commander.json；
+//   2) 把 "Locales/zh-CN.json" 的值单独保存为 <id>/Locales/zh-CN.json。
+// 两个正式对象都必须保留所有字段、删除所有 // 注释、使用 UTF-8 严格 JSON。
+{
+  "commander.json": {
+    // core v2：只放语言无关、能被现有决策器读取的有限逻辑参数。
+    "schemaVersion": 2,
+    "protocol": "red-vs-blue.commander/2",
+    // 目录名、两份 JSON 的 commanderId 必须完全一致；1–48 位 [a-z0-9_-]。
+    "commanderId": "example_commander",
+    // 留空 locale override 时加载此文件名：Locales/zh-CN.json。
+    "defaultLocale": "zh-CN",
+    "visuals": {
+      // 只能留空（用岚默认立绘），或精确写 Commanders/<commanderId>/Portraits。
+      // 非空时基础文件固定命名 Portraits/base_calm.png；缺失仍回退岚。
+      // 可选变体按约定命名：base_<emotion>、click_<emotion>、rapid_click_<emotion>、defeat。
+      // 变体必须与 base_calm 同尺寸、同位置、同透明轮廓；不在 JSON 中声明文件名。
+      "portraitResourceFolder": "Commanders/example_commander/Portraits"
+    },
+    "talent": {
+      // 引擎权威：任何有限输入都会强制回 1；请直接写 1。
+      "costMultiplier": 1
+    },
+    "personality": {
+      // concerns：0.75–1.35，1 中性；有限越界会收敛。
+      "concerns": {
+        "crowd": 1.02,
+        "elite": 1.08,
+        "boss": 1.12,
+        "urgent": 1.15
+      },
+      // biases：0.75–1.25，1 中性；是偏好而不是强制动作/脚本。
+      "biases": {
+        "save": 1.06,
+        "build": 1,
+        "controlTower": 1.08,
+        "focusedTower": 1.04,
+        "areaTower": 1,
+        "defense": 1.12,
+        "specialTile": 1.14,
+        "upgrade": 1.03,
+        "redeploy": 1.08
+      }
+    },
+    "strategy": {
+      // 只能使用八种标准塔的非空、无重复子集；建议保持标准大小写。
+      "buildOrder": [
+        "MachineGun",
+        "Ice",
+        "Cannon",
+        "Flame",
+        "Laser",
+        "RocketBarrage",
+        "OrbitSphere",
+        "PiercingLaser"
+      ],
+      "openingTowerCount": 3,
+      "expansionIntervalSeconds": 38,
+      // 以下两个动作间隔是引擎权威值，不是可塑造角色的参数。
+      "capitalActionIntervalSeconds": 0.65,
+      "emergencyActionIntervalSeconds": 0.24,
+      "strategyHoldSeconds": 2.5,
+      "waveForecastSeconds": 18,
+      "bossPreparationLeadSeconds": 150,
+      "saleCooldownSeconds": 45,
+      "minimumTowerAgeBeforeSaleSeconds": 35,
+      "personalityRegretBudget": 0.08,
+      // 必须不高于 personalityRegretBudget；有限越界会向该上限收敛。
+      "bossRegretBudget": 0.035,
+      "maximumPreferenceShift": 0.04,
+      // 四项 0–1；不改变单位属性，只影响现有信息利用逻辑。
+      "skills": {
+        "mapReading": 1,
+        "threatReading": 1,
+        "crisisResponse": 1,
+        "adaptation": 1
+      },
+      // 每个阈值的精确范围和语义见 CommanderConfigSpec.zh-CN.md。
+      "thresholds": {
+        "emergencyMainTowerHealthRatio": 0.45,
+        "emergencyUrgentPressureMinimum": 3,
+        "emergencyUrgentPressureFraction": 0.2,
+        "emergencyImminentPressure": 16,
+        "prepareBossProgress": 0.32,
+        "economyMaximumActiveEnemies": 4,
+        "economyMaximumIncomingPressure": 5,
+        "economyMinimumNextWaveSeconds": 6,
+        "economyMinimumMainTowerHealthRatio": 0.78,
+        "highUrgentPressure": 5,
+        "highPeakPressure": 14,
+        "mediumUrgentPressure": 2,
+        "mediumActiveEnemies": 16,
+        "mediumIncomingPressure": 9,
+        "highBossPreparation": 0.72,
+        "mediumBossPreparation": 0.28,
+        "criticalCrisisHealthRatio": 0.35,
+        "lowCrisisHealthRatio": 0.7,
+        "redeployMinimumExtraTowers": 2,
+        "redeployMinimumHealthRatio": 0.72,
+        "redeployMaximumUrgentPressure": 1.5,
+        "redeployMaximumActiveEnemies": 18,
+        "redeployMaximumBossPreparation": 0.18,
+        "immediateDefenseHealthRatio": 0.9,
+        "immediateDefenseUrgentPressure": 1,
+        "immediateDefenseActiveEnemies": 10,
+        "valuableSpecialTileScore": 105,
+        "coverageUrgentPressure": 2,
+        "coverageActiveEnemies": 12,
+        "coverageHealthRatio": 0.7
+      },
+      // 最终会规范化成 1..6 的唯一排列；数字越大越能抢占。
+      "modePriorities": {
+        "opening": 4,
+        "economy": 1,
+        "hold": 2,
+        "prepareBoss": 3,
+        "bossFight": 5,
+        "emergency": 6
+      }
+    },
+    "dialogue": {
+      // 好感数值选 distant / familiar / close 三档文本，不影响战术强度。
+      "startingAffinity": 15,
+      "familiarThreshold": 30,
+      "closeThreshold": 70,
+      "intervalMinimumSeconds": 14,
+      "intervalMaximumSeconds": 22,
+      "preemptionCooldownSeconds": 7,
+      "recentHistorySize": 4,
+      "thresholds": {
+        "baseCriticalHealthRatio": 0.25,
+        "baseLowHealthRatio": 0.5,
+        "urgentPressureMinimum": 2,
+        "urgentPressureFraction": 0.18,
+        "hardConcernMinimum": 2,
+        "hardVersusCrowdFactor": 0.42,
+        "crowdEnemyCount": 8,
+        "crowdConcernMinimum": 6,
+        // 隐藏压力传感器：不直接显示给玩家。
+        "flowObservationWindowSeconds": 8,
+        "lowKillSpawnRatio": 0.8,
+        // 此距离内为满危机；随后到固定 8 格边界之间线性衰减。
+        "nearBaseDistanceCells": 3,
+        "nearBaseSustainSeconds": 1.5,
+        "economyObservationWindowSeconds": 30,
+        "lowIncomeSpendRatio": 0.75
+      },
+      "triggers": {
+        // 必须恰好四项；最终 >=1、<=1440 且严格递增。
+        "lateFirstTakeoverMinutes": [3, 6, 9, 12],
+        "mainTowerBurstWindowSeconds": 4,
+        "mainTowerBurstHealthLossPercent": 10,
+        "mainTowerHitDialogueChance": 0.3,
+        "mainTowerHitDialogueCooldownSeconds": 8,
+        "mainTowerBurstDialogueCooldownSeconds": 12,
+        "towerBuildDialogueChance": 0.3,
+        "towerBuildDialogueCooldownSeconds": 28,
+        "towerUpgradeDialogueChance": 0.28,
+        "towerUpgradeDialogueCooldownSeconds": 32,
+        "pressureReliefMinimumHighSeconds": 6,
+        "pressureReliefConfirmLowSeconds": 2,
+        "pressureReliefDialogueCooldownSeconds": 30,
+        "bossHealthWarningRatio": 0.5,
+        "bossHealthCriticalRatio": 0.25,
+        "portraitClickDialogueCooldownSeconds": 0.35,
+        "portraitRapidClickCount": 5,
+        "portraitRapidClickWindowSeconds": 2,
+        "portraitRapidClickDialogueCooldownSeconds": 1.5
+      },
+      "emotions": {
+        // 张力阈值最终严格递增；情绪只影响表现。
+        "focusedTensionThreshold": 0.3,
+        "tenseTensionThreshold": 0.58,
+        "criticalTensionThreshold": 0.82,
+        "transitionConfirmSeconds": 2,
+        "transitionDialogueCooldownSeconds": 8,
+        // Calm → Critical 最终非递增；越紧张普通对白间隔可略短。
+        "calmIntervalMultiplier": 1.12,
+        "focusedIntervalMultiplier": 1.03,
+        "tenseIntervalMultiplier": 0.94,
+        "criticalIntervalMultiplier": 0.86
+      },
+      // 42 条规则必须各出现一次。category 也是与 locale 文本集关联的键；
+      // 当前协议没有另一个 textSetId 字段。priority 只控制对白抢占。
+      "sets": [
+        { "category": "TakeoverFirst", "priority": 1, "battleState": false },
+        { "category": "TakeoverQuickReturn", "priority": 1, "battleState": false },
+        { "category": "TakeoverFrequentToggle", "priority": 1, "battleState": false },
+        { "category": "TakeoverReturn", "priority": 1, "battleState": false },
+        { "category": "TakeoverHighPressure", "priority": 10, "battleState": false },
+        { "category": "TakeoverLateTier1", "priority": 2, "battleState": false },
+        { "category": "TakeoverLateTier2", "priority": 3, "battleState": false },
+        { "category": "TakeoverLateTier3", "priority": 4, "battleState": false },
+        { "category": "TakeoverLateTier4", "priority": 5, "battleState": false },
+        { "category": "ReleaseFirst", "priority": 1, "battleState": false },
+        { "category": "Calm", "priority": 1, "battleState": true },
+        { "category": "Crowd", "priority": 5, "battleState": true },
+        { "category": "Hard", "priority": 6, "battleState": true },
+        { "category": "BossArrival", "priority": 11, "battleState": true },
+        { "category": "Boss", "priority": 8, "battleState": true },
+        { "category": "BossHealthHalf", "priority": 8, "battleState": false },
+        { "category": "BossHealthQuarter", "priority": 10, "battleState": false },
+        { "category": "Urgent", "priority": 7, "battleState": true },
+        { "category": "BaseLow", "priority": 9, "battleState": true },
+        { "category": "BaseCritical", "priority": 10, "battleState": true },
+        { "category": "BaseFirstDamage", "priority": 6, "battleState": false },
+        { "category": "BaseDamaged", "priority": 7, "battleState": false },
+        { "category": "BaseBurstDamage", "priority": 12, "battleState": false },
+        { "category": "BuildTower", "priority": 2, "battleState": false },
+        { "category": "UpgradeTower", "priority": 2, "battleState": false },
+        { "category": "PressureRelieved", "priority": 6, "battleState": false },
+        { "category": "EmotionToCalm", "priority": 1, "battleState": false },
+        { "category": "EmotionToFocused", "priority": 3, "battleState": false },
+        { "category": "EmotionToTense", "priority": 6, "battleState": false },
+        { "category": "EmotionToCritical", "priority": 11, "battleState": false },
+        { "category": "PortraitClickCalm", "priority": 20, "battleState": false },
+        { "category": "PortraitClickFocused", "priority": 20, "battleState": false },
+        { "category": "PortraitClickTense", "priority": 20, "battleState": false },
+        { "category": "PortraitClickCritical", "priority": 20, "battleState": false },
+        { "category": "PortraitRapidClickCalm", "priority": 20, "battleState": false },
+        { "category": "PortraitRapidClickFocused", "priority": 20, "battleState": false },
+        { "category": "PortraitRapidClickTense", "priority": 20, "battleState": false },
+        { "category": "PortraitRapidClickCritical", "priority": 20, "battleState": false },
+        { "category": "Saving", "priority": 4, "battleState": false },
+        { "category": "GreatTile", "priority": 3, "battleState": false },
+        { "category": "Branch", "priority": 3, "battleState": false },
+        { "category": "Discount", "priority": 2, "battleState": false }
+      ]
+    }
+  },
+
+  "Locales/zh-CN.json": {
+    // locale v1：可翻译的身份、说明、模式名、对白和失败文本。
+    "schemaVersion": 1,
+    "protocol": "red-vs-blue.commander-locale/1",
+    "commanderId": "example_commander",
+    // 必须与文件名 zh-CN.json 对应。
+    "locale": "zh-CN",
+    "identity": {
+      "displayName": "澄",
+      "role": "本地防线分析指挥官",
+      "personaLabel": "沉着 · 敏锐 · 认真",
+      "background": "澄驻留在本地防线系统中，擅长从路线、敌压与预算中寻找稳妥解法。她把每一次托管视为与玩家共同守住阵地的约定。",
+      "speakingStyle": "语句简洁，先说结论再说明风险。生疏时克制礼貌，熟悉后自然协作，亲近时会温和地调侃玩家。",
+      "personalityTraits": ["沉着", "敏锐", "负责", "温和"]
+    },
+    "talent": {
+      "name": "标准权限",
+      "description": "建造、升级、出售与塔属性遵守玩家规则，不获得额外资源或数值加成。"
+    },
+    "personality": {
+      // 这些是供 UI 和作者理解的描述，不会被当成代码执行。
+      "thinkingStyle": "先确认主塔安全、近端压力和预算，再比较建造、升级、储蓄与换防。平稳时保留余量，高压时优先补足最短板。",
+      "decisionPrinciples": [
+        "主塔安全优先于远端收益。",
+        "先读取地图与敌压，再决定资本动作。",
+        "只在客观损失可控时表达个人偏好。"
+      ]
+    },
+    "strategy": {
+      // 仅改变 HUD 显示名，不创建新模式。
+      "modeLabels": {
+        "opening": "展开阵地",
+        "economy": "蓄势",
+        "hold": "稳线",
+        "prepareBoss": "备战首领",
+        "bossFight": "攻坚首领",
+        "emergency": "紧急守家"
+      }
+    },
+    "dialogue": {
+      "distantLabel": "生疏",
+      "familiarLabel": "熟悉",
+      "closeLabel": "亲近",
+      // 42 个文本集必须与 core 的 category 一对一对应。
+      // 每档 1–64 条、每条 <=180 字符；三档不能只是同一批句子的重排。
+      "sets": [
+        { "category": "TakeoverFirst", "distant": ["收到，我先读取战场。"], "familiar": ["收到，我来接手防线。"], "close": ["交给我吧，你先喘口气。"] },
+        { "category": "TakeoverQuickReturn", "distant": ["已重新接收控制权。"], "familiar": ["这么快就回来啦？继续吧。"], "close": ["才几秒就想我了？我接着。"] },
+        { "category": "TakeoverFrequentToggle", "distant": ["频繁换手会打断节奏。"], "familiar": ["切得有点勤，让我先接稳。"], "close": ["别再和我抢控制权啦。"] },
+        { "category": "TakeoverReturn", "distant": ["我会从现有阵型继续。"], "familiar": ["我回来啦，先看看你留下的塔。"], "close": ["总算又轮到我了。"] },
+        { "category": "TakeoverHighPressure", "distant": ["当前高压，我先守近端。"], "familiar": ["这波很重，我先接住。"], "close": ["别慌，我替你按住家门口。"] },
+        { "category": "TakeoverLateTier1", "distant": ["战局已展开，我先核对塔位。"], "familiar": ["我从现在的阵型接着走。"], "close": ["打了一会儿才想起我呀。"] },
+        { "category": "TakeoverLateTier2", "distant": ["历史投入较多，我会谨慎调整。"], "familiar": ["越到后面越不能乱花钱。"], "close": ["后半段交给我吧。"] },
+        { "category": "TakeoverLateTier3", "distant": ["我先执行生存检查。"], "familiar": ["这么晚才叫我，先看主塔。"], "close": ["你已经扛很久了，让我来。"] },
+        { "category": "TakeoverLateTier4", "distant": ["当前以主塔存续为最高目标。"], "familiar": ["走了这么远，我们稳住。"], "close": ["最后这段我们一起守。"] },
+        { "category": "ReleaseFirst", "distant": ["指挥权已归还。"], "familiar": ["交回给你，有需要再叫我。"], "close": ["别逞强，忙不过来就叫我。"] },
+        { "category": "Calm", "distant": ["当前压力不高，先观察。"], "familiar": ["这波稳得住，钱先留着。"], "close": ["难得安静，我陪你等会儿。"] },
+        { "category": "Crowd", "distant": ["怪群密集，需要范围火力。"], "familiar": ["它们挤在一起，正好清群。"], "close": ["排这么整齐，是等我们开炮吗？"] },
+        { "category": "Hard", "distant": ["硬目标出现，需要针对火力。"], "familiar": ["这块硬骨头交给单体火力。"], "close": ["它挺能扛，我给它找个疼的。"] },
+        { "category": "BossArrival", "distant": ["首领出现，开始调整火力。"], "familiar": ["大家伙进场了，我来收拢火力。"], "close": ["好戏开场，陪我盯住它。"] },
+        { "category": "Boss", "distant": ["首领仍在推进，维持攻坚。"], "familiar": ["血条在掉，继续按这个节奏。"], "close": ["它很厚，不过我们有耐心。"] },
+        { "category": "BossHealthHalf", "distant": ["首领生命已降至一半。"], "familiar": ["一半了，继续压住它。"], "close": ["看，它只剩一半啦。"] },
+        { "category": "BossHealthQuarter", "distant": ["首领生命低于四分之一。"], "familiar": ["只剩四分之一，稳稳收掉。"], "close": ["最后一点了，准备看它倒下吧。"] },
+        { "category": "Urgent", "distant": ["近端压力上升，立即补强。"], "familiar": ["有东西到家门口了，我先接住。"], "close": ["敢往家里跑？让我来。"] },
+        { "category": "BaseLow", "distant": ["主塔血线偏低，优先防守。"], "familiar": ["血线不好看，我把防线收回来。"], "close": ["别只看血条，我们还能补回来。"] },
+        { "category": "BaseCritical", "distant": ["主塔濒危，只处理最急目标。"], "familiar": ["不能再漏了，全部守近端。"], "close": ["先看我，我们还没有输。"] },
+        { "category": "BaseFirstDamage", "distant": ["主塔首次受损，复核近端。"], "familiar": ["第一下而已，我马上查缺口。"], "close": ["敢碰我们的主塔？我记住了。"] },
+        { "category": "BaseDamaged", "distant": ["主塔再次受损，继续收拢火力。"], "familiar": ["又挨了一下，近端还要加固。"], "close": ["又碰到主塔了？我生气了。"] },
+        { "category": "BaseBurstDamage", "distant": ["主塔短时间大量失血，全面守近端。"], "familiar": ["这几秒掉得太快，其他计划全停。"], "close": ["血掉得太快了，别慌，先看我。"] },
+        { "category": "BuildTower", "distant": ["新塔已部署。"], "familiar": ["塔放好了，看看能否补住缺口。"], "close": ["新帮手站稳啦。"] },
+        { "category": "UpgradeTower", "distant": ["升级完成。"], "familiar": ["强化好了，它能多扛一点。"], "close": ["看，它现在精神多了。"] },
+        { "category": "PressureRelieved", "distant": ["持续高压已解除。"], "familiar": ["最难的一波过去了。"], "close": ["呼，撑过去啦。"] },
+        { "category": "EmotionToCalm", "distant": ["压力回落，转入低强度观察。"], "familiar": ["安静下来了，我放慢一点。"], "close": ["终于安静啦，陪我歇半口气。"] },
+        { "category": "EmotionToFocused", "distant": ["敌压集中，进入专注状态。"], "familiar": ["该认真一点了。"], "close": ["好，该认真了，跟上我。"] },
+        { "category": "EmotionToTense", "distant": ["压力升高，减少非必要投资。"], "familiar": ["情况开始麻烦，我先收紧节奏。"], "close": ["有点紧张，不过你在就好。"] },
+        { "category": "EmotionToCritical", "distant": ["局势临界，决策服从主塔生存。"], "familiar": ["其他计划全停，先守主塔。"], "close": ["别怕，我还在。"] },
+        { "category": "PortraitClickCalm", "distant": ["我在，有战术需求请下令。"], "familiar": ["点我做什么？现在挺安静。"], "close": ["戳一下就够啦，我不会跑。"] },
+        { "category": "PortraitClickFocused", "distant": ["我正在核对塔位，请稍候。"], "familiar": ["我在算下一步，等我一下。"], "close": ["听见啦，让我先算完。"] },
+        { "category": "PortraitClickTense", "distant": ["当前高压，请不要继续打断。"], "familiar": ["我知道你在叫我，但现在很忙。"], "close": ["别闹，等我先接住这波。"] },
+        { "category": "PortraitClickCritical", "distant": ["临界警报期间请勿干扰。"], "familiar": ["先别点了，主塔很危险。"], "close": ["我会回你，但先陪我守住这里。"] },
+        { "category": "PortraitRapidClickCalm", "distant": ["连续点击已收到，请勿重复。"], "familiar": ["收到收到，我一直都在。"], "close": ["一直戳我，你今天很闲嘛？"] },
+        { "category": "PortraitRapidClickFocused", "distant": ["连续操作正在干扰判断。"], "familiar": ["好啦，先让我把这笔算完。"], "close": ["再戳下去思路要散啦。"] },
+        { "category": "PortraitRapidClickTense", "distant": ["请立即停止连续干扰。"], "familiar": ["这波正在压上来，先停一下。"], "close": ["听话，等安全了再闹。"] },
+        { "category": "PortraitRapidClickCritical", "distant": ["停止连续点击，主塔处于临界状态。"], "familiar": ["够了，先看主塔。"], "close": ["我没有不理你，我怕守不住这里。"] },
+        { "category": "Saving", "distant": ["还差一点金币，我会等待。"], "familiar": ["再等几个击杀就够了。"], "close": ["再等我几秒嘛，这笔值得。"] },
+        { "category": "GreatTile", "distant": ["强化格与塔型匹配。"], "familiar": ["好位置放对塔了。"], "close": ["这格放得漂亮吧？"] },
+        { "category": "Branch", "distant": ["升级分支已确定。"], "familiar": ["路线选好了，正合当前战场。"], "close": ["相信我，这条现在更合适。"] },
+        { "category": "Discount", "distant": ["实际成本更低，预算仍有余量。"], "familiar": ["省下来一点，下一座塔用得上。"], "close": ["看，我又替你护住钱包啦。"] }
+      ]
+    },
+    "outcomes": {
+      "defeat": {
+        // 只有失败对白允许用 \n / \r\n；三档仍必须真正不同。
+        "distant": ["主塔失去响应。链接正在断开。"],
+        "familiar": ["没能守住……抱歉。\n战斗记录已经保存。"],
+        "close": ["别回头。\n让我陪你守到链接的最后一秒。"]
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Collections;
@@ -535,16 +536,38 @@ public partial class RougeGameManager : MonoBehaviour
     private float[] _shockwaveRingTimers = new float[ShockwaveRingCount];
     private GameObject[] _shockwaveRingVisuals = new GameObject[ShockwaveRingCount];
     private Material _shockwaveRingMat;
+    private Coroutine _commanderInitializationRoutine;
 
     private void OnEnable()
     {
         if (!Application.isPlaying) return;
-        Initialize();
+        RougeTowerDefenseMapLoader loader = RougeTowerDefenseMapLoader.Active;
+        if (loader != null && loader.CommanderSelectionPending)
+            _commanderInitializationRoutine = StartCoroutine(
+                InitializeAfterCommanderSelection(loader));
+        else
+            Initialize();
     }
 
     private void OnDisable()
     {
+        if (_commanderInitializationRoutine != null)
+        {
+            StopCoroutine(_commanderInitializationRoutine);
+            _commanderInitializationRoutine = null;
+        }
         if (_initialized) Dispose();
+    }
+
+    private IEnumerator InitializeAfterCommanderSelection(
+        RougeTowerDefenseMapLoader loader)
+    {
+        while (isActiveAndEnabled && loader != null &&
+               loader.CommanderSelectionPending)
+            yield return null;
+
+        _commanderInitializationRoutine = null;
+        if (isActiveAndEnabled) Initialize();
     }
 
     private void OnValidate()

@@ -1,0 +1,172 @@
+{
+  "formatVersion": 1,
+  "documentType": "commander_ai_level_reference",
+  "language": "zh-CN",
+  "referenceOnly": true,
+  "source": {
+    "levelAsset": "Assets/Level0.asset",
+    "tilePalette": "Assets/Resources/Config/TowerDefenseTilePalette.asset",
+    "balance": "Assets/Resources/Config/tower_defense_balance.json",
+    "mainTowerDefaults": "Assets/Rouge/RougeMainTower.cs"
+  },
+  "authorityNote": "这是默认关卡的 AI 阅读版快照，不参与运行时加载，也不做一致性检测。实际游玩始终以当前关卡资源和游戏配置为准。",
+  "fieldGuide": {
+    "cell": "零开始的地图坐标 [x,y]。",
+    "tileRowsY0ToY16": "每行对应固定 y，行内从 x=0 到 x=16；数值是共享地块调色板索引，不是特殊效果 ID。",
+    "spawnCount": "该生成点每轮同时生成的敌人数。",
+    "spawnIntervalSeconds": "两轮生成之间的基础秒数，会受生成速率倍率影响。",
+    "startDelaySeconds": "开局到该生成点第一轮的延迟。",
+    "limitWaveCount": "为 false 时持续生成；为 true 时最多生成 maximumWaves 轮。",
+    "durationSeconds": "关卡事件持续时间；-1 表示倍率永久或立即效果只执行一次。",
+    "candidateEventIds": "触发时从候选事件中随机选一个；只有一个候选时固定触发。"
+  },
+  "level": {
+    "id": "Level0",
+    "grid": {
+      "width": 17,
+      "height": 17,
+      "cellSize": 8,
+      "origin": [-68, -68],
+      "indexFormula": "tileIndex = y * width + x",
+      "usedTileDefinitions": [
+        { "paletteIndex": 1, "name": "Ground", "blocksNavigation": false, "towerPlace": false, "towerPlaceEffectId": 0 },
+        { "paletteIndex": 3, "name": "Tower Place", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 0 },
+        { "paletteIndex": 4, "name": "Dmg+3 / Rng-2", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 1 },
+        { "paletteIndex": 5, "name": "Rng+3 / Dmg-1 / Spd-1", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 2 },
+        { "paletteIndex": 6, "name": "Spd+3 / Rng-2", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 3 },
+        { "paletteIndex": 9, "name": "killCoin+50%", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 6 },
+        { "paletteIndex": 11, "name": "ChangePos", "blocksNavigation": false, "towerPlace": true, "towerPlaceEffectId": 8 }
+      ],
+      "tileRowsY0ToY16": [
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 9, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 9, 9, 1, 1],
+        [1, 1, 9, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 9, 1, 1],
+        [1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1],
+        [1, 1, 3, 1, 1, 6, 3, 1, 1, 1, 3, 6, 1, 1, 3, 1, 1],
+        [1, 1, 3, 1, 1, 3, 1, 1, 1, 1, 1, 3, 1, 1, 3, 1, 1],
+        [3, 1, 1, 1, 3, 1, 1, 4, 3, 4, 1, 1, 3, 1, 1, 1, 3],
+        [11, 1, 1, 1, 5, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1, 1, 11],
+        [3, 1, 1, 1, 3, 1, 1, 4, 3, 4, 1, 1, 3, 1, 1, 1, 3],
+        [1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 3, 1, 1, 3, 1, 1],
+        [1, 1, 3, 1, 1, 6, 3, 1, 1, 1, 3, 6, 1, 1, 3, 1, 1],
+        [1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1],
+        [1, 1, 9, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 9, 1, 1],
+        [1, 1, 9, 9, 3, 3, 3, 3, 3, 3, 3, 3, 3, 9, 9, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      ]
+    },
+    "mainTower": {
+      "enabled": true,
+      "cell": [8, 8],
+      "maxHealth": 1500,
+      "contactRadius": 3.2,
+      "damagePerRegularEnemyContact": 18,
+      "contactCounterAoe": { "radius": 9, "damage": 22, "knockback": 38, "cooldownSeconds": 0.35 },
+      "bossContactRule": "Boss 抵达主塔时直接失败。"
+    },
+    "levelRules": {
+      "startingGold": 2500,
+      "disabledTowerTypeIds": [],
+      "enemyHealthMultiplier": 1,
+      "enemyMoveSpeedMultiplier": 1,
+      "eliteSpawnDelaySeconds": 180,
+      "towerGoldCostMultiplier": 1,
+      "towerDamageMultiplier": 1,
+      "towerAttackSpeedMultiplier": 1
+    },
+    "victoryConditions": [
+      { "typeId": 0, "typeName": "KillBoss", "targetAmount": 1, "targetSeconds": 300 }
+    ],
+    "boss": {
+      "spawnCell": [8, 16],
+      "encounters": [
+        { "bossId": 0, "displayName": "Overlord", "spawnMinute": 12, "defeatGrantsVictory": true }
+      ],
+      "resolvedBalance": {
+        "maxHealth": 800000,
+        "armor": 5,
+        "moveSpeed": 3.5,
+        "maximumSlowPercent": 20,
+        "targetArrivalTimeSeconds": 1080,
+        "interferenceRadius": 20,
+        "interferenceAttackSpeedBuffLevel": -2,
+        "shieldRadius": 30,
+        "shieldDamageMultiplier": 0.5,
+        "hasteSpeedMultiplier": 1.25
+      }
+    },
+    "enemyTypeGuide": [
+      { "id": 0, "enumName": "Standard", "displayName": "普通", "baseHealth": 30, "armor": 0, "baseSpeed": 4, "killGold": 3 },
+      { "id": 1, "enumName": "Swift", "displayName": "迅捷", "baseHealth": 20, "armor": 1, "baseSpeed": 5.5, "killGold": 2 },
+      { "id": 2, "enumName": "Heavy", "displayName": "重装", "baseHealth": 50, "armor": 5, "baseSpeed": 2.5, "killGold": 2 }
+    ],
+    "enemyGrowth": {
+      "growthIntervalSeconds": 12,
+      "healthGrowthMultiplierPerInterval": 1.1,
+      "speedGrowthMultiplierPerInterval": 1.01,
+      "eliteHealthMultiplier": 20,
+      "eliteSpeedMultiplier": 1.33,
+      "eliteSizeMultiplier": 2,
+      "levelCurveSummary": {
+        "healthMultiplier": "等级 1 约为 1，等级 100 为 10",
+        "speedMultiplier": "等级 1 约为 1，等级 100 为 2",
+        "spawnSpeedMultiplier": "等级 1 约为 1，等级 100 为 4",
+        "eliteChancePermille": "等级 1 为 1‰，等级 100 为 10‰"
+      }
+    },
+    "enemySpawns": [
+      { "cell": [8, 15], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 10, "startDelaySeconds": 3, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [5, 15], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 15, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [11, 15], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 30, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [8, 1], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 10, "startDelaySeconds": 90, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [5, 1], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 10, "startDelaySeconds": 105, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [11, 1], "enemyTypeId": 0, "spawnCount": 32, "spawnIntervalSeconds": 10, "startDelaySeconds": 120, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [0, 16], "enemyTypeId": 1, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 150, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [16, 0], "enemyTypeId": 1, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 180, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [14, 15], "enemyTypeId": 1, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 240, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [2, 1], "enemyTypeId": 1, "spawnCount": 32, "spawnIntervalSeconds": 15, "startDelaySeconds": 270, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [1, 14], "enemyTypeId": 2, "spawnCount": 16, "spawnIntervalSeconds": 20, "startDelaySeconds": 300, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [15, 2], "enemyTypeId": 2, "spawnCount": 16, "spawnIntervalSeconds": 20, "startDelaySeconds": 310, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [15, 14], "enemyTypeId": 2, "spawnCount": 16, "spawnIntervalSeconds": 10, "startDelaySeconds": 320, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [1, 2], "enemyTypeId": 2, "spawnCount": 16, "spawnIntervalSeconds": 10, "startDelaySeconds": 330, "limitWaveCount": false, "maximumWaves": 1 },
+      { "cell": [2, 15], "enemyTypeId": 0, "spawnCount": 64, "spawnIntervalSeconds": 0.1, "startDelaySeconds": 480, "limitWaveCount": true, "maximumWaves": 100 },
+      { "cell": [14, 1], "enemyTypeId": 0, "spawnCount": 64, "spawnIntervalSeconds": 0.1, "startDelaySeconds": 480, "limitWaveCount": true, "maximumWaves": 100 }
+    ],
+    "levelEventDefinitions": [
+      { "eventId": "elite_unlock", "title": "精英信号", "toneId": 0, "durationSeconds": -1, "effects": [{ "typeId": 0, "typeName": "UnlockEliteSpawns", "value": 1 }] },
+      { "eventId": "elite_surge", "title": "精英潮汐", "toneId": 1, "durationSeconds": 45, "effects": [{ "typeId": 1, "typeName": "EliteChanceMultiplier", "value": 10 }] },
+      { "eventId": "rapid_assault", "title": "急袭", "toneId": 1, "durationSeconds": 30, "effects": [{ "typeId": 2, "typeName": "EnemySpawnRateMultiplier", "value": 3 }] },
+      { "eventId": "bounty_protocol", "title": "悬赏协议", "toneId": 2, "durationSeconds": 40, "effects": [{ "typeId": 3, "typeName": "KillGoldMultiplier", "value": 1.5 }] },
+      { "eventId": "hardened_front", "title": "装甲锋线", "toneId": 1, "durationSeconds": 45, "effects": [{ "typeId": 4, "typeName": "EnemyHealthMultiplier", "value": 1.5 }] },
+      { "eventId": "acceleration_field", "title": "加速力场", "toneId": 1, "durationSeconds": 35, "effects": [{ "typeId": 5, "typeName": "EnemyMoveSpeedMultiplier", "value": 1.35 }] },
+      { "eventId": "elite_mutation", "title": "精英变异", "toneId": 1, "durationSeconds": 45, "effects": [{ "typeId": 6, "typeName": "EliteHealthMultiplier", "value": 1.75 }] },
+      { "eventId": "elite_haste", "title": "猎杀步调", "toneId": 1, "durationSeconds": 40, "effects": [{ "typeId": 7, "typeName": "EliteMoveSpeedMultiplier", "value": 1.4 }] },
+      { "eventId": "high_energy", "title": "火控增幅", "toneId": 2, "durationSeconds": 35, "effects": [{ "typeId": 8, "typeName": "TowerDamageMultiplier", "value": 1.3 }] },
+      { "eventId": "overclock", "title": "全域超频", "toneId": 2, "durationSeconds": 35, "effects": [{ "typeId": 9, "typeName": "TowerAttackSpeedMultiplier", "value": 1.35 }] },
+      { "eventId": "supply_drop", "title": "紧急补给", "toneId": 2, "durationSeconds": -1, "effects": [{ "typeId": 10, "typeName": "GrantGold", "value": 750 }] },
+      { "eventId": "emergency_repair", "title": "应急修复", "toneId": 2, "durationSeconds": -1, "effects": [{ "typeId": 12, "typeName": "RepairMainTowerPercent", "value": 0.2 }] },
+      { "eventId": "double_wave", "title": "重叠波次", "toneId": 3, "durationSeconds": -1, "effects": [{ "typeId": 13, "typeName": "TriggerImmediateWave", "value": 1 }] }
+    ],
+    "levelEventTimeline": [
+      { "triggerMinute": 3, "candidateEventIds": ["elite_unlock"] },
+      { "triggerMinute": 4.5, "candidateEventIds": ["rapid_assault", "bounty_protocol", "supply_drop"] },
+      { "triggerMinute": 7, "candidateEventIds": ["elite_surge", "hardened_front", "overclock"] },
+      { "triggerMinute": 10, "candidateEventIds": ["elite_mutation", "high_energy", "double_wave", "bounty_protocol"] },
+      { "triggerMinute": 15, "candidateEventIds": ["acceleration_field", "elite_haste", "emergency_repair", "rapid_assault"] }
+    ],
+    "camera": {
+      "boundsCenter": [0, 0],
+      "boundsSize": [100, 100],
+      "minimumZoom": 0.5,
+      "maximumZoom": 1.5,
+      "presets": {
+        "default": { "position": [0, 95, -92], "eulerAngles": [60, 0, 0], "fieldOfView": 60 },
+        "free": { "position": [0, 65, -80], "eulerAngles": [60, 0, 0], "fieldOfView": 75 },
+        "tiltShift": { "position": [0, 90, -75], "eulerAngles": [60, 0, 0], "fieldOfView": 60 },
+        "topDown": { "position": [0, 160, -21.5], "eulerAngles": [90, 0, 0], "fieldOfView": 60 }
+      }
+    }
+  }
+}

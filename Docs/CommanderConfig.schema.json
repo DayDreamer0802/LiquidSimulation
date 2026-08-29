@@ -1,0 +1,1078 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:red-vs-blue:commander-package:2",
+  "title": "Red vs Blue Commander Core v2",
+  "description": "The root schema validates commander.json (red-vs-blue.commander/2). Use #/$defs/localeDocument for Locales/<locale>.json (red-vs-blue.commander-locale/1). Runtime validation is authoritative for byte limits, cross-document identity, finite-float conversion, numeric convergence, category uniqueness and three-tier text-set differences.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocol",
+    "commanderId",
+    "defaultLocale",
+    "visuals",
+    "talent",
+    "personality",
+    "strategy",
+    "dialogue"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "protocol": {
+      "type": "string",
+      "const": "red-vs-blue.commander/2"
+    },
+    "commanderId": {
+      "$ref": "#/$defs/commanderId"
+    },
+    "defaultLocale": {
+      "$ref": "#/$defs/localeId"
+    },
+    "visuals": {
+      "$ref": "#/$defs/visuals"
+    },
+    "talent": {
+      "$ref": "#/$defs/coreTalent"
+    },
+    "personality": {
+      "$ref": "#/$defs/corePersonality"
+    },
+    "strategy": {
+      "$ref": "#/$defs/coreStrategy"
+    },
+    "dialogue": {
+      "$ref": "#/$defs/coreDialogue"
+    }
+  },
+  "$defs": {
+    "commanderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 48,
+      "pattern": "^[a-z0-9_-]+$"
+    },
+    "localeId": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 24,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
+    },
+    "safeText": {
+      "type": "string",
+      "pattern": "^(?![\\s\\S]*[<>\\u0000-\\u001F\\u007F-\\u009F])[\\s\\S]*$"
+    },
+    "safeDefeatText": {
+      "type": "string",
+      "pattern": "^(?![\\s\\S]*[<>\\u0000-\\u0009\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F])[\\s\\S]*$"
+    },
+    "finiteRuntimeNumber": {
+      "type": "number",
+      "description": "JSON syntax excludes NaN and Infinity. Runtime also rejects a value that converts to a non-finite float. Finite out-of-range values are normalized as documented."
+    },
+    "normalizedInteger": {
+      "type": "integer",
+      "description": "Finite integer input; runtime clamps or reassigns it according to the containing field."
+    },
+    "visuals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "portraitResourceFolder"
+      ],
+      "properties": {
+        "portraitResourceFolder": {
+          "type": "string",
+          "pattern": "^(?:|Commanders/[a-z0-9_-]{1,48}/Portraits)$",
+          "description": "Must be empty or exactly Commanders/<commanderId>/Portraits. Runtime requires base_calm and optionally resolves convention-named base_<emotion>, click_<emotion>, rapid_click_<emotion>, and defeat portraits. Missing variants fall back to the commander's base_calm, then Lan base_calm."
+        }
+      }
+    },
+    "coreTalent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "costMultiplier"
+      ],
+      "properties": {
+        "costMultiplier": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Engine-authoritative. Every finite input is forced to 1.",
+          "x-runtime-normalization": {
+            "mode": "force",
+            "value": 1
+          }
+        }
+      }
+    },
+    "corePersonality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concerns",
+        "biases"
+      ],
+      "properties": {
+        "concerns": {
+          "$ref": "#/$defs/concerns"
+        },
+        "biases": {
+          "$ref": "#/$defs/biases"
+        }
+      }
+    },
+    "concerns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "crowd",
+        "elite",
+        "boss",
+        "urgent"
+      ],
+      "properties": {
+        "crowd": {
+          "$ref": "#/$defs/concernNumber"
+        },
+        "elite": {
+          "$ref": "#/$defs/concernNumber"
+        },
+        "boss": {
+          "$ref": "#/$defs/concernNumber"
+        },
+        "urgent": {
+          "$ref": "#/$defs/concernNumber"
+        }
+      }
+    },
+    "concernNumber": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": {
+        "mode": "clamp",
+        "minimum": 0.75,
+        "maximum": 1.35
+      }
+    },
+    "biases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "save",
+        "build",
+        "controlTower",
+        "focusedTower",
+        "areaTower",
+        "defense",
+        "specialTile",
+        "upgrade",
+        "redeploy"
+      ],
+      "properties": {
+        "save": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "build": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "controlTower": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "focusedTower": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "areaTower": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "defense": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "specialTile": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "upgrade": {
+          "$ref": "#/$defs/biasNumber"
+        },
+        "redeploy": {
+          "$ref": "#/$defs/biasNumber"
+        }
+      }
+    },
+    "biasNumber": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": {
+        "mode": "clamp",
+        "minimum": 0.75,
+        "maximum": 1.25
+      }
+    },
+    "coreStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildOrder",
+        "openingTowerCount",
+        "expansionIntervalSeconds",
+        "capitalActionIntervalSeconds",
+        "emergencyActionIntervalSeconds",
+        "strategyHoldSeconds",
+        "waveForecastSeconds",
+        "bossPreparationLeadSeconds",
+        "saleCooldownSeconds",
+        "minimumTowerAgeBeforeSaleSeconds",
+        "personalityRegretBudget",
+        "bossRegretBudget",
+        "maximumPreferenceShift",
+        "skills",
+        "thresholds",
+        "modePriorities"
+      ],
+      "properties": {
+        "buildOrder": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "description": "Runtime accepts case-insensitive spellings of the eight exact enum names, then rejects unknown or duplicate resolved tower IDs. Canonical spellings should be used.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z]+$",
+            "x-runtime-enum": [
+              "MachineGun",
+              "Ice",
+              "Cannon",
+              "Flame",
+              "Laser",
+              "RocketBarrage",
+              "OrbitSphere",
+              "PiercingLaser"
+            ]
+          }
+        },
+        "openingTowerCount": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 1,
+            "maximum": 8
+          }
+        },
+        "expansionIntervalSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 5,
+            "maximum": 180
+          }
+        },
+        "capitalActionIntervalSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "force",
+            "value": 0.65
+          }
+        },
+        "emergencyActionIntervalSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "force",
+            "value": 0.24
+          }
+        },
+        "strategyHoldSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 0,
+            "maximum": 30
+          }
+        },
+        "waveForecastSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 1,
+            "maximum": 120
+          }
+        },
+        "bossPreparationLeadSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 5,
+            "maximum": 600
+          }
+        },
+        "saleCooldownSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 0,
+            "maximum": 300
+          }
+        },
+        "minimumTowerAgeBeforeSaleSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 0,
+            "maximum": 300
+          }
+        },
+        "personalityRegretBudget": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 0,
+            "maximum": 0.15
+          }
+        },
+        "bossRegretBudget": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0, normalized personalityRegretBudget]."
+        },
+        "maximumPreferenceShift": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": {
+            "mode": "clamp",
+            "minimum": 0,
+            "maximum": 0.08
+          }
+        },
+        "skills": {
+          "$ref": "#/$defs/skills"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/strategyThresholds"
+        },
+        "modePriorities": {
+          "$ref": "#/$defs/modePriorities"
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mapReading",
+        "threatReading",
+        "crisisResponse",
+        "adaptation"
+      ],
+      "properties": {
+        "mapReading": {
+          "$ref": "#/$defs/ratioNumber"
+        },
+        "threatReading": {
+          "$ref": "#/$defs/ratioNumber"
+        },
+        "crisisResponse": {
+          "$ref": "#/$defs/ratioNumber"
+        },
+        "adaptation": {
+          "$ref": "#/$defs/ratioNumber"
+        }
+      }
+    },
+    "ratioNumber": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": {
+        "mode": "clamp",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "strategyThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "emergencyMainTowerHealthRatio",
+        "emergencyUrgentPressureMinimum",
+        "emergencyUrgentPressureFraction",
+        "emergencyImminentPressure",
+        "prepareBossProgress",
+        "economyMaximumActiveEnemies",
+        "economyMaximumIncomingPressure",
+        "economyMinimumNextWaveSeconds",
+        "economyMinimumMainTowerHealthRatio",
+        "highUrgentPressure",
+        "highPeakPressure",
+        "mediumUrgentPressure",
+        "mediumActiveEnemies",
+        "mediumIncomingPressure",
+        "highBossPreparation",
+        "mediumBossPreparation",
+        "criticalCrisisHealthRatio",
+        "lowCrisisHealthRatio",
+        "redeployMinimumExtraTowers",
+        "redeployMinimumHealthRatio",
+        "redeployMaximumUrgentPressure",
+        "redeployMaximumActiveEnemies",
+        "redeployMaximumBossPreparation",
+        "immediateDefenseHealthRatio",
+        "immediateDefenseUrgentPressure",
+        "immediateDefenseActiveEnemies",
+        "valuableSpecialTileScore",
+        "coverageUrgentPressure",
+        "coverageActiveEnemies",
+        "coverageHealthRatio"
+      ],
+      "properties": {
+        "emergencyMainTowerHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "emergencyUrgentPressureMinimum": { "$ref": "#/$defs/pressure100" },
+        "emergencyUrgentPressureFraction": { "$ref": "#/$defs/ratioNumber" },
+        "emergencyImminentPressure": { "$ref": "#/$defs/pressure200" },
+        "prepareBossProgress": { "$ref": "#/$defs/ratioNumber" },
+        "economyMaximumActiveEnemies": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 64 }
+        },
+        "economyMaximumIncomingPressure": { "$ref": "#/$defs/pressure200" },
+        "economyMinimumNextWaveSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 120 }
+        },
+        "economyMinimumMainTowerHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "highUrgentPressure": { "$ref": "#/$defs/pressure100" },
+        "highPeakPressure": { "$ref": "#/$defs/pressure200" },
+        "mediumUrgentPressure": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0, normalized highUrgentPressure]."
+        },
+        "mediumActiveEnemies": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 1, "maximum": 128 }
+        },
+        "mediumIncomingPressure": { "$ref": "#/$defs/pressure200" },
+        "highBossPreparation": { "$ref": "#/$defs/ratioNumber" },
+        "mediumBossPreparation": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0, normalized highBossPreparation]."
+        },
+        "criticalCrisisHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "lowCrisisHealthRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [normalized criticalCrisisHealthRatio, 1]."
+        },
+        "redeployMinimumExtraTowers": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 8 }
+        },
+        "redeployMinimumHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "redeployMaximumUrgentPressure": { "$ref": "#/$defs/pressure100" },
+        "redeployMaximumActiveEnemies": { "$ref": "#/$defs/enemyCount128" },
+        "redeployMaximumBossPreparation": { "$ref": "#/$defs/ratioNumber" },
+        "immediateDefenseHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "immediateDefenseUrgentPressure": { "$ref": "#/$defs/pressure100" },
+        "immediateDefenseActiveEnemies": { "$ref": "#/$defs/enemyCount128" },
+        "valuableSpecialTileScore": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 500 }
+        },
+        "coverageUrgentPressure": { "$ref": "#/$defs/pressure100" },
+        "coverageActiveEnemies": { "$ref": "#/$defs/enemyCount128" },
+        "coverageHealthRatio": { "$ref": "#/$defs/ratioNumber" }
+      }
+    },
+    "pressure100": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 100 }
+    },
+    "pressure200": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 200 }
+    },
+    "enemyCount128": {
+      "$ref": "#/$defs/normalizedInteger",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 128 }
+    },
+    "modePriorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Runtime preserves valid unique values, then assigns each duplicate or out-of-range value the nearest unused priority in stable field order. Final values are a permutation of 1..6.",
+      "required": [
+        "opening",
+        "economy",
+        "hold",
+        "prepareBoss",
+        "bossFight",
+        "emergency"
+      ],
+      "properties": {
+        "opening": { "$ref": "#/$defs/normalizedInteger" },
+        "economy": { "$ref": "#/$defs/normalizedInteger" },
+        "hold": { "$ref": "#/$defs/normalizedInteger" },
+        "prepareBoss": { "$ref": "#/$defs/normalizedInteger" },
+        "bossFight": { "$ref": "#/$defs/normalizedInteger" },
+        "emergency": { "$ref": "#/$defs/normalizedInteger" }
+      }
+    },
+    "coreDialogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startingAffinity",
+        "familiarThreshold",
+        "closeThreshold",
+        "intervalMinimumSeconds",
+        "intervalMaximumSeconds",
+        "preemptionCooldownSeconds",
+        "recentHistorySize",
+        "thresholds",
+        "triggers",
+        "emotions",
+        "sets"
+      ],
+      "properties": {
+        "startingAffinity": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 100 }
+        },
+        "familiarThreshold": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 1, "maximum": 99 }
+        },
+        "closeThreshold": {
+          "$ref": "#/$defs/normalizedInteger",
+          "description": "Clamped to [normalized familiarThreshold + 1, 100]."
+        },
+        "intervalMinimumSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 2, "maximum": 120 }
+        },
+        "intervalMaximumSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [normalized intervalMinimumSeconds, 180]."
+        },
+        "preemptionCooldownSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 60 }
+        },
+        "recentHistorySize": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 32 }
+        },
+        "thresholds": { "$ref": "#/$defs/dialogueThresholds" },
+        "triggers": { "$ref": "#/$defs/dialogueTriggers" },
+        "emotions": { "$ref": "#/$defs/dialogueEmotions" },
+        "sets": { "$ref": "#/$defs/dialogueRuleSets" }
+      }
+    },
+    "dialogueThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseCriticalHealthRatio",
+        "baseLowHealthRatio",
+        "urgentPressureMinimum",
+        "urgentPressureFraction",
+        "hardConcernMinimum",
+        "hardVersusCrowdFactor",
+        "crowdEnemyCount",
+        "crowdConcernMinimum",
+        "flowObservationWindowSeconds",
+        "lowKillSpawnRatio",
+        "nearBaseDistanceCells",
+        "nearBaseSustainSeconds",
+        "economyObservationWindowSeconds",
+        "lowIncomeSpendRatio"
+      ],
+      "properties": {
+        "baseCriticalHealthRatio": { "$ref": "#/$defs/ratioNumber" },
+        "baseLowHealthRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [normalized baseCriticalHealthRatio, 1]."
+        },
+        "urgentPressureMinimum": { "$ref": "#/$defs/pressure100" },
+        "urgentPressureFraction": { "$ref": "#/$defs/ratioNumber" },
+        "hardConcernMinimum": { "$ref": "#/$defs/pressure100" },
+        "hardVersusCrowdFactor": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 2 }
+        },
+        "crowdEnemyCount": { "$ref": "#/$defs/enemyCount128" },
+        "crowdConcernMinimum": { "$ref": "#/$defs/pressure200" },
+        "flowObservationWindowSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 2, "maximum": 30 }
+        },
+        "lowKillSpawnRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.1, "maximum": 1.2 }
+        },
+        "nearBaseDistanceCells": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Full-crisis route distance. Proximity pressure fades linearly from this distance to zero at 8 cells.",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.5, "maximum": 7.5 }
+        },
+        "nearBaseSustainSeconds": { "$ref": "#/$defs/range_0_5_10" },
+        "economyObservationWindowSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 10, "maximum": 120 }
+        },
+        "lowIncomeSpendRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.1, "maximum": 1.2 }
+        }
+      }
+    },
+    "dialogueTriggers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lateFirstTakeoverMinutes",
+        "mainTowerBurstWindowSeconds",
+        "mainTowerBurstHealthLossPercent",
+        "mainTowerHitDialogueChance",
+        "mainTowerHitDialogueCooldownSeconds",
+        "mainTowerBurstDialogueCooldownSeconds",
+        "towerBuildDialogueChance",
+        "towerBuildDialogueCooldownSeconds",
+        "towerUpgradeDialogueChance",
+        "towerUpgradeDialogueCooldownSeconds",
+        "pressureReliefMinimumHighSeconds",
+        "pressureReliefConfirmLowSeconds",
+        "pressureReliefDialogueCooldownSeconds",
+        "bossHealthWarningRatio",
+        "bossHealthCriticalRatio",
+        "portraitClickDialogueCooldownSeconds",
+        "portraitRapidClickCount",
+        "portraitRapidClickWindowSeconds",
+        "portraitRapidClickDialogueCooldownSeconds"
+      ],
+      "properties": {
+        "lateFirstTakeoverMinutes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Runtime normalizes four finite values into [1,1440] with strict 0.01 minimum ordering; non-finite conversion is rejected.",
+          "items": { "$ref": "#/$defs/finiteRuntimeNumber" }
+        },
+        "mainTowerBurstWindowSeconds": { "$ref": "#/$defs/range_0_5_10" },
+        "mainTowerBurstHealthLossPercent": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 1, "maximum": 50 }
+        },
+        "mainTowerHitDialogueChance": { "$ref": "#/$defs/ratioNumber" },
+        "mainTowerHitDialogueCooldownSeconds": { "$ref": "#/$defs/range_0_120" },
+        "mainTowerBurstDialogueCooldownSeconds": { "$ref": "#/$defs/range_0_120" },
+        "towerBuildDialogueChance": { "$ref": "#/$defs/ratioNumber" },
+        "towerBuildDialogueCooldownSeconds": { "$ref": "#/$defs/range_5_180" },
+        "towerUpgradeDialogueChance": { "$ref": "#/$defs/ratioNumber" },
+        "towerUpgradeDialogueCooldownSeconds": { "$ref": "#/$defs/range_5_180" },
+        "pressureReliefMinimumHighSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 1, "maximum": 60 }
+        },
+        "pressureReliefConfirmLowSeconds": { "$ref": "#/$defs/range_0_5_10" },
+        "pressureReliefDialogueCooldownSeconds": { "$ref": "#/$defs/range_5_180" },
+        "bossHealthWarningRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.05, "maximum": 0.95 }
+        },
+        "bossHealthCriticalRatio": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0.01, normalized bossHealthWarningRatio - 0.0001]."
+        },
+        "portraitClickDialogueCooldownSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.1, "maximum": 30 }
+        },
+        "portraitRapidClickCount": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 3, "maximum": 12 }
+        },
+        "portraitRapidClickWindowSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.5, "maximum": 5 }
+        },
+        "portraitRapidClickDialogueCooldownSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.5, "maximum": 60 }
+        }
+      }
+    },
+    "range_0_5_10": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0.5, "maximum": 10 }
+    },
+    "range_0_120": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0, "maximum": 120 }
+    },
+    "range_5_180": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 5, "maximum": 180 }
+    },
+    "dialogueEmotions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "focusedTensionThreshold",
+        "tenseTensionThreshold",
+        "criticalTensionThreshold",
+        "transitionConfirmSeconds",
+        "transitionDialogueCooldownSeconds",
+        "calmIntervalMultiplier",
+        "focusedIntervalMultiplier",
+        "tenseIntervalMultiplier",
+        "criticalIntervalMultiplier"
+      ],
+      "properties": {
+        "focusedTensionThreshold": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 0.05, "maximum": 0.75 }
+        },
+        "tenseTensionThreshold": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [normalized focused + 0.0001, 0.9]."
+        },
+        "criticalTensionThreshold": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [normalized tense + 0.0001, 0.98]."
+        },
+        "transitionConfirmSeconds": { "$ref": "#/$defs/range_0_5_10" },
+        "transitionDialogueCooldownSeconds": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 3, "maximum": 60 }
+        },
+        "calmIntervalMultiplier": { "$ref": "#/$defs/intervalMultiplier" },
+        "focusedIntervalMultiplier": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0.8, normalized calmIntervalMultiplier]."
+        },
+        "tenseIntervalMultiplier": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0.8, normalized focusedIntervalMultiplier]."
+        },
+        "criticalIntervalMultiplier": {
+          "$ref": "#/$defs/finiteRuntimeNumber",
+          "description": "Clamped to [0.8, normalized tenseIntervalMultiplier]."
+        }
+      }
+    },
+    "intervalMultiplier": {
+      "$ref": "#/$defs/finiteRuntimeNumber",
+      "x-runtime-normalization": { "mode": "clamp", "minimum": 0.8, "maximum": 1.2 }
+    },
+    "dialogueCategory": {
+      "type": "string",
+      "enum": [
+        "TakeoverFirst",
+        "TakeoverQuickReturn",
+        "TakeoverFrequentToggle",
+        "TakeoverReturn",
+        "TakeoverHighPressure",
+        "TakeoverLateTier1",
+        "TakeoverLateTier2",
+        "TakeoverLateTier3",
+        "TakeoverLateTier4",
+        "ReleaseFirst",
+        "Calm",
+        "Crowd",
+        "Hard",
+        "BossArrival",
+        "Boss",
+        "BossHealthHalf",
+        "BossHealthQuarter",
+        "Urgent",
+        "BaseLow",
+        "BaseCritical",
+        "BaseFirstDamage",
+        "BaseDamaged",
+        "BaseBurstDamage",
+        "BuildTower",
+        "UpgradeTower",
+        "PressureRelieved",
+        "EmotionToCalm",
+        "EmotionToFocused",
+        "EmotionToTense",
+        "EmotionToCritical",
+        "PortraitClickCalm",
+        "PortraitClickFocused",
+        "PortraitClickTense",
+        "PortraitClickCritical",
+        "PortraitRapidClickCalm",
+        "PortraitRapidClickFocused",
+        "PortraitRapidClickTense",
+        "PortraitRapidClickCritical",
+        "Saving",
+        "GreatTile",
+        "Branch",
+        "Discount"
+      ]
+    },
+    "dialogueRuleSets": {
+      "type": "array",
+      "minItems": 42,
+      "maxItems": 42,
+      "description": "Runtime requires every dialogueCategory exactly once. JSON Schema cannot express uniqueness by one object property without a long contains matrix, so runtime remains authoritative.",
+      "items": { "$ref": "#/$defs/dialogueRule" }
+    },
+    "dialogueRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "priority",
+        "battleState"
+      ],
+      "properties": {
+        "category": { "$ref": "#/$defs/dialogueCategory" },
+        "priority": {
+          "$ref": "#/$defs/normalizedInteger",
+          "x-runtime-normalization": { "mode": "clamp", "minimum": 1, "maximum": 20 }
+        },
+        "battleState": { "type": "boolean" }
+      }
+    },
+    "localeDocument": {
+      "title": "Red vs Blue Commander Locale v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "protocol",
+        "commanderId",
+        "locale",
+        "identity",
+        "talent",
+        "personality",
+        "strategy",
+        "dialogue",
+        "outcomes"
+      ],
+      "properties": {
+        "schemaVersion": { "type": "integer", "const": 1 },
+        "protocol": { "type": "string", "const": "red-vs-blue.commander-locale/1" },
+        "commanderId": { "$ref": "#/$defs/commanderId" },
+        "locale": { "$ref": "#/$defs/localeId" },
+        "identity": { "$ref": "#/$defs/localeIdentity" },
+        "talent": { "$ref": "#/$defs/localeTalent" },
+        "personality": { "$ref": "#/$defs/localePersonality" },
+        "strategy": { "$ref": "#/$defs/localeStrategy" },
+        "dialogue": { "$ref": "#/$defs/localeDialogue" },
+        "outcomes": { "$ref": "#/$defs/localeOutcomes" }
+      }
+    },
+    "localeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "role",
+        "personaLabel",
+        "background",
+        "speakingStyle",
+        "personalityTraits"
+      ],
+      "properties": {
+        "displayName": { "$ref": "#/$defs/text48" },
+        "role": { "$ref": "#/$defs/text96" },
+        "personaLabel": { "$ref": "#/$defs/text120" },
+        "background": {
+          "$ref": "#/$defs/safeText",
+          "minLength": 1,
+          "maxLength": 1200,
+          "pattern": "\\S"
+        },
+        "speakingStyle": {
+          "$ref": "#/$defs/safeText",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "\\S"
+        },
+        "personalityTraits": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/text40" }
+        }
+      }
+    },
+    "localeTalent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "$ref": "#/$defs/text64" },
+        "description": {
+          "$ref": "#/$defs/safeText",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "\\S"
+        }
+      }
+    },
+    "localePersonality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thinkingStyle", "decisionPrinciples"],
+      "properties": {
+        "thinkingStyle": {
+          "$ref": "#/$defs/safeText",
+          "minLength": 1,
+          "maxLength": 800,
+          "pattern": "\\S"
+        },
+        "decisionPrinciples": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/safeText",
+            "minLength": 1,
+            "maxLength": 180,
+            "pattern": "\\S"
+          }
+        }
+      }
+    },
+    "localeStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modeLabels"],
+      "properties": {
+        "modeLabels": { "$ref": "#/$defs/modeLabels" }
+      }
+    },
+    "modeLabels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opening",
+        "economy",
+        "hold",
+        "prepareBoss",
+        "bossFight",
+        "emergency"
+      ],
+      "properties": {
+        "opening": { "$ref": "#/$defs/text32" },
+        "economy": { "$ref": "#/$defs/text32" },
+        "hold": { "$ref": "#/$defs/text32" },
+        "prepareBoss": { "$ref": "#/$defs/text32" },
+        "bossFight": { "$ref": "#/$defs/text32" },
+        "emergency": { "$ref": "#/$defs/text32" }
+      }
+    },
+    "localeDialogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distantLabel",
+        "familiarLabel",
+        "closeLabel",
+        "sets"
+      ],
+      "properties": {
+        "distantLabel": { "$ref": "#/$defs/text24" },
+        "familiarLabel": { "$ref": "#/$defs/text24" },
+        "closeLabel": { "$ref": "#/$defs/text24" },
+        "sets": {
+          "type": "array",
+          "minItems": 42,
+          "maxItems": 42,
+          "description": "Runtime requires every dialogueCategory exactly once and a matching core rule. category is the current linkage key (the textSetId role).",
+          "items": { "$ref": "#/$defs/localizedDialogueSet" }
+        }
+      }
+    },
+    "localizedDialogueSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "distant", "familiar", "close"],
+      "properties": {
+        "category": { "$ref": "#/$defs/dialogueCategory" },
+        "distant": { "$ref": "#/$defs/dialogueLines" },
+        "familiar": { "$ref": "#/$defs/dialogueLines" },
+        "close": { "$ref": "#/$defs/dialogueLines" }
+      },
+      "description": "Runtime rejects a set whose three affinity arrays contain the same set of strings, even if reordered."
+    },
+    "dialogueLines": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/dialogueLine" }
+    },
+    "dialogueLine": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 180,
+      "pattern": "\\S"
+    },
+    "localeOutcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["defeat"],
+      "properties": {
+        "defeat": { "$ref": "#/$defs/defeatAffinityLines" }
+      }
+    },
+    "defeatAffinityLines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distant", "familiar", "close"],
+      "properties": {
+        "distant": { "$ref": "#/$defs/defeatLines" },
+        "familiar": { "$ref": "#/$defs/defeatLines" },
+        "close": { "$ref": "#/$defs/defeatLines" }
+      },
+      "description": "Runtime rejects equal affinity sets. CR/LF is allowed only here."
+    },
+    "defeatLines": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/safeDefeatText",
+        "minLength": 1,
+        "maxLength": 180,
+        "pattern": "\\S"
+      }
+    },
+    "text24": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 24,
+      "pattern": "\\S"
+    },
+    "text32": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "\\S"
+    },
+    "text40": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "\\S"
+    },
+    "text48": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 48,
+      "pattern": "\\S"
+    },
+    "text64": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "\\S"
+    },
+    "text96": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "\\S"
+    },
+    "text120": {
+      "$ref": "#/$defs/safeText",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "\\S"
+    }
+  }
+}

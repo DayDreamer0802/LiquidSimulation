@@ -79,10 +79,10 @@ public sealed class RougeIceTowerSpecializationConfig
 
     [Header("霜寒格")]
     [FormerlySerializedAs("frostSlowPercent")]
-    [Range(0f, 100f), Tooltip("非冰塔位于霜寒格时，攻击附加的减速百分比。")]
+    [Range(0f, 100f), Tooltip("霜寒格为塔楼非持续直接伤害附加的减速百分比；范围、锥形和直线伤害按 50% 生效。")]
     public float frostAttackSlowPercent = 20f;
     [FormerlySerializedAs("frostNormalFreezeBonus")]
-    [Min(0f), Tooltip("冰塔位于霜寒格时，按当前升级路线增加的减速、冻结或脆弱持续时间（秒）；同时作为非冰塔附加减速的持续时间。")]
+    [Min(0f), Tooltip("冰塔位于霜寒格时，按当前升级路线增加的减速、冻结或脆弱持续时间（秒）；同时作为霜寒格直接伤害附加减速的持续时间。")]
     public float frostDurationBonus = 0.5f;
 
     [Header("A2-b - 随机冰地刺")]

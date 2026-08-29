@@ -6,8 +6,11 @@ using UnityEngine.UI;
 
 public partial class RougeGameManager
 {
-    private const string TowerDefenseFailureDialogue =
-        "指挥官……主塔失去响应了。\n我会留到最后。链接……正在断开。";
+    private string TowerDefenseFailureDialogue =>
+        string.IsNullOrWhiteSpace(_towerDefenseFailureDialogue)
+            ? TowerDefenseAutoplayCharacterName +
+              "：主塔失去响应，链接正在断开。"
+            : _towerDefenseFailureDialogue;
     private const string TowerDefenseFailureGlitchCharacters =
         "█▓▒░#@%&!?/\\|<>01断链失真";
 
@@ -20,6 +23,7 @@ public partial class RougeGameManager
 
     private bool _towerDefenseFailureSequenceActive;
     private bool _towerDefenseFailureResultReady;
+    private string _towerDefenseFailureDialogue = string.Empty;
     private int _towerDefenseGoldSpentTotal;
     private bool _towerDefenseScoreBossEngaged;
     private float _towerDefenseScoreBossMaximumHealth;
@@ -49,6 +53,7 @@ public partial class RougeGameManager
         _towerDefenseScoreBossMaximumHealth = 0f;
         _towerDefenseScoreBossLowestHealth = 0f;
         _towerDefenseFailureScoreText = string.Empty;
+        _towerDefenseFailureDialogue = string.Empty;
     }
 
     private void DisposeTowerDefenseFailurePresentation()
@@ -67,6 +72,7 @@ public partial class RougeGameManager
         _towerDefenseFailureShardMaterial = null;
         ClearTowerDefenseFailureWorldVisuals();
         _towerDefenseFailureSequenceActive = false;
+        _towerDefenseFailureDialogue = string.Empty;
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.
             GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetCinematicShake(0f);
@@ -96,6 +102,12 @@ public partial class RougeGameManager
     private void BeginTowerDefenseFailureSequence()
     {
         if (_towerDefenseFailureSequenceActive) return;
+        ResetTowerDefenseAutoplayPortraitInteraction();
+        if (_towerDefenseAutoplayPortraitButton != null)
+            _towerDefenseAutoplayPortraitButton.interactable = false;
+        if (_towerDefenseAutoplayPortrait != null)
+            _towerDefenseAutoplayPortrait.raycastTarget = false;
+        _towerDefenseFailureDialogue = PickTowerDefenseAutoplayDefeatLine();
         CaptureTowerDefenseFailureScore();
         BuildTowerDefenseFailureUi();
         PrepareTowerDefenseFailureView();
@@ -152,11 +164,14 @@ public partial class RougeGameManager
         CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
         RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
 
-        _towerDefenseFailurePortrait = CreateUiImage("Disconnecting Lan",
+        _towerDefenseFailurePortrait = CreateUiImage(
+            "Disconnecting " + TowerDefenseAutoplayCharacterName,
             canvasObject.transform, Color.white);
-        _towerDefenseFailurePortrait.sprite = RougeSpriteAssets.Load(
-            TowerDefenseAutoplayPortraitResourcePath);
+        _towerDefenseFailurePortrait.sprite = TowerDefenseAutoplayCommander
+            .ResolvePortraitSprite(GetTowerDefenseAutoplayPortraitEmotion(),
+                RougeAutoplayCommanderPortraitVariant.Defeat);
         _towerDefenseFailurePortrait.preserveAspect = true;
+        _towerDefenseFailurePortrait.raycastTarget = false;
         RectTransform portraitRect = _towerDefenseFailurePortrait.rectTransform;
         portraitRect.anchorMin = Vector2.zero;
         portraitRect.anchorMax = Vector2.zero;
@@ -239,7 +254,7 @@ public partial class RougeGameManager
             GetComponent<RougeCameraFollow>();
         float elapsed = 0f;
         bool detonationStarted = false;
-        // Leave enough clean screen time to actually read Lan's last line before
+        // Leave enough clean screen time to read the commander's last line before
         // the signal corruption and the blast begin to overtake it.
         const float detonationTime = 2f;
         const float disintegrationDuration = 2.15f;

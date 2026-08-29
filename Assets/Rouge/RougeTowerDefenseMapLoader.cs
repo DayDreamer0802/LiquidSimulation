@@ -14,6 +14,18 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     [SerializeField] private bool loadOnEnable = true;
     [SerializeField] private bool clearOnDisable = true;
 
+    [Header("AI Commander (Prototype)")]
+    [SerializeField, Tooltip("Commander package folder/file name, for example lan or lan_level01. A trailing .json is accepted. Invalid or missing packages fall back to lan.")]
+    private string commanderConfigName = "lan";
+    [SerializeField, Tooltip("Optional locale such as zh-CN. Leave empty to use the package default locale.")]
+    private string commanderLocaleOverride = string.Empty;
+
+    [Header("Commander Startup Flow")]
+    [SerializeField, Tooltip("Show the commander loading and selection flow before gameplay initializes.")]
+    private bool showCommanderSelectionOnStartup = true;
+    [SerializeField, Range(0.1f, 2f), Tooltip("Minimum truthful loading presentation time. Package validation itself is synchronous.")]
+    private float commanderLoadingMinimumSeconds = 0.42f;
+
     [Header("Tower Placement Preview")]
     [SerializeField] private Color placedTowerGridColor = new Color(0.9f, 1f, 0.98f, 0.78f);
     [SerializeField] private Color validTowerGridColor = new Color(0.12f, 1f, 0.34f, 0.98f);
@@ -39,6 +51,10 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     private readonly HashSet<Vector2Int> _redInvalidTowerGridCells = new HashSet<Vector2Int>();
     private TowerFootprintGridOverlay _towerFootprintGridOverlay;
     private GameObject _cameraPreviewUiRoot;
+    private Coroutine _commanderStartupRoutine;
+    private RougeCommanderSelectionView _commanderSelectionView;
+    private bool _commanderSelectionPending;
+    private float _timeScaleBeforeCommanderSelection = 1f;
 
     private sealed class TowerFootprintGridOverlay
     {
@@ -62,6 +78,9 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     }
 
     public RougeTowerDefenseMap Map => map;
+    public string CommanderConfigName => commanderConfigName;
+    public string CommanderLocaleOverride => commanderLocaleOverride;
+    public bool CommanderSelectionPending => _commanderSelectionPending;
 
     public RougeTowerPlaceEffect GetEffectiveTowerPlaceEffect(Vector2Int cell)
     {
@@ -113,11 +132,33 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     private void OnEnable()
     {
         Active = this;
+        if (Application.isPlaying)
+            RougeAutoplayCommanderJson.ConfigureSelection(commanderConfigName,
+                commanderLocaleOverride);
         if (Application.isPlaying && loadOnEnable) LoadMap();
+        if (Application.isPlaying && showCommanderSelectionOnStartup)
+        {
+            _commanderSelectionPending = true;
+            _timeScaleBeforeCommanderSelection =
+                Time.timeScale > 0f ? Time.timeScale : 1f;
+            Time.timeScale = 0f;
+            _commanderStartupRoutine = StartCoroutine(
+                RunCommanderSelectionStartup());
+        }
     }
 
     private void OnDisable()
     {
+        bool interruptedCommanderSelection = _commanderSelectionPending;
+        if (_commanderStartupRoutine != null)
+        {
+            StopCoroutine(_commanderStartupRoutine);
+            _commanderStartupRoutine = null;
+        }
+        DisposeCommanderSelectionView();
+        _commanderSelectionPending = false;
+        if (Application.isPlaying && interruptedCommanderSelection)
+            Time.timeScale = _timeScaleBeforeCommanderSelection;
         if (Application.isPlaying && clearOnDisable) ClearMap();
         if (Active == this) Active = null;
     }
@@ -126,6 +167,9 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     public void LoadMap()
     {
         ClearMap();
+        if (Application.isPlaying)
+            RougeAutoplayCommanderJson.ConfigureSelection(commanderConfigName,
+                commanderLocaleOverride);
         if (map == null)
         {
             Debug.LogError("Tower Defense Map Loader has no map asset.", this);

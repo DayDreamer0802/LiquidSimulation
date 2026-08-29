@@ -81,9 +81,11 @@ public partial class RougeGameManager
         _playerContactEffects = playerContact.Effects.Resolve(currentLevel, playerContact.MaxLevel);
     }
 
+    private const float TowerFrostDirectSlowMultiplier = 1f;
+    private const float TowerFrostAreaSlowMultiplier = 0.5f;
+
     private bool TryAddSkillArea(RougeSkillArea area)
     {
-        ApplyFrostTowerTileEffect(ref area);
         if (UsesTowerDefenseSpawners() && _simulationResultBackBufferReady)
         {
             return TryQueuePendingSkillArea(area);
@@ -98,18 +100,29 @@ public partial class RougeGameManager
         return true;
     }
 
-    private static void ApplyFrostTowerTileEffect(ref RougeSkillArea area)
+    private bool TryAddTowerDirectDamageArea(RougeSkillArea area,
+        float frostSlowMultiplier)
+    {
+        // Only immediate tower damage calls this overload. Burn ticks, fire zones
+        // and other persistent damage use TryAddSkillArea directly, so they never
+        // inherit frost slow merely from retaining their source-tile metadata.
+        ApplyFrostTowerTileEffect(ref area, frostSlowMultiplier);
+        return TryAddSkillArea(area);
+    }
+
+    private static void ApplyFrostTowerTileEffect(ref RougeSkillArea area,
+        float slowMultiplier)
     {
         if (area.SourceTowerTileEffect != (int)RougeTowerPlaceEffect.Frost ||
             area.SourceTowerTypePlusOne <= 0 ||
-            area.SourceTowerTypePlusOne == (int)RougeTowerType.Ice + 1)
+            area.Damage <= 0f || slowMultiplier <= 0f)
             return;
 
         RougeIceTowerSpecializationConfig config =
             TowerDefenseVisuals.GetIceSpecializationConfig();
         area.EffectFlags |= (int)SkillHitEffectTag.Slow;
         area.EffectSlowPercent = Mathf.Max(area.EffectSlowPercent,
-            config.frostAttackSlowPercent);
+            config.frostAttackSlowPercent * Mathf.Clamp01(slowMultiplier));
         area.EffectSlowDuration = Mathf.Max(area.EffectSlowDuration,
             config.frostDurationBonus);
     }

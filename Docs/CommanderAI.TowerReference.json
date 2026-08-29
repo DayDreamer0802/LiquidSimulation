@@ -1,0 +1,375 @@
+{
+  "formatVersion": 1,
+  "documentType": "commander_ai_tower_reference",
+  "language": "zh-CN",
+  "referenceOnly": true,
+  "source": {
+    "balance": "Assets/Resources/Config/tower_defense_balance.json",
+    "balanceVersion": 14,
+    "towerEnumsAndRules": [
+      "Assets/Rouge/RougeTowerDefenseEntities.cs",
+      "Assets/Rouge/RougeDefenseTower.cs",
+      "Assets/Rouge/RougeTowerDefenseMap.cs",
+      "Assets/Rouge/RougeGameManager.TowerDefense.cs"
+    ]
+  },
+  "authorityNote": "本文件只供大模型理解。游戏内塔楼配置与运行时代码始终是权威来源，不要把本文件当作可修改的平衡配置。",
+  "statFieldGuide": {
+    "goldCost": "建造到 1 级或升级到该等级的单次金币费用，尚未应用关卡和地图格倍率。",
+    "damage": "一次命中、一次跳伤或一枚弹体的基础伤害，具体含义取决于塔。",
+    "attackInterval": "两轮基础攻击之间的秒数；越小攻速越快。",
+    "attackRange": "攻击半径，单位为世界距离。默认关卡每格宽 8。",
+    "targetCount": "一轮可同时连接或选择的目标数，主要用于机枪塔和激光塔。",
+    "projectileCount": "一轮发射的弹体或并行攻击数。",
+    "aoeRadius": "范围伤害半径；0 表示没有此类范围爆炸。",
+    "effectPercent": "附加效果的百分比；部分塔会由专精参数覆盖。",
+    "effectDuration": "附加效果持续秒数；部分塔会由专精参数覆盖。",
+    "tickInterval": "持续伤害或水晶攻击的跳伤间隔。",
+    "placementRadius": "塔楼模型的放置占用半径；实际占地仍为一个地图格。",
+    "specialTowerCountCostMultiplier": "每已有一座同类特殊塔，下一座基础价格增加的比例。"
+  },
+  "globalRules": {
+    "legalTowerIdRange": [0, 9],
+    "standardTowerIds": [0, 1, 2, 3, 4, 5, 6, 7],
+    "supportTowerIds": [8, 9],
+    "maximumStandardTowerLevel": 3,
+    "sellRefundMultiplier": 0.33,
+    "buffLevelRule": {
+      "percentPerLevel": 20,
+      "minimumEffectiveLevel": -3,
+      "maximumEffectiveLevel": 5
+    },
+    "armorRule": "敌人护甲限制为 -20..15。每 1 点护甲先减少 1 点伤害，再减少 5%；穿甲可抵消护甲。",
+    "targetPriorities": [
+      {
+        "id": 0,
+        "name": "NearestToGoal",
+        "description": "优先攻击离主塔终点最近的敌人。"
+      },
+      {
+        "id": 1,
+        "name": "BossFirst",
+        "description": "Boss 在攻击范围内时优先 Boss。机枪塔和普通激光塔的伤害、攻速各 -1 级；火焰塔伤害 -2 级；激光 A2 可移除自身集中惩罚。"
+      }
+    ]
+  },
+  "mapTileEffects": [
+    {
+      "id": 0,
+      "name": "None",
+      "description": "普通可建造格，无额外效果。"
+    },
+    {
+      "id": 1,
+      "name": "DamageAmplifier",
+      "buffLevels": { "damage": 3, "range": -2, "attackSpeed": 0 },
+      "upgradeCostMultiplier": 1.25
+    },
+    {
+      "id": 2,
+      "name": "RangeAmplifier",
+      "buffLevels": { "damage": -1, "range": 3, "attackSpeed": -1 },
+      "upgradeCostMultiplier": 1.25
+    },
+    {
+      "id": 3,
+      "name": "AttackSpeedAmplifier",
+      "buffLevels": { "damage": 0, "range": -2, "attackSpeed": 3 },
+      "upgradeCostMultiplier": 1.25
+    },
+    {
+      "id": 4,
+      "name": "PremiumAmplifier",
+      "buffLevels": { "damage": 2, "range": 2, "attackSpeed": 2 },
+      "upgradeCostMultiplier": 1.5
+    },
+    {
+      "id": 5,
+      "name": "FreeLevelNoRefund",
+      "buffLevels": { "damage": -1, "range": -1, "attackSpeed": -1 },
+      "initialLevelBonus": 1,
+      "allowsSellRefund": false
+    },
+    {
+      "id": 6,
+      "name": "Bounty",
+      "buffLevels": { "damage": -1, "range": -1, "attackSpeed": -1 },
+      "killGoldBonusPercent": 50
+    },
+    {
+      "id": 7,
+      "name": "Discount",
+      "buffLevels": { "damage": -1, "range": -1, "attackSpeed": -1 },
+      "upgradeCostMultiplier": 0.75
+    },
+    {
+      "id": 8,
+      "name": "Relocation",
+      "buffLevels": { "damage": -1, "range": -1, "attackSpeed": -1 },
+      "relocationCostFromInvestedGold": 0.33
+    },
+    {
+      "id": 9,
+      "name": "Echo",
+      "buffLevels": { "damage": -2, "range": -2, "attackSpeed": -2 },
+      "upgradeCostMultiplier": 1.5,
+      "description": "一般塔每轮攻击追加一次回响；机枪、激光改为目标数约 1.5 倍，火箭改为弹体数约 1.5 倍。"
+    },
+    {
+      "id": 12,
+      "name": "AccumulatedWealth",
+      "buffLevels": { "damage": -1, "range": -1, "attackSpeed": -1 },
+      "upgradeCostMultiplier": 0.75,
+      "payoutIntervalSeconds": 30,
+      "payoutMultiplier": 1.5
+    },
+    {
+      "id": 13,
+      "name": "Explosion",
+      "buffLevels": { "damage": 0, "range": -2, "attackSpeed": 0 },
+      "upgradeCostMultiplier": 1.5,
+      "killTriggerChance": 0.03,
+      "explosionRadius": 8,
+      "explosionDamageTargetMaxHealthRatio": 0.3
+    },
+    {
+      "id": 14,
+      "name": "Frost",
+      "description": "非持续直接伤害附加 20% 减速，范围、锥形和直线伤害为 10%，持续 0.5 秒；冰塔在此格还获得 0.5 秒路线效果时长。"
+    }
+  ],
+  "towers": [
+    {
+      "id": 0,
+      "enumName": "Ice",
+      "displayName": "冰霜塔",
+      "role": "范围控制、冻结或脆弱辅助",
+      "upgradeable": true,
+      "placementRadius": 2.2,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 800, "damage": 12, "attackInterval": 5, "attackRange": 16, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 2, "goldCost": 2400, "damage": 36, "attackInterval": 4.5, "attackRange": 20, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 3, "goldCost": 7200, "damage": 72, "attackInterval": 4, "attackRange": 24, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 }
+      ],
+      "baseMechanic": "攻击范围内所有敌人并减速 50%，持续 1.5 秒。",
+      "level2Branches": [
+        { "id": "freeze", "description": "冻结：普通 1 秒、精英 0.75 秒、Boss 0.5 秒；Boss 解冻后免疫 0.5 秒。" },
+        { "id": "vulnerability", "description": "减速并施加 2 秒脆弱；正护甲效果减半。" }
+      ],
+      "level3Augments": {
+        "freeze": [
+          { "id": "ice_spikes", "description": "每 0.8..1.2 秒在范围内选 3..5 格生成冰刺，造成本次伤害 50%，冻结时长 50%。" },
+          { "id": "permanent_frost_tiles", "description": "本塔位于霜寒格时，把周围 8 格永久变为霜寒格。" }
+        ],
+        "vulnerability": [
+          { "id": "vulnerability_damage", "description": "脆弱增伤：普通 +50%，精英 +37.5%，Boss +25%。" },
+          { "id": "vulnerability_armor_penetration", "description": "攻击脆弱单位时额外获得 4 点穿甲。" }
+        ]
+      },
+      "importantSynergies": ["冻结配合火焰塔爆燃", "脆弱或穿甲配合高频输出", "霜寒格延长控制并可扩散霜寒格"]
+    },
+    {
+      "id": 1,
+      "enumName": "MachineGun",
+      "displayName": "机枪塔",
+      "role": "高频、多目标清杂与暴击输出",
+      "upgradeable": true,
+      "placementRadius": 2,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 500, "damage": 20, "attackInterval": 0.2, "attackRange": 20, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 2, "goldCost": 1500, "damage": 40, "attackInterval": 0.2, "attackRange": 25, "targetCount": 3, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 3, "goldCost": 4500, "damage": 80, "attackInterval": 0.2, "attackRange": 30, "targetCount": 5, "projectileCount": 1, "aoeRadius": 0 }
+      ],
+      "level2Branches": [
+        { "id": "critical", "description": "25% 暴击，暴击伤害 2 倍。" },
+        { "id": "fragments", "description": "击杀时 50% 概率射出 3 枚破片，每枚为原攻击 30%。" }
+      ],
+      "level3Augments": {
+        "critical": [
+          { "id": "critical_chance", "description": "暴击率提高到 50%。" },
+          { "id": "critical_armor_penetration", "description": "暴击获得 4 点穿甲。" }
+        ],
+        "fragments": [
+          { "id": "fragment_count", "description": "破片数量提高到 6。" },
+          { "id": "embedded_fragments", "description": "命中有 50% 概率嵌入破片；目标死亡时射出，每枚记录原攻击 50% 伤害。" }
+        ]
+      },
+      "bossFirstTradeoff": "伤害与攻速各 -1 级，适合确实需要集火 Boss 时使用。",
+      "importantSynergies": ["破甲或脆弱能放大高频攻击", "回响格提高同时攻击目标数"]
+    },
+    {
+      "id": 2,
+      "enumName": "Cannon",
+      "displayName": "加农炮",
+      "role": "远程范围爆发与区域阻滞",
+      "upgradeable": true,
+      "placementRadius": 2.7,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 1000, "damage": 100, "attackInterval": 3.5, "attackRange": 25, "targetCount": 1, "projectileCount": 1, "aoeRadius": 8 },
+        { "level": 2, "goldCost": 3000, "damage": 200, "attackInterval": 3.25, "attackRange": 36, "targetCount": 1, "projectileCount": 2, "aoeRadius": 10 },
+        { "level": 3, "goldCost": 9000, "damage": 400, "attackInterval": 3, "attackRange": 42, "targetCount": 1, "projectileCount": 3, "aoeRadius": 12 }
+      ],
+      "level2Branches": [
+        { "id": "inner_blast", "description": "爆炸内圈为半径的三分之一，内圈总伤害 2 倍。" },
+        { "id": "persistent_shell", "description": "落地造成 25% 伤害，之后每 0.5 秒爆炸一次，共 4 次，每次 25%。" }
+      ],
+      "level3Augments": {
+        "inner_blast": [
+          { "id": "inner_blast_area", "description": "范围 ×1.25；内圈半径比例 50%，内圈总伤害 3 倍。" },
+          { "id": "secondary_bombardment", "description": "落地后 25% 概率抛出 3 枚小炮弹，各造成 25% 伤害与 25% 范围。" }
+        ],
+        "persistent_shell": [
+          { "id": "persistent_knockback", "description": "持续爆炸附加轻微击退。" },
+          { "id": "persistent_extra_ticks", "description": "额外爆炸 2 次，形成落地加 6 次持续爆炸。" }
+        ]
+      },
+      "importantSynergies": ["在交汇点或密集路线使用", "范围格可弥补覆盖，伤害格强化内圈爆发"]
+    },
+    {
+      "id": 3,
+      "enumName": "Flame",
+      "displayName": "火焰塔",
+      "role": "近中程范围持续伤害与冰火组合",
+      "upgradeable": true,
+      "placementRadius": 2.4,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 900, "damage": 15, "attackInterval": 5, "attackRange": 15, "targetCount": 1, "projectileCount": 1, "aoeRadius": 6 },
+        { "level": 2, "goldCost": 2700, "damage": 30, "attackInterval": 4.8, "attackRange": 20, "targetCount": 1, "projectileCount": 2, "aoeRadius": 8 },
+        { "level": 3, "goldCost": 8100, "damage": 60, "attackInterval": 4.6, "attackRange": 25, "targetCount": 1, "projectileCount": 3, "aoeRadius": 9 }
+      ],
+      "baseMechanic": "火球落地留下火区，对经过的敌人造成持续伤害。",
+      "level2Branches": [
+        { "id": "flamethrower", "description": "改为 30° 喷火器；基础伤害 10、间隔 0.1 秒、范围 15。" },
+        { "id": "burning", "description": "火区施加 3 秒燃烧，每 0.75 秒造成塔伤害 25%；攻速 Buff 只按 50% 生效。" }
+      ],
+      "level3Augments": {
+        "flamethrower": [
+          { "id": "rotating_flamethrower", "description": "持续 360°/秒旋转；基础伤害 20、间隔 0.05 秒，不能切换索敌模式。" },
+          { "id": "fan_flamethrower", "description": "多喷口扇形展开；Boss 优先时合成一个更宽更强的集中喷口。" }
+        ],
+        "burning": [
+          { "id": "stacking_burn", "description": "最多 10 层；每层跳伤 +10%，跳伤速度 +25%。" },
+          { "id": "conflagration", "description": "命中被冻结敌人时清除冻结与燃烧，造成塔伤害 5 倍的爆燃。" }
+        ]
+      },
+      "bossFirstTradeoff": "伤害 -2 级；扇形喷火器会把多喷口合并并获得额外角度与伤害。",
+      "importantSynergies": ["爆燃必须搭配冻结来源", "喷火器依赖路线朝向与敌群几何"]
+    },
+    {
+      "id": 4,
+      "enumName": "Laser",
+      "displayName": "激光塔",
+      "role": "多目标持续伤害、永久破甲或折射清群",
+      "upgradeable": true,
+      "placementRadius": 2.3,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 900, "damage": 3, "attackInterval": 0.1, "attackRange": 20, "targetCount": 3, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 2, "goldCost": 2700, "damage": 6, "attackInterval": 0.1, "attackRange": 25, "targetCount": 6, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 3, "goldCost": 8100, "damage": 9, "attackInterval": 0.1, "attackRange": 30, "targetCount": 9, "projectileCount": 1, "aoeRadius": 0 }
+      ],
+      "level2Branches": [
+        { "id": "armor_break", "description": "持续照射同一目标会永久削减 1 护甲；普通/精英/Boss 分别需 1/2/4 秒。" },
+        { "id": "refraction", "description": "命中后折射到附近另一目标，折射伤害 50%，搜索范围为攻击范围 25%。" }
+      ],
+      "level3Augments": {
+        "armor_break": [
+          { "id": "accelerated_armor_break", "description": "破甲所需照射时间减半。" },
+          { "id": "strong_focus", "description": "Boss 优先不再降低该塔伤害与攻速。" }
+        ],
+        "refraction": [
+          { "id": "continuous_refraction", "description": "每条直连激光最多连续折射 3 次，伤害依次为 75%、50%、25%。" },
+          { "id": "refraction_attack", "description": "伤害 ×5，攻击间隔 1 秒；最多折射至目标数 ×2 个敌人，每多一敌人伤害 -5%，最多 -50%。" }
+        ]
+      },
+      "bossFirstTradeoff": "默认伤害与攻速各 -1 级；A2 强力集中可消除此惩罚。",
+      "importantSynergies": ["破甲适合 Boss 与高频队伍", "折射适合密集敌群", "回响格提高同时连接数"]
+    },
+    {
+      "id": 5,
+      "enumName": "PiercingLaser",
+      "displayName": "穿透激光",
+      "role": "超高单发直线穿透",
+      "upgradeable": true,
+      "placementRadius": 2.8,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 1500, "damage": 500, "attackInterval": 4, "attackRange": 25, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 2, "goldCost": 4500, "damage": 1500, "attackInterval": 3.5, "attackRange": 30, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
+        { "level": 3, "goldCost": 13500, "damage": 3000, "attackInterval": 3, "attackRange": 35, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 }
+      ],
+      "upgradePath": "线性升级，无分支。",
+      "baseMechanic": "发射直线激光，伤害路径上的所有敌人。",
+      "importantSynergies": ["长直线路径", "Boss 与其身后敌群共线", "霜寒格对直线伤害只施加一半减速"]
+    },
+    {
+      "id": 6,
+      "enumName": "OrbitSphere",
+      "displayName": "水晶塔",
+      "role": "沿范围边缘移动的持续区域输出",
+      "upgradeable": true,
+      "placementRadius": 2.5,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 1200, "damage": 8, "attackInterval": 3.5, "attackRange": 16, "projectileCount": 1, "tickInterval": 0.02, "orbitSphereRadius": 1.2, "orbitRadialSpeed": 20, "orbitAngularSpeed": 360, "orbitOuterHoldDuration": 2 },
+        { "level": 2, "goldCost": 3600, "damage": 16, "attackInterval": 3.3, "attackRange": 18, "projectileCount": 2, "tickInterval": 0.02, "orbitSphereRadius": 1.3, "orbitRadialSpeed": 20, "orbitAngularSpeed": 360, "orbitOuterHoldDuration": 2.5 },
+        { "level": 3, "goldCost": 10800, "damage": 32, "attackInterval": 3, "attackRange": 20, "projectileCount": 3, "tickInterval": 0.02, "orbitSphereRadius": 1.4, "orbitRadialSpeed": 20, "orbitAngularSpeed": 360, "orbitOuterHoldDuration": 3 }
+      ],
+      "upgradePath": "线性升级，无分支。",
+      "baseMechanic": "水晶沿攻击范围边缘移动并持续攻击附近敌人。",
+      "importantSynergies": ["覆盖路线弯道或环形区域", "目标无需手动集中"]
+    },
+    {
+      "id": 7,
+      "enumName": "RocketBarrage",
+      "displayName": "火箭齐射",
+      "role": "多枚火箭的中范围爆发",
+      "upgradeable": true,
+      "placementRadius": 2.8,
+      "footprintCells": [1, 1],
+      "levelStats": [
+        { "level": 1, "goldCost": 1000, "damage": 100, "attackInterval": 4, "attackRange": 14, "projectileCount": 8, "aoeRadius": 3, "projectileInterval": 0.1, "projectileFlightDuration": 1.5, "brownianStrength": 3 },
+        { "level": 2, "goldCost": 3000, "damage": 200, "attackInterval": 3.5, "attackRange": 16, "projectileCount": 12, "aoeRadius": 3.2, "projectileInterval": 0.1, "projectileFlightDuration": 1.25, "brownianStrength": 3.2 },
+        { "level": 3, "goldCost": 9000, "damage": 400, "attackInterval": 3, "attackRange": 18, "projectileCount": 16, "aoeRadius": 3.4, "projectileInterval": 0.1, "projectileFlightDuration": 1, "brownianStrength": 3.4 }
+      ],
+      "upgradePath": "线性升级，无分支。",
+      "baseMechanic": "一轮发射多枚火箭，对多个落点造成范围伤害。",
+      "importantSynergies": ["密集敌群", "回响格把弹体数提高到约 1.5 倍"]
+    },
+    {
+      "id": 8,
+      "enumName": "ChargeTower",
+      "displayName": "充能塔",
+      "role": "改变地图格的工程辅助塔",
+      "upgradeable": false,
+      "placementRadius": 2.8,
+      "footprintCells": [1, 1],
+      "baseGoldCost": 5000,
+      "specialTowerCountCostMultiplier": 0.25,
+      "actualCostFormula": "5000 × (1 + 已有充能塔数量 × 0.25)，向上取整。",
+      "mechanic": "建造后选择相邻八方向中的一个尚无运行时效果的可建造格，再从随机 3 个特殊格效果中选择 1 个。首次刷新免费，之后刷新价格从 300、450、725 开始继续按约 1.5 倍增长。",
+      "candidateTileEffectIds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14],
+      "decisionHint": "先决定目标格未来要放哪种塔，再判断充能塔位置与随机候选效果是否值得。"
+    },
+    {
+      "id": 9,
+      "enumName": "ReinforcementTower",
+      "displayName": "强化塔",
+      "role": "邻格全属性光环辅助塔",
+      "upgradeable": false,
+      "placementRadius": 3.1,
+      "footprintCells": [1, 1],
+      "baseGoldCost": 4000,
+      "specialTowerCountCostMultiplier": 0.5,
+      "actualCostFormula": "4000 × (1 + 已有强化塔数量 × 0.5)，向上取整。",
+      "auraRangeCells": 1,
+      "auraBuffLevels": { "damage": 1, "range": 1, "attackSpeed": 1 },
+      "mechanic": "按切比雪夫距离覆盖周围一格，重叠光环可叠加；每级等于对应属性 +20%，仍受全局有效等级上限约束。",
+      "decisionHint": "优先覆盖多个高价值塔，尤其是升级完成、路线互补或正在打 Boss 的塔群。"
+    }
+  ]
+}

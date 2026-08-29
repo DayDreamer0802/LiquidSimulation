@@ -246,6 +246,7 @@ public partial class RougeGameManager
         _tiltShiftObservationExiting = false;
         RestoreObservationUi();
         ShowCameraModeToast(_cameraViewMode);
+        ShowPendingTowerDefenseAutoplayReleaseToast();
         EndCameraViewTransitionPause();
 
         RougeDefenseTower tower = _observationPendingTowerSelection;

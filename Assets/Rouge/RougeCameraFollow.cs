@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 [DefaultExecutionOrder(1000)]
@@ -628,7 +629,10 @@ public class RougeCameraFollow : MonoBehaviour
         if (_panDragButton == 0)
         {
             if (mouse.middleButton.wasPressedThisFrame) _panDragButton = 1;
-            else if (!buildMode && mouse.leftButton.wasPressedThisFrame) _panDragButton = 2;
+            else if (!buildMode && mouse.leftButton.wasPressedThisFrame &&
+                     (EventSystem.current == null ||
+                      !EventSystem.current.IsPointerOverGameObject()))
+                _panDragButton = 2;
             else return;
             _lastPointerPosition = pointer;
             return;

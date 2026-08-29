@@ -147,6 +147,7 @@ public partial class RougeGameManager
     private int _towerDefenseGold;
     private int _towerDefenseGoldEarnedTotal;
     private int _towerDefenseAliveEstimate;
+    private int _towerDefenseSpawnedTotal;
     private float _towerDefenseSpawnerResolveRetryTimer;
     private bool _towerDefenseAllSpawnersExhausted;
     private float _nextKillAllVerificationTime;
@@ -1316,7 +1317,10 @@ public partial class RougeGameManager
         if (contacts <= 0) return;
         _mainTowerDamageCount[0] = 0;
         _towerDefenseAliveEstimate = Mathf.Max(0, _towerDefenseAliveEstimate - contacts);
+        float healthBeforeDamage = mainTower.CurrentHealth;
         if (mainTower.ApplyEnemyContacts(contacts)) _pendingMainTowerAoe = true;
+        NotifyTowerDefenseAutoplayMainTowerDamaged(
+            Mathf.Max(0f, healthBeforeDamage - mainTower.CurrentHealth));
         RefreshTowerDefenseUi();
     }
 
@@ -2669,6 +2673,7 @@ public partial class RougeGameManager
                 new Vector3(spawn.x, renderHeight + radius * 1.55f, spawn.z), Vector3.zero);
         }
         _towerDefenseAliveEstimate++;
+        _towerDefenseSpawnedTotal++;
         RefreshTowerDefenseUi();
         return true;
     }
@@ -2921,6 +2926,7 @@ public partial class RougeGameManager
             }
         }
         _towerDefenseAliveEstimate = 0;
+        _towerDefenseSpawnedTotal = 0;
         return true;
     }
 
@@ -3120,6 +3126,7 @@ public partial class RougeGameManager
             spawned++;
         }
         _towerDefenseAliveEstimate += spawned;
+        _towerDefenseSpawnedTotal += spawned;
     }
 
     private int GetTowerDefenseAliveEnemyCap()
@@ -3501,7 +3508,7 @@ public partial class RougeGameManager
                 (_iceSpikeCandidateCells[selectedIndex], _iceSpikeCandidateCells[i]);
             Vector2Int targetCell = _iceSpikeCandidateCells[i];
             Vector3 target = map.CellCenter(targetCell, renderHeight);
-            TryAddSkillArea(new RougeSkillArea
+            TryAddTowerDirectDamageArea(new RougeSkillArea
             {
                 Type = 21,
                 Position = new float2(target.x, target.z),
@@ -3516,7 +3523,7 @@ public partial class RougeGameManager
                 SourceTowerTileEffect = (int)tower.TowerPlaceEffect,
                 SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                 SourceTowerWealthCellIndexPlusOne = GetTowerWealthCellIndexPlusOne(tower)
-            });
+            }, TowerFrostAreaSlowMultiplier);
             SpawnIceSpikeVisual(target, map.CellSize);
             SpawnAOERing(target + Vector3.up * 0.06f, map.CellSize * 0.5f, 0.3f,
                 new Color(0.18f, 0.84f, 1f, 1f));
@@ -4158,7 +4165,8 @@ public partial class RougeGameManager
         float armorPenetration = 0f, float postArmorMultiplier = 1f)
     {
         if (damage <= 0f || (uint)enemyIndex >= (uint)_towerLaserDamage.Length) return false;
-        ApplyFrostTileSlowToEnemy(towerType, tileEffect, enemyIndex);
+        ApplyFrostTileSlowToEnemy(tileEffect, enemyIndex,
+            TowerFrostDirectSlowMultiplier);
         damage = ResolveTowerDirectHitDamage(enemyIndex, damage, armorPenetration,
             postArmorMultiplier);
         if (_towerLaserDamageFrames[enemyIndex] != _towerLaserDamageFrame)
@@ -4193,11 +4201,10 @@ public partial class RougeGameManager
         return killed;
     }
 
-    private void ApplyFrostTileSlowToEnemy(RougeTowerType towerType, int tileEffect,
-        int enemyIndex)
+    private void ApplyFrostTileSlowToEnemy(int tileEffect, int enemyIndex,
+        float slowMultiplier)
     {
-        if (towerType == RougeTowerType.Ice ||
-            tileEffect != (int)RougeTowerPlaceEffect.Frost ||
+        if (tileEffect != (int)RougeTowerPlaceEffect.Frost || slowMultiplier <= 0f ||
             !_effectStateA.IsCreated || (uint)enemyIndex >= (uint)_effectStateA.Length)
             return;
 
@@ -4206,7 +4213,7 @@ public partial class RougeGameManager
         RougeEnemyEffectState effects = _effectStateA[enemyIndex];
         effects.SlowStacks = 1f;
         effects.SlowPercent = Mathf.Max(effects.SlowPercent,
-            config.frostAttackSlowPercent);
+            config.frostAttackSlowPercent * Mathf.Clamp01(slowMultiplier));
         effects.SlowTimer = Mathf.Max(effects.SlowTimer, config.frostDurationBonus);
         _effectStateA[enemyIndex] = effects;
     }
@@ -4461,7 +4468,7 @@ public partial class RougeGameManager
                     float normalFreeze = config.freezeNormalDuration + frostDurationBonus;
                     float eliteFreeze = config.freezeEliteDuration + frostDurationBonus;
                     float bossFreeze = config.freezeBossDuration + frostDurationBonus;
-                    TryAddSkillArea(new RougeSkillArea
+                    TryAddTowerDirectDamageArea(new RougeSkillArea
                     {
                         Type = 13,
                         Position = new float2(p.x, p.z),
@@ -4498,7 +4505,7 @@ public partial class RougeGameManager
                         SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                         SourceTowerWealthCellIndexPlusOne =
                             GetTowerWealthCellIndexPlusOne(tower)
-                    });
+                    }, TowerFrostAreaSlowMultiplier);
                     SpawnAOERing(new Vector3(p.x, renderHeight + 0.08f, p.z), tower.AttackRange, 0.45f,
                         new Color(0.2f, 0.85f, 1f, 1f));
                     CompleteEchoAttackStep(tower);
@@ -4572,7 +4579,7 @@ public partial class RougeGameManager
             float2 direction = new float2(
                 aim.x * cos - aim.y * sin,
                 aim.x * sin + aim.y * cos);
-            TryAddSkillArea(new RougeSkillArea
+            TryAddTowerDirectDamageArea(new RougeSkillArea
             {
                 Type = 22,
                 Position = new float2(origin3.x, origin3.z),
@@ -4585,7 +4592,7 @@ public partial class RougeGameManager
                 SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                 SourceTowerWealthCellIndexPlusOne =
                     GetTowerWealthCellIndexPlusOne(tower)
-            });
+            }, TowerFrostAreaSlowMultiplier);
             if (showPresentation)
                 SpawnTowerFlameJetVisual(tower.GetShootPosition(), direction,
                     tower.AttackRange, coneAngle);
@@ -4807,7 +4814,7 @@ public partial class RougeGameManager
                     float2 lineEnd = new float2(position.x, position.z);
                     float2 lineDelta = lineEnd - lineStart;
                     float lineLength = math.max(math.length(lineDelta), 0.001f);
-                    TryAddSkillArea(new RougeSkillArea
+                    TryAddTowerDirectDamageArea(new RougeSkillArea
                     {
                         Type = 15,
                         Position = lineStart,
@@ -4823,7 +4830,7 @@ public partial class RougeGameManager
                         SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
                         SourceTowerWealthCellIndexPlusOne =
                             GetTowerWealthCellIndexPlusOne(tower)
-                    });
+                    }, TowerFrostAreaSlowMultiplier);
                 }
                 attack.DamageTimer += damageInterval;
             }
@@ -5044,7 +5051,7 @@ public partial class RougeGameManager
             return;
         }
 
-        TryAddSkillArea(new RougeSkillArea
+        TryAddTowerDirectDamageArea(new RougeSkillArea
         {
             Type = 13,
             Position = impact,
@@ -5054,7 +5061,7 @@ public partial class RougeGameManager
             SourceTowerTileEffect = projectile.TileEffect,
             SourceTowerKillGoldBonus = projectile.KillGoldBonus,
             SourceTowerWealthCellIndexPlusOne = projectile.WealthCellIndexPlusOne
-        });
+        }, TowerFrostAreaSlowMultiplier);
     }
 
     private void ResolveCannonProjectileImpact(TowerProjectile projectile)
@@ -5094,10 +5101,11 @@ public partial class RougeGameManager
     private void AddCannonDamageArea(Vector3 position, float radius, float damage,
         float knockbackForce, int killGoldBonus, int wealthCellIndexPlusOne,
         int tileEffect, float innerRadiusMultiplier = 0f,
-        float innerDamageMultiplier = 1f)
+        float innerDamageMultiplier = 1f,
+        float frostSlowMultiplier = TowerFrostAreaSlowMultiplier)
     {
         if (damage <= 0f || radius <= 0f) return;
-        TryAddSkillArea(new RougeSkillArea
+        TryAddTowerDirectDamageArea(new RougeSkillArea
         {
             Type = 13,
             Position = new float2(position.x, position.z),
@@ -5110,7 +5118,7 @@ public partial class RougeGameManager
             SourceTowerTileEffect = tileEffect,
             SourceTowerKillGoldBonus = killGoldBonus,
             SourceTowerWealthCellIndexPlusOne = wealthCellIndexPlusOne
-        });
+        }, frostSlowMultiplier);
     }
 
     private void ResolveMachineGunProjectileHit(TowerProjectile projectile,
@@ -5209,7 +5217,8 @@ public partial class RougeGameManager
             {
                 AddCannonDamageArea(zone.Position, zone.Radius, zone.DamagePerTick,
                     zone.KnockbackForce, zone.KillGoldBonus,
-                    zone.WealthCellIndexPlusOne, zone.TileEffect);
+                    zone.WealthCellIndexPlusOne, zone.TileEffect,
+                    frostSlowMultiplier: 0f);
                 SpawnExplosionVFX(zone.Position + Vector3.up * 0.25f,
                     zone.Radius * 0.35f);
                 SpawnAOERing(zone.Position, zone.Radius, 0.22f,
@@ -5818,7 +5827,7 @@ public partial class RougeGameManager
 
         if (!beam.DamageApplied && fireTime >= PiercingLaserDamageTime)
         {
-            beam.DamageApplied = TryAddSkillArea(new RougeSkillArea
+            beam.DamageApplied = TryAddTowerDirectDamageArea(new RougeSkillArea
             {
                 Type = 15,
                 Position = new float2(beam.Start.x, beam.Start.z),
@@ -5830,7 +5839,7 @@ public partial class RougeGameManager
                 SourceTowerTileEffect = beam.TileEffect,
                 SourceTowerKillGoldBonus = beam.KillGoldBonus,
                 SourceTowerWealthCellIndexPlusOne = beam.WealthCellIndexPlusOne
-            });
+            }, TowerFrostAreaSlowMultiplier);
         }
     }
 
@@ -6519,7 +6528,8 @@ public partial class RougeGameManager
         if (_towerDefenseControlsText == null) return;
 
         string qualityHint =
-            $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel} · [F6] 岚托管";
+            $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel} · " +
+            $"[F6] {TowerDefenseAutoplayCharacterName}托管";
         string speedHint = _towerDefenseDoubleSpeed
             ? "[F10] 速度 ×2"
             : "[F10] 速度 ×1";
@@ -7017,19 +7027,7 @@ public partial class RougeGameManager
             RougeTowerPlaceEffect.Frost)
             return RougeTowerPlaceEffectRules.GetDescription(effect);
 
-        RougeIceTowerSpecializationConfig config =
-            TowerDefenseVisuals.GetIceSpecializationConfig();
-        string duration = config.frostDurationBonus.ToString("0.##");
-        if (contextTower != null && contextTower.TowerType == RougeTowerType.Ice)
-        {
-            if (contextTower.UsesIceFreeze)
-                return $"冻结时间增加 {duration} 秒。";
-            if (contextTower.UsesIceVulnerability)
-                return $"减速和脆弱时长增加 {duration} 秒。";
-            return $"减速时长增加 {duration} 秒。";
-        }
-
-        return $"攻击附带 {config.frostAttackSlowPercent:0.#}% 减速。";
+        return "直接伤害附加减速，范围伤害效果减半。";
     }
 
     private int GetReinforcementAuraLevelAtCell(RougeTowerDefenseMap map,
@@ -8077,7 +8075,7 @@ public partial class RougeGameManager
     private void ResolveRocketBarrageImpact(ActiveRocketBarrageMissile missile)
     {
         float2 impact = new float2(missile.End.x, missile.End.z);
-        TryAddSkillArea(new RougeSkillArea
+        TryAddTowerDirectDamageArea(new RougeSkillArea
         {
             Type = 13,
             Position = impact,
@@ -8087,7 +8085,7 @@ public partial class RougeGameManager
             SourceTowerTileEffect = missile.TileEffect,
             SourceTowerKillGoldBonus = missile.KillGoldBonus,
             SourceTowerWealthCellIndexPlusOne = missile.WealthCellIndexPlusOne
-        });
+        }, TowerFrostAreaSlowMultiplier);
         SpawnExplosionVFX(missile.End + Vector3.up * 0.35f,
             Mathf.Max(1.25f, missile.Radius * 0.72f));
         SpawnAOERing(missile.End, missile.Radius, 0.26f,

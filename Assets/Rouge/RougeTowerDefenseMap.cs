@@ -43,7 +43,7 @@ public enum RougeTowerPlaceEffect
     AccumulatedWealth = 12,
     [InspectorName("13 - 范围 Lv-2，升级金币消耗 +50%，击杀时 3% 概率爆炸")]
     Explosion = 13,
-    [InspectorName("14 - 霜寒格：攻击附带减速，冰塔延长对应状态")]
+    [InspectorName("14 - 霜寒格：直接伤害附加减速，范围伤害效果减半")]
     Frost = 14
 }
 
@@ -168,7 +168,7 @@ public static class RougeTowerPlaceEffectRules
             case RougeTowerPlaceEffect.Explosion:
                 return "范围 -2；升级费用 +50%；击杀时有 3% 概率引发爆炸。";
             case RougeTowerPlaceEffect.Frost:
-                return "攻击附带减速；冰塔会根据升级路线延长对应状态。";
+                return "直接伤害附加减速，范围伤害效果减半。";
             default:
                 return "此地图格没有特殊效果";
         }

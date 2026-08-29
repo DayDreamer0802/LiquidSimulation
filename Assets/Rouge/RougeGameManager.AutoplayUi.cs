@@ -14,6 +14,8 @@ public partial class RougeGameManager
     private Canvas _towerDefenseAutoplayCanvas;
     private GameObject _towerDefenseAutoplayHudRoot;
     private Image _towerDefenseAutoplayPortrait;
+    private Image _towerDefenseAutoplayPortraitPulse;
+    private Button _towerDefenseAutoplayPortraitButton;
     private Text _towerDefenseAutoplayRoleText;
     private Text _towerDefenseAutoplayStatusText;
     private Text _towerDefenseAutoplayThoughtTitle;
@@ -34,6 +36,24 @@ public partial class RougeGameManager
     private int _towerDefenseAutoplayRenderedEntranceRevision = -1;
     private int _towerDefenseAutoplayRenderedThoughtRevision = -1;
     private bool _towerDefenseAutoplayIdentityRendered;
+    private int _towerDefenseAutoplayPortraitRapidClickCount;
+    private float _towerDefenseAutoplayPortraitRapidClickWindowStarted =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayLastPortraitClickDialogueTime =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayLastPortraitRapidDialogueTime =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayPortraitPulseStarted =
+        float.NegativeInfinity;
+    private float _towerDefenseAutoplayPortraitPulseDuration;
+    private bool _towerDefenseAutoplayPortraitPulseIsRapid;
+    private Color _towerDefenseAutoplayPortraitPulseColor = Color.clear;
+    private RougeAutoplayCommanderPortraitEmotion
+        _towerDefenseAutoplayRenderedPortraitEmotion =
+            (RougeAutoplayCommanderPortraitEmotion)(-1);
+    private RougeAutoplayCommanderPortraitVariant
+        _towerDefenseAutoplayRenderedPortraitVariant =
+            (RougeAutoplayCommanderPortraitVariant)(-1);
 
     partial void RefreshTowerDefenseAutoplayPresentation()
     {
@@ -75,11 +95,13 @@ public partial class RougeGameManager
                 $"策略 {CurrentAutoplayStrategyLabel} · 并行推演";
         if (_towerDefenseAutoplayHintText != null)
             _towerDefenseAutoplayHintText.text =
-                $"[F2] 隐藏界面   [F6] 结束托管   " +
+                $"[立绘] 互动   [F2] 隐藏   [F6] 结束   " +
                 $"[F10] ×{(_towerDefenseDoubleSpeed ? 2 : 1)}";
 
         RefreshTowerDefenseAutoplayHealthLines();
         UpdateTowerDefenseAutoplayHeartbeat();
+        RefreshTowerDefenseAutoplayPortraitSprite();
+        UpdateTowerDefenseAutoplayPortraitInteractionFeedback();
 
         bool speechVisible = _towerDefenseAutoplayEntrancePending &&
                              _survivalTime <=
@@ -118,6 +140,7 @@ public partial class RougeGameManager
         _towerDefenseAutoplayCanvas.sortingOrder = 60;
         CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
         RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
+        canvasObject.AddComponent<GraphicRaycaster>();
 
         _towerDefenseAutoplayHudRoot = new GameObject(
             "Autoplay Companion HUD", typeof(RectTransform));
@@ -169,8 +192,10 @@ public partial class RougeGameManager
     {
         _towerDefenseAutoplayPortrait = CreateUiImage(
             "Autoplay Character Portrait", parent, Color.white);
-        _towerDefenseAutoplayPortrait.sprite = RougeSpriteAssets.Load(
-            TowerDefenseAutoplayPortraitResourcePath);
+        _towerDefenseAutoplayPortrait.raycastTarget = true;
+        _towerDefenseAutoplayPortrait.sprite = TowerDefenseAutoplayCommander
+            .ResolvePortraitSprite(GetTowerDefenseAutoplayPortraitEmotion(),
+                RougeAutoplayCommanderPortraitVariant.Base);
         _towerDefenseAutoplayPortrait.preserveAspect = true;
         RectTransform portraitRect = _towerDefenseAutoplayPortrait.rectTransform;
         portraitRect.anchorMin = new Vector2(0f, 0f);
@@ -178,6 +203,245 @@ public partial class RougeGameManager
         portraitRect.pivot = new Vector2(0f, 0f);
         portraitRect.anchoredPosition = new Vector2(12f, 8f);
         portraitRect.sizeDelta = new Vector2(310f, 476f);
+
+        _towerDefenseAutoplayPortraitPulse = CreateUiImage(
+            "Autoplay Portrait Interaction Pulse", parent, Color.clear);
+        _towerDefenseAutoplayPortraitPulse.sprite =
+            _towerDefenseAutoplayPortrait.sprite;
+        _towerDefenseAutoplayPortraitPulse.preserveAspect = true;
+        _towerDefenseAutoplayPortraitPulse.raycastTarget = false;
+        RectTransform pulseRect = _towerDefenseAutoplayPortraitPulse.rectTransform;
+        pulseRect.anchorMin = portraitRect.anchorMin;
+        pulseRect.anchorMax = portraitRect.anchorMax;
+        pulseRect.pivot = portraitRect.pivot;
+        pulseRect.anchoredPosition = portraitRect.anchoredPosition;
+        pulseRect.sizeDelta = portraitRect.sizeDelta;
+        pulseRect.localScale = Vector3.one;
+        pulseRect.SetSiblingIndex(portraitRect.GetSiblingIndex());
+
+        _towerDefenseAutoplayPortraitButton =
+            _towerDefenseAutoplayPortrait.gameObject.AddComponent<Button>();
+        _towerDefenseAutoplayPortraitButton.targetGraphic =
+            _towerDefenseAutoplayPortrait;
+        _towerDefenseAutoplayPortraitButton.transition =
+            Selectable.Transition.None;
+        _towerDefenseAutoplayPortraitButton.onClick.AddListener(
+            HandleTowerDefenseAutoplayPortraitClicked);
+        ResetTowerDefenseAutoplayPortraitInteraction();
+    }
+
+    private void HandleTowerDefenseAutoplayPortraitClicked()
+    {
+        if (!_towerDefenseAutoplayEnabled || _towerDefenseGameOver ||
+            _towerDefenseVictory) return;
+
+        float now = Time.unscaledTime;
+        float rapidWindow = TowerDefenseAutoplayDialogueTriggers
+            .portraitRapidClickWindowSeconds;
+        if (_towerDefenseAutoplayPortraitRapidClickCount <= 0 ||
+            now - _towerDefenseAutoplayPortraitRapidClickWindowStarted >
+            rapidWindow)
+        {
+            _towerDefenseAutoplayPortraitRapidClickCount = 0;
+            _towerDefenseAutoplayPortraitRapidClickWindowStarted = now;
+        }
+        _towerDefenseAutoplayPortraitRapidClickCount++;
+        bool rapid = _towerDefenseAutoplayPortraitRapidClickCount >=
+            TowerDefenseAutoplayDialogueTriggers.portraitRapidClickCount;
+        PlayTowerDefenseAutoplayPortraitInteractionFeedback(rapid);
+
+        if (rapid)
+        {
+            _towerDefenseAutoplayPortraitRapidClickCount = 0;
+            _towerDefenseAutoplayPortraitRapidClickWindowStarted = now;
+            if (now - _towerDefenseAutoplayLastPortraitRapidDialogueTime >=
+                TowerDefenseAutoplayDialogueTriggers
+                    .portraitRapidClickDialogueCooldownSeconds &&
+                TryEmitTowerDefenseAutoplayInteractionDialogue(
+                    GetAutoplayPortraitDialogueCategory(true)))
+            {
+                _towerDefenseAutoplayLastPortraitRapidDialogueTime = now;
+                _towerDefenseAutoplayLastPortraitClickDialogueTime = now;
+                return;
+            }
+        }
+
+        if (now - _towerDefenseAutoplayLastPortraitClickDialogueTime <
+            TowerDefenseAutoplayDialogueTriggers
+                .portraitClickDialogueCooldownSeconds) return;
+        if (TryEmitTowerDefenseAutoplayInteractionDialogue(
+                GetAutoplayPortraitDialogueCategory(false)))
+            _towerDefenseAutoplayLastPortraitClickDialogueTime = now;
+    }
+
+    private AutoplayDialogueCategory GetAutoplayPortraitDialogueCategory(
+        bool rapid)
+    {
+        if (rapid)
+        {
+            switch (_towerDefenseAutoplayEmotionState)
+            {
+                case AutoplayEmotionState.Focused:
+                    return AutoplayDialogueCategory.PortraitRapidClickFocused;
+                case AutoplayEmotionState.Tense:
+                    return AutoplayDialogueCategory.PortraitRapidClickTense;
+                case AutoplayEmotionState.Critical:
+                    return AutoplayDialogueCategory.PortraitRapidClickCritical;
+                default:
+                    return AutoplayDialogueCategory.PortraitRapidClickCalm;
+            }
+        }
+        switch (_towerDefenseAutoplayEmotionState)
+        {
+            case AutoplayEmotionState.Focused:
+                return AutoplayDialogueCategory.PortraitClickFocused;
+            case AutoplayEmotionState.Tense:
+                return AutoplayDialogueCategory.PortraitClickTense;
+            case AutoplayEmotionState.Critical:
+                return AutoplayDialogueCategory.PortraitClickCritical;
+            default:
+                return AutoplayDialogueCategory.PortraitClickCalm;
+        }
+    }
+
+    private void PlayTowerDefenseAutoplayPortraitInteractionFeedback(bool rapid)
+    {
+        _towerDefenseAutoplayPortraitPulseStarted = Time.unscaledTime;
+        _towerDefenseAutoplayPortraitPulseDuration = rapid ? 0.58f : 0.34f;
+        _towerDefenseAutoplayPortraitPulseIsRapid = rapid;
+        Color emotionColor;
+        switch (_towerDefenseAutoplayEmotionState)
+        {
+            case AutoplayEmotionState.Focused:
+                emotionColor = new Color(0.3f, 0.58f, 1f, 1f);
+                break;
+            case AutoplayEmotionState.Tense:
+                emotionColor = new Color(1f, 0.56f, 0.12f, 1f);
+                break;
+            case AutoplayEmotionState.Critical:
+                emotionColor = new Color(1f, 0.18f, 0.52f, 1f);
+                break;
+            default:
+                emotionColor = new Color(0.12f, 0.88f, 1f, 1f);
+                break;
+        }
+        _towerDefenseAutoplayPortraitPulseColor = rapid
+            ? Color.Lerp(emotionColor, Color.white, 0.18f)
+            : emotionColor;
+        RefreshTowerDefenseAutoplayPortraitSprite(true);
+    }
+
+    private void RefreshTowerDefenseAutoplayPortraitSprite(bool force = false)
+    {
+        if (_towerDefenseAutoplayPortrait == null) return;
+        RougeAutoplayCommanderPortraitEmotion emotion =
+            GetTowerDefenseAutoplayPortraitEmotion();
+        float elapsed = Time.unscaledTime -
+                        _towerDefenseAutoplayPortraitPulseStarted;
+        bool interactionActive = elapsed >= 0f &&
+            elapsed < _towerDefenseAutoplayPortraitPulseDuration;
+        RougeAutoplayCommanderPortraitVariant variant = interactionActive
+            ? _towerDefenseAutoplayPortraitPulseIsRapid
+                ? RougeAutoplayCommanderPortraitVariant.RapidClick
+                : RougeAutoplayCommanderPortraitVariant.Click
+            : RougeAutoplayCommanderPortraitVariant.Base;
+        if (!force &&
+            emotion == _towerDefenseAutoplayRenderedPortraitEmotion &&
+            variant == _towerDefenseAutoplayRenderedPortraitVariant)
+            return;
+
+        Sprite sprite = TowerDefenseAutoplayCommander.ResolvePortraitSprite(
+            emotion, variant);
+        if (sprite != null)
+        {
+            // Only the sprite changes. The portrait and pulse retain the same
+            // RectTransforms, anchors, pivots and sizing across every state.
+            _towerDefenseAutoplayPortrait.sprite = sprite;
+            if (_towerDefenseAutoplayPortraitPulse != null)
+                _towerDefenseAutoplayPortraitPulse.sprite = sprite;
+        }
+        _towerDefenseAutoplayRenderedPortraitEmotion = emotion;
+        _towerDefenseAutoplayRenderedPortraitVariant = variant;
+    }
+
+    private RougeAutoplayCommanderPortraitEmotion
+        GetTowerDefenseAutoplayPortraitEmotion()
+    {
+        switch (_towerDefenseAutoplayEmotionState)
+        {
+            case AutoplayEmotionState.Focused:
+                return RougeAutoplayCommanderPortraitEmotion.Focused;
+            case AutoplayEmotionState.Tense:
+                return RougeAutoplayCommanderPortraitEmotion.Tense;
+            case AutoplayEmotionState.Critical:
+                return RougeAutoplayCommanderPortraitEmotion.Critical;
+            default:
+                return RougeAutoplayCommanderPortraitEmotion.Calm;
+        }
+    }
+
+    private void UpdateTowerDefenseAutoplayPortraitInteractionFeedback()
+    {
+        if (_towerDefenseAutoplayPortrait == null ||
+            _towerDefenseAutoplayPortraitPulse == null) return;
+        float elapsed = Time.unscaledTime -
+                        _towerDefenseAutoplayPortraitPulseStarted;
+        if (elapsed < 0f ||
+            elapsed >= _towerDefenseAutoplayPortraitPulseDuration)
+        {
+            _towerDefenseAutoplayPortrait.rectTransform.localScale = Vector3.one;
+            _towerDefenseAutoplayPortraitPulse.rectTransform.localScale =
+                Vector3.one;
+            _towerDefenseAutoplayPortraitPulse.color = Color.clear;
+            return;
+        }
+
+        float progress = Mathf.Clamp01(elapsed /
+            Mathf.Max(0.01f, _towerDefenseAutoplayPortraitPulseDuration));
+        float portraitPunch = Mathf.Sin(progress * Mathf.PI) *
+                              (_towerDefenseAutoplayPortraitPulseIsRapid
+                                  ? 0.055f
+                                  : 0.026f);
+        _towerDefenseAutoplayPortrait.rectTransform.localScale =
+            Vector3.one * (1f + portraitPunch);
+        float pulseExpansion = Mathf.SmoothStep(0f,
+            _towerDefenseAutoplayPortraitPulseIsRapid ? 0.18f : 0.1f,
+            progress);
+        _towerDefenseAutoplayPortraitPulse.rectTransform.localScale =
+            Vector3.one * (1f + pulseExpansion);
+        Color pulseColor = _towerDefenseAutoplayPortraitPulseColor;
+        pulseColor.a = (1f - progress) *
+                       (_towerDefenseAutoplayPortraitPulseIsRapid ? 0.72f : 0.42f);
+        _towerDefenseAutoplayPortraitPulse.color = pulseColor;
+    }
+
+    private void ResetTowerDefenseAutoplayPortraitInteraction()
+    {
+        _towerDefenseAutoplayPortraitRapidClickCount = 0;
+        _towerDefenseAutoplayPortraitRapidClickWindowStarted =
+            float.NegativeInfinity;
+        _towerDefenseAutoplayLastPortraitClickDialogueTime =
+            float.NegativeInfinity;
+        _towerDefenseAutoplayLastPortraitRapidDialogueTime =
+            float.NegativeInfinity;
+        _towerDefenseAutoplayPortraitPulseStarted = float.NegativeInfinity;
+        _towerDefenseAutoplayPortraitPulseDuration = 0f;
+        _towerDefenseAutoplayPortraitPulseIsRapid = false;
+        _towerDefenseAutoplayPortraitPulseColor = Color.clear;
+        if (_towerDefenseAutoplayPortrait != null)
+        {
+            _towerDefenseAutoplayPortrait.raycastTarget = true;
+            _towerDefenseAutoplayPortrait.rectTransform.localScale = Vector3.one;
+        }
+        if (_towerDefenseAutoplayPortraitButton != null)
+            _towerDefenseAutoplayPortraitButton.interactable = true;
+        if (_towerDefenseAutoplayPortraitPulse != null)
+        {
+            _towerDefenseAutoplayPortraitPulse.rectTransform.localScale =
+                Vector3.one;
+            _towerDefenseAutoplayPortraitPulse.color = Color.clear;
+        }
+        RefreshTowerDefenseAutoplayPortraitSprite(true);
     }
 
     private void BuildTowerDefenseAutoplayThoughtPanel(Transform parent)
@@ -743,24 +1007,39 @@ public partial class RougeGameManager
         _towerDefenseAutoplayEntrancePending = false;
         _towerDefenseAutoplaySpeechVisibleUntil = 0f;
         _towerDefenseAutoplayThoughtLog.Clear();
+        ResetTowerDefenseAutoplayPortraitInteraction();
         ClearTowerDefenseAutoplaySessionState();
     }
 
     private void StopTowerDefenseAutoplayForConclusion()
     {
         if (_towerDefenseAutoplayEnabled)
-            SetTowerDefenseAutoplayEnabled(false);
+        {
+            _towerDefenseAutoplayConclusionStopping = true;
+            try
+            {
+                SetTowerDefenseAutoplayEnabled(false);
+            }
+            finally
+            {
+                _towerDefenseAutoplayConclusionStopping = false;
+            }
+        }
         else
             SetAutoplayCleanView(false);
     }
 
     private void DisposeTowerDefenseAutoplayUi()
     {
+        if (_towerDefenseAutoplayPortraitButton != null)
+            _towerDefenseAutoplayPortraitButton.onClick.RemoveAllListeners();
         if (_towerDefenseAutoplayCanvas != null)
             Destroy(_towerDefenseAutoplayCanvas.gameObject);
         _towerDefenseAutoplayCanvas = null;
         _towerDefenseAutoplayHudRoot = null;
         _towerDefenseAutoplayPortrait = null;
+        _towerDefenseAutoplayPortraitPulse = null;
+        _towerDefenseAutoplayPortraitButton = null;
         _towerDefenseAutoplayRoleText = null;
         _towerDefenseAutoplayStatusText = null;
         _towerDefenseAutoplayThoughtTitle = null;
@@ -781,5 +1060,9 @@ public partial class RougeGameManager
         _towerDefenseAutoplayRenderedEntranceRevision = -1;
         _towerDefenseAutoplayRenderedThoughtRevision = -1;
         _towerDefenseAutoplayIdentityRendered = false;
+        _towerDefenseAutoplayRenderedPortraitEmotion =
+            (RougeAutoplayCommanderPortraitEmotion)(-1);
+        _towerDefenseAutoplayRenderedPortraitVariant =
+            (RougeAutoplayCommanderPortraitVariant)(-1);
     }
 }
