@@ -98,6 +98,22 @@ public enum RougeCannonAugment
     [InspectorName("B2 - 额外触发 2 次并提高伤害")] PersistentExtraTicks = 4
 }
 
+public enum RougeFlameTowerBranch
+{
+    None = 0,
+    [InspectorName("A - 喷火器")] Flamethrower = 1,
+    [InspectorName("B - 燃烧")] Burning = 2
+}
+
+public enum RougeFlameTowerAugment
+{
+    None = 0,
+    [InspectorName("A1 - 旋转喷火器")] RotatingFlamethrower = 1,
+    [InspectorName("A2 - 扇形喷火器")] FanFlamethrower = 2,
+    [InspectorName("B1 - 叠层燃烧")] StackingBurn = 3,
+    [InspectorName("B2 - 爆燃")] Conflagration = 4
+}
+
 public readonly struct RougeTowerStats
 {
     public readonly float Damage;
@@ -339,6 +355,29 @@ internal static class TowerDefenseVisuals
         }
         config.EnsureDefaults();
         return config;
+    }
+
+    public static RougeFlameTowerSpecializationConfig GetFlameSpecializationConfig()
+    {
+        RougeFlameTowerSpecializationConfig config = s_runtimeBalance?.flameTowerSpecialization;
+        if (config == null)
+        {
+            config = new RougeFlameTowerSpecializationConfig();
+            if (s_runtimeBalance != null) s_runtimeBalance.flameTowerSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
+    }
+
+    public static float ApplyRuntimeTowerDamage(float damage)
+    {
+        return Mathf.Max(0f, damage) * s_runtimeDamageMultiplier;
+    }
+
+    public static float ApplyRuntimeTowerAttackInterval(float interval)
+    {
+        return Mathf.Max(0.001f, interval) /
+               Mathf.Max(0.01f, s_runtimeAttackSpeedMultiplier);
     }
 
     public static RougeTowerStats GetStats(RougeTowerType type, int requestedLevel)

@@ -3509,10 +3509,10 @@ MonoBehaviour:
   bossBalances:
   - bossId: 0
     displayName: Overlord
-    spawnTimeSeconds: 900
-    targetArrivalTimeSeconds: 1200
-    targetTravelTimeSeconds: 300
-    maxHealth: 1000000
+    spawnTimeSeconds: 720
+    targetArrivalTimeSeconds: 1080
+    targetTravelTimeSeconds: 360
+    maxHealth: 800000
     armor: 5
     moveSpeed: 3.5
     maximumSlowPercent: 20
@@ -3533,10 +3533,10 @@ MonoBehaviour:
   bossBalance:
     bossId: 0
     displayName: Overlord
-    spawnTimeSeconds: 900
-    targetArrivalTimeSeconds: 1200
-    targetTravelTimeSeconds: 300
-    maxHealth: 1000000
+    spawnTimeSeconds: 720
+    targetArrivalTimeSeconds: 1080
+    targetTravelTimeSeconds: 360
+    maxHealth: 800000
     armor: 5
     moveSpeed: 3.5
     maximumSlowPercent: 20

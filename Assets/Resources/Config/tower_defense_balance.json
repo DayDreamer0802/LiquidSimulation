@@ -1,5 +1,5 @@
 {
-    "version": 13,
+    "version": 14,
     "towerBalance": {
         "sellRefundMultiplier": 0.33000001311302187,
         "iceTowerSpecialization": {
@@ -70,6 +70,26 @@
             "refractionAttackTargetMultiplier": 2,
             "refractionAttackDamageFalloffPerTarget": 0.05,
             "refractionAttackMaximumDamageFalloff": 0.5
+        },
+        "flameTowerSpecialization": {
+            "flamethrowerDamage": 10.0,
+            "flamethrowerAttackInterval": 0.1,
+            "flamethrowerRange": 15.0,
+            "flamethrowerAngle": 30.0,
+            "rotatingDamage": 20.0,
+            "rotatingAttackInterval": 0.05,
+            "rotatingDegreesPerSecond": 360.0,
+            "fanSpacingPaddingDegrees": 10.0,
+            "focusedAnglePerProjectile": 15.0,
+            "focusedDamageBonusPerProjectile": 0.5,
+            "burnDuration": 3.0,
+            "burnTickInterval": 0.75,
+            "burnDamageMultiplier": 0.25,
+            "attackSpeedBuffEffectiveness": 0.5,
+            "maximumBurnStacks": 10,
+            "damageBonusPerStack": 0.1,
+            "burnSpeedBonus": 0.25,
+            "conflagrationDamageMultiplier": 5.0
         },
         "towers": [
             {
@@ -955,10 +975,10 @@
         {
             "bossId": 0,
             "displayName": "Overlord",
-            "spawnTimeSeconds": 900.0,
-            "targetArrivalTimeSeconds": 1200.0,
-            "targetTravelTimeSeconds": 300.0,
-            "maxHealth": 1000000.0,
+            "spawnTimeSeconds": 720.0,
+            "targetArrivalTimeSeconds": 1080.0,
+            "targetTravelTimeSeconds": 360.0,
+            "maxHealth": 800000.0,
             "armor": 5.0,
             "moveSpeed": 3.5,
             "maximumSlowPercent": 20.0,
@@ -985,10 +1005,10 @@
     "bossBalance": {
         "bossId": 0,
         "displayName": "Overlord",
-        "spawnTimeSeconds": 900.0,
-        "targetArrivalTimeSeconds": 1200.0,
-        "targetTravelTimeSeconds": 300.0,
-        "maxHealth": 1000000.0,
+        "spawnTimeSeconds": 720.0,
+        "targetArrivalTimeSeconds": 1080.0,
+        "targetTravelTimeSeconds": 360.0,
+        "maxHealth": 800000.0,
         "armor": 5.0,
         "moveSpeed": 3.5,
         "maximumSlowPercent": 20.0,

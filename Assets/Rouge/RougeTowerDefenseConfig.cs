@@ -307,6 +307,63 @@ public sealed class RougeLaserTowerSpecializationConfig
 }
 
 [Serializable]
+public sealed class RougeFlameTowerSpecializationConfig
+{
+    [Header("A - 喷火器")]
+    [Min(0f)] public float flamethrowerDamage = 10f;
+    [Min(0.01f)] public float flamethrowerAttackInterval = 0.1f;
+    [Min(0.1f)] public float flamethrowerRange = 15f;
+    [Range(1f, 180f)] public float flamethrowerAngle = 30f;
+
+    [Header("A1 - 旋转喷火器")]
+    [Min(0f)] public float rotatingDamage = 20f;
+    [Min(0.01f)] public float rotatingAttackInterval = 0.05f;
+    [Min(0f)] public float rotatingDegreesPerSecond = 360f;
+
+    [Header("A2 - 扇形 / 集中")]
+    [Min(0f)] public float fanSpacingPaddingDegrees = 10f;
+    [Min(0f)] public float focusedAnglePerProjectile = 15f;
+    [Min(0f)] public float focusedDamageBonusPerProjectile = 0.5f;
+
+    [Header("B - 燃烧")]
+    [Min(0f)] public float burnDuration = 3f;
+    [Min(0.01f)] public float burnTickInterval = 0.75f;
+    [Min(0f)] public float burnDamageMultiplier = 0.25f;
+    [Range(0f, 1f)] public float attackSpeedBuffEffectiveness = 0.5f;
+
+    [Header("B1 - 叠层燃烧")]
+    [Min(1)] public int maximumBurnStacks = 10;
+    [Min(0f)] public float damageBonusPerStack = 0.1f;
+    [Min(0f)] public float burnSpeedBonus = 0.25f;
+
+    [Header("B2 - 爆燃")]
+    [Min(0f)] public float conflagrationDamageMultiplier = 5f;
+
+    public void EnsureDefaults()
+    {
+        flamethrowerDamage = Mathf.Max(0f, flamethrowerDamage);
+        flamethrowerAttackInterval = Mathf.Max(0.01f, flamethrowerAttackInterval);
+        flamethrowerRange = Mathf.Max(0.1f, flamethrowerRange);
+        flamethrowerAngle = Mathf.Clamp(flamethrowerAngle, 1f, 180f);
+        rotatingDamage = Mathf.Max(0f, rotatingDamage);
+        rotatingAttackInterval = Mathf.Max(0.01f, rotatingAttackInterval);
+        rotatingDegreesPerSecond = Mathf.Max(0f, rotatingDegreesPerSecond);
+        fanSpacingPaddingDegrees = Mathf.Max(0f, fanSpacingPaddingDegrees);
+        focusedAnglePerProjectile = Mathf.Max(0f, focusedAnglePerProjectile);
+        focusedDamageBonusPerProjectile = Mathf.Max(0f,
+            focusedDamageBonusPerProjectile);
+        burnDuration = Mathf.Max(0f, burnDuration);
+        burnTickInterval = Mathf.Max(0.01f, burnTickInterval);
+        burnDamageMultiplier = Mathf.Max(0f, burnDamageMultiplier);
+        attackSpeedBuffEffectiveness = Mathf.Clamp01(attackSpeedBuffEffectiveness);
+        maximumBurnStacks = Mathf.Max(1, maximumBurnStacks);
+        damageBonusPerStack = Mathf.Max(0f, damageBonusPerStack);
+        burnSpeedBonus = Mathf.Max(0f, burnSpeedBonus);
+        conflagrationDamageMultiplier = Mathf.Max(0f, conflagrationDamageMultiplier);
+    }
+}
+
+[Serializable]
 public sealed class RougeTowerBalanceConfig
 {
     [Range(0f, 1f)] public float sellRefundMultiplier = 0.25f;
@@ -318,6 +375,8 @@ public sealed class RougeTowerBalanceConfig
         new RougeCannonSpecializationConfig();
     public RougeLaserTowerSpecializationConfig laserTowerSpecialization =
         new RougeLaserTowerSpecializationConfig();
+    public RougeFlameTowerSpecializationConfig flameTowerSpecialization =
+        new RougeFlameTowerSpecializationConfig();
     public List<RougeTowerTypeConfig> towers = new List<RougeTowerTypeConfig>();
 
     public void EnsureDefaults()
@@ -330,6 +389,8 @@ public sealed class RougeTowerBalanceConfig
         cannonSpecialization.EnsureDefaults();
         laserTowerSpecialization ??= new RougeLaserTowerSpecializationConfig();
         laserTowerSpecialization.EnsureDefaults();
+        flameTowerSpecialization ??= new RougeFlameTowerSpecializationConfig();
+        flameTowerSpecialization.EnsureDefaults();
         foreach (RougeTowerType type in Enum.GetValues(typeof(RougeTowerType)))
         {
             RougeTowerTypeConfig config = Find(type);
@@ -696,11 +757,11 @@ public sealed class RougeBossBalanceConfig
     [Tooltip("Stable integer ID referenced by level Boss schedules and external content.")]
     public int bossId;
     public string displayName = "Overlord";
-    [Min(1f)] public float spawnTimeSeconds = 900f;
-    [Min(1f)] public float targetArrivalTimeSeconds = 1200f;
+    [Min(1f)] public float spawnTimeSeconds = 720f;
+    [Min(1f)] public float targetArrivalTimeSeconds = 1080f;
     [Min(1f), Tooltip("Desired travel time from Boss spawn to the main tower. Level schedules control the actual spawn minute.")]
-    public float targetTravelTimeSeconds = 300f;
-    [Min(1f)] public float maxHealth = 1000000f;
+    public float targetTravelTimeSeconds = 360f;
+    [Min(1f)] public float maxHealth = 800000f;
     [Range(RougeArmorRules.MinimumEnemyArmor, RougeArmorRules.MaximumEnemyArmor), Tooltip("Armor points. Each point removes 1 damage and then reduces the remainder by 5%; final damage is at least 1.")]
     public float armor = 5f;
     [Min(0.1f)] public float moveSpeed = 3.5f; // Fallback when no valid route distance is available.
@@ -725,9 +786,9 @@ public sealed class RougeBossBalanceConfig
     public void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(displayName)) displayName = $"Boss {bossId}";
-        if (spawnTimeSeconds <= 0f) spawnTimeSeconds = 900f;
+        if (spawnTimeSeconds <= 0f) spawnTimeSeconds = 720f;
         if (targetArrivalTimeSeconds <= spawnTimeSeconds)
-            targetArrivalTimeSeconds = spawnTimeSeconds + 300f;
+            targetArrivalTimeSeconds = spawnTimeSeconds + 360f;
         if (targetTravelTimeSeconds <= 0f)
             targetTravelTimeSeconds = Mathf.Max(30f, targetArrivalTimeSeconds - spawnTimeSeconds);
         maxHealth = Mathf.Max(1f, maxHealth);
@@ -835,7 +896,7 @@ public sealed class RougeTacticalSkillBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 13;
+    public int version = 14;
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
     public RougeEnemyBalanceConfig enemyBalance = new RougeEnemyBalanceConfig();
     public List<RougeBossBalanceConfig> bossBalances = new List<RougeBossBalanceConfig>();
@@ -944,6 +1005,9 @@ public sealed class RougeTowerDefenseBalanceJsonData
         if (loadedVersion < 13)
             towerBalance.laserTowerSpecialization =
                 new RougeLaserTowerSpecializationConfig();
+        if (loadedVersion < 14)
+            towerBalance.flameTowerSpecialization =
+                new RougeFlameTowerSpecializationConfig();
         for (int i = bossBalances.Count - 1; i >= 0; i--)
         {
             if (bossBalances[i] == null)
@@ -965,7 +1029,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         enemyBalance.EnsureDefaults();
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        version = Mathf.Max(version, 13);
+        version = Mathf.Max(version, 14);
     }
 }
 
@@ -1008,7 +1072,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 13,
+            version = 14,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
             bossBalances = bossBalances,

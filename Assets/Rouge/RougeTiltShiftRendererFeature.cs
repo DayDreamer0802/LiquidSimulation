@@ -52,6 +52,7 @@ public sealed class RougeTiltShiftRendererFeature : ScriptableRendererFeature
         private RTHandle _horizontalBlur;
         private RTHandle _verticalBlur;
         private RTHandle _compositeColor;
+        private int _activeDownsample = 1;
 
         private sealed class CompositePassData
         {
@@ -77,9 +78,13 @@ public sealed class RougeTiltShiftRendererFeature : ScriptableRendererFeature
             RenderTextureDescriptor blurDescriptor = descriptor;
             if (RougeTiltShiftCamera.IsEffectActive)
             {
-                int downsample = RougeVisualQualityManager.TiltShiftDownsample;
-                blurDescriptor.width = Mathf.Max(1, blurDescriptor.width / downsample);
-                blurDescriptor.height = Mathf.Max(1, blurDescriptor.height / downsample);
+                _activeDownsample =
+                    RougeVisualQualityManager.ResolveTiltShiftDownsample(
+                        blurDescriptor.width, blurDescriptor.height);
+                blurDescriptor.width = Mathf.Max(1,
+                    blurDescriptor.width / _activeDownsample);
+                blurDescriptor.height = Mathf.Max(1,
+                    blurDescriptor.height / _activeDownsample);
                 RenderingUtils.ReAllocateHandleIfNeeded(ref _horizontalBlur, blurDescriptor,
                     FilterMode.Bilinear, TextureWrapMode.Clamp,
                     name: "_RougeTiltShiftHorizontalBlur");
@@ -103,7 +108,7 @@ public sealed class RougeTiltShiftRendererFeature : ScriptableRendererFeature
                     _horizontalBlur != null && _verticalBlur != null)
                 {
                     _material.SetFloat(VerticalBlurScaleId,
-                        1f / RougeVisualQualityManager.TiltShiftDownsample);
+                        1f / _activeDownsample);
                     Blitter.BlitCameraTexture(cmd, cameraColor, _horizontalBlur, _material, 0);
                     Blitter.BlitCameraTexture(cmd, _horizontalBlur, _verticalBlur, _material, 1);
                     _material.SetTexture(BlurredTextureId, _verticalBlur.rt);
@@ -138,7 +143,9 @@ public sealed class RougeTiltShiftRendererFeature : ScriptableRendererFeature
             if (useBlur)
             {
                 TextureDesc blurDescriptor = sourceDescriptor;
-                int downsample = RougeVisualQualityManager.TiltShiftDownsample;
+                int downsample =
+                    RougeVisualQualityManager.ResolveTiltShiftDownsample(
+                        blurDescriptor.width, blurDescriptor.height);
                 blurDescriptor.width = Mathf.Max(1, blurDescriptor.width / downsample);
                 blurDescriptor.height = Mathf.Max(1, blurDescriptor.height / downsample);
                 blurDescriptor.filterMode = FilterMode.Bilinear;

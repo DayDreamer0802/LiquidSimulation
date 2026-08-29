@@ -555,6 +555,16 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerAttackSpeedMultiplier"), new GUIContent("塔楼攻速倍率"));
 
         EditorGUILayout.Space(5f);
+        EditorGUILayout.LabelField("随机战场事件", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "先配置事件库，再在时间线上填写候选事件 ID。到点后会从候选项中随机抽取一个。" +
+            "持续时间 -1 表示倍率永久或立即效果只结算一次。", MessageType.Info);
+        EditorGUILayout.PropertyField(
+            _serializedMap.FindProperty("levelEventDefinitions"), true);
+        EditorGUILayout.PropertyField(
+            _serializedMap.FindProperty("levelEventTimeline"), true);
+
+        EditorGUILayout.Space(5f);
         DrawDisabledTowerIds(_serializedMap.FindProperty("disabledTowerTypeIds"));
 
         bool guiChanged = EditorGUI.EndChangeCheck();
@@ -748,7 +758,7 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
             encounters.InsertArrayElementAtIndex(index);
             SerializedProperty added = encounters.GetArrayElementAtIndex(index);
             added.FindPropertyRelative("bossId").intValue = bossIds.Length > 0 ? bossIds[0] : 0;
-            added.FindPropertyRelative("spawnMinute").floatValue = 15f;
+            added.FindPropertyRelative("spawnMinute").floatValue = 12f;
             added.FindPropertyRelative("defeatGrantsVictory").boolValue = false;
         }
     }

@@ -121,10 +121,19 @@ public sealed class RougeBossSpriteAnimator : MonoBehaviour
         _frozenOverlayRenderer.gameObject.SetActive(active && !_shattered);
     }
 
+    public void SetBurningVisual(bool active)
+    {
+        if (_renderer == null || _shattered) return;
+        _renderer.color = active
+            ? new Color(1f, 0.38f, 0.12f, 1f)
+            : Color.white;
+    }
+
     public void BeginDeath()
     {
         _dying = true;
         SetFrozenVisual(false);
+        SetBurningVisual(false);
         _skillRemaining = 0f;
         _frameTimer = 0f;
     }

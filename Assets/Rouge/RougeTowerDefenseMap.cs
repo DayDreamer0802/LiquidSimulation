@@ -386,7 +386,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         [Tooltip("Integer Boss ID from the Tower Defense Balance JSON. IDs remain mod-friendly integers at runtime.")]
         public int bossId;
         [Min(0f), Tooltip("Game minute at which this Boss becomes eligible to spawn.")]
-        public float spawnMinute = 15f;
+        public float spawnMinute = 12f;
         [Tooltip("Only grants victory when the level also contains the Kill Boss victory condition.")]
         public bool defeatGrantsVictory = true;
     }
@@ -430,6 +430,10 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     {
         new BossEncounter()
     };
+    [SerializeField] private List<RougeLevelEventDefinition> levelEventDefinitions =
+        new List<RougeLevelEventDefinition>();
+    [SerializeField] private List<RougeLevelEventTrigger> levelEventTimeline =
+        new List<RougeLevelEventTrigger>();
 
     [Header("Level Camera Clamp / Zoom")]
     [SerializeField] private bool configureCameraBounds = true;
@@ -482,6 +486,10 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public float TowerAttackSpeedMultiplier => towerAttackSpeedMultiplier;
     public int StartingGold => startingGold;
     public IReadOnlyList<BossEncounter> BossEncounters => bossEncounters;
+    public IReadOnlyList<RougeLevelEventDefinition> LevelEventDefinitions =>
+        levelEventDefinitions;
+    public IReadOnlyList<RougeLevelEventTrigger> LevelEventTimeline =>
+        levelEventTimeline;
     public bool ConfigureCameraBounds => configureCameraBounds;
     public Vector2 CameraBoundsCenter => cameraBoundsCenter;
     public Vector2 CameraBoundsSize => cameraBoundsSize;
@@ -864,6 +872,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         towerAttackSpeedMultiplier = 1f;
         startingGold = 2000;
         bossEncounters = new List<BossEncounter> { new BossEncounter() };
+        levelEventDefinitions = new List<RougeLevelEventDefinition>();
+        levelEventTimeline = new List<RougeLevelEventTrigger>();
         legacyTileDefinitions.Clear();
         legacyTileDefinitions.Add(new TileDefinition { name = "Empty", editorColor = new Color(0f, 0f, 0f, 0f) });
         legacyTileDefinitions.Add(new TileDefinition { name = "Ground", editorColor = new Color(0.2f, 0.3f, 0.38f, 0.85f), fallbackHeight = 0.08f });
@@ -901,6 +911,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         victoryConditions ??= new List<VictoryCondition>();
         disabledTowerTypeIds ??= new List<int>();
         bossEncounters ??= new List<BossEncounter>();
+        levelEventDefinitions ??= new List<RougeLevelEventDefinition>();
+        levelEventTimeline ??= new List<RougeLevelEventTrigger>();
     }
 
     private void OnValidate()
@@ -978,6 +990,42 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
                 continue;
             }
             encounter.spawnMinute = Mathf.Max(0f, encounter.spawnMinute);
+        }
+        for (int i = levelEventDefinitions.Count - 1; i >= 0; i--)
+        {
+            RougeLevelEventDefinition definition = levelEventDefinitions[i];
+            if (definition == null)
+            {
+                levelEventDefinitions.RemoveAt(i);
+                continue;
+            }
+            definition.eventId = string.IsNullOrWhiteSpace(definition.eventId)
+                ? $"event_{i + 1}"
+                : definition.eventId.Trim();
+            definition.title = string.IsNullOrWhiteSpace(definition.title)
+                ? "战场事件"
+                : definition.title.Trim();
+            definition.effects ??= new List<RougeLevelEventEffect>();
+            if (definition.durationSeconds >= 0f)
+                definition.durationSeconds = Mathf.Max(0.1f,
+                    definition.durationSeconds);
+            for (int effectIndex = definition.effects.Count - 1;
+                 effectIndex >= 0; effectIndex--)
+            {
+                if (definition.effects[effectIndex] == null)
+                    definition.effects.RemoveAt(effectIndex);
+            }
+        }
+        for (int i = levelEventTimeline.Count - 1; i >= 0; i--)
+        {
+            RougeLevelEventTrigger trigger = levelEventTimeline[i];
+            if (trigger == null)
+            {
+                levelEventTimeline.RemoveAt(i);
+                continue;
+            }
+            trigger.triggerMinute = Mathf.Max(0f, trigger.triggerMinute);
+            trigger.candidateEventIds ??= new List<string>();
         }
         for (int i = 0; i < legacyTileDefinitions.Count; i++)
         {

@@ -34,6 +34,13 @@ public sealed class RougeMainTower : MonoBehaviour
         return true;
     }
 
+    internal void Repair(float amount)
+    {
+        if (amount <= 0f || IsDestroyed) return;
+        currentHealth = Mathf.Min(Mathf.Max(1f, maxHealth),
+            currentHealth + amount);
+    }
+
     private void OnValidate()
     {
         maxHealth = Mathf.Max(1f, maxHealth);

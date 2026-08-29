@@ -372,6 +372,16 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                     balance.FindPropertyRelative("cannonSpecialization"), true);
             }
         }
+        else if (type == RougeTowerType.Flame)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                       GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("火焰塔喷火器与燃烧分支配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("flameTowerSpecialization"), true);
+            }
+        }
         else if (type == RougeTowerType.Laser)
         {
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,

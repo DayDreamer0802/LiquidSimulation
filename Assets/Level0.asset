@@ -412,8 +412,139 @@ MonoBehaviour:
   startingGold: 2500
   bossEncounters:
   - bossId: 0
-    spawnMinute: 15
+    spawnMinute: 12
     defeatGrantsVictory: 1
+  levelEventDefinitions:
+  - eventId: elite_unlock
+    title: "精英信号"
+    description: "检测到强化单位进入战场。"
+    tone: 0
+    durationSeconds: -1
+    effects:
+    - type: 0
+      value: 1
+  - eventId: elite_surge
+    title: "精英潮汐"
+    description: "精英单位生成概率短时提升至十倍。"
+    tone: 1
+    durationSeconds: 45
+    effects:
+    - type: 1
+      value: 10
+  - eventId: rapid_assault
+    title: "急袭"
+    description: "敌军生成速率提升至三倍。"
+    tone: 1
+    durationSeconds: 30
+    effects:
+    - type: 2
+      value: 3
+  - eventId: bounty_protocol
+    title: "悬赏协议"
+    description: "击杀获得的金币提高 50%。"
+    tone: 2
+    durationSeconds: 40
+    effects:
+    - type: 3
+      value: 1.5
+  - eventId: hardened_front
+    title: "装甲锋线"
+    description: "新生成敌人的生命提高 50%。"
+    tone: 1
+    durationSeconds: 45
+    effects:
+    - type: 4
+      value: 1.5
+  - eventId: acceleration_field
+    title: "加速力场"
+    description: "敌军移动速度提高 35%。"
+    tone: 1
+    durationSeconds: 35
+    effects:
+    - type: 5
+      value: 1.35
+  - eventId: elite_mutation
+    title: "精英变异"
+    description: "精英单位生命提高 75%。"
+    tone: 1
+    durationSeconds: 45
+    effects:
+    - type: 6
+      value: 1.75
+  - eventId: elite_haste
+    title: "猎杀步调"
+    description: "精英单位移动速度提高 40%。"
+    tone: 1
+    durationSeconds: 40
+    effects:
+    - type: 7
+      value: 1.4
+  - eventId: high_energy
+    title: "火控增幅"
+    description: "所有防御塔伤害提高 30%。"
+    tone: 2
+    durationSeconds: 35
+    effects:
+    - type: 8
+      value: 1.3
+  - eventId: overclock
+    title: "全域超频"
+    description: "所有防御塔攻击速度提高 35%。"
+    tone: 2
+    durationSeconds: 35
+    effects:
+    - type: 9
+      value: 1.35
+  - eventId: supply_drop
+    title: "紧急补给"
+    description: "获得 750 金币。"
+    tone: 2
+    durationSeconds: -1
+    effects:
+    - type: 10
+      value: 750
+  - eventId: emergency_repair
+    title: "应急修复"
+    description: "主塔恢复最大生命的 20%。"
+    tone: 2
+    durationSeconds: -1
+    effects:
+    - type: 12
+      value: 0.2
+  - eventId: double_wave
+    title: "重叠波次"
+    description: "所有生成点立即追加一轮敌军。"
+    tone: 3
+    durationSeconds: -1
+    effects:
+    - type: 13
+      value: 1
+  levelEventTimeline:
+  - triggerMinute: 3
+    candidateEventIds:
+    - elite_unlock
+  - triggerMinute: 4.5
+    candidateEventIds:
+    - rapid_assault
+    - bounty_protocol
+    - supply_drop
+  - triggerMinute: 7
+    candidateEventIds:
+    - elite_surge
+    - hardened_front
+    - overclock
+  - triggerMinute: 10
+    candidateEventIds:
+    - elite_mutation
+    - high_energy
+    - double_wave
+    - bounty_protocol
+  - triggerMinute: 15
+    candidateEventIds:
+    - acceleration_field
+    - elite_haste
+    - emergency_repair
+    - rapid_assault
   configureCameraBounds: 1
   cameraBoundsCenter: {x: 0, y: 0}
   cameraBoundsSize: {x: 100, y: 100}

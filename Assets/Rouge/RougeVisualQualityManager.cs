@@ -78,6 +78,18 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
         RougeVisualQualityTier.Medium => 2,
         _ => 1
     };
+
+    public static int ResolveTiltShiftDownsample(int width, int height)
+    {
+        int downsample = TiltShiftDownsample;
+        long pixels = (long)Mathf.Max(1, width) * Mathf.Max(1, height);
+        // A full-resolution five-tap horizontal + vertical blur is needlessly
+        // expensive at 1440p/4K. Preserve the enhanced tier at 1080p, but cap the
+        // blur buffer resolution as output size grows; the composite remains full-res.
+        if (pixels >= 7_000_000L) return Mathf.Max(downsample, 4);
+        if (pixels >= 3_000_000L) return Mathf.Max(downsample, 2);
+        return downsample;
+    }
     public static Vector2 ShadowDirection => _shadowDirection;
     public static string ActiveTierLabel => GetTierLabel(_activeTier);
 

@@ -117,6 +117,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [SerializeField] private RougeMachineGunAugment machineGunAugment;
     [SerializeField] private RougeCannonBranch cannonBranch;
     [SerializeField] private RougeCannonAugment cannonAugment;
+    [SerializeField] private RougeFlameTowerBranch flameBranch;
+    [SerializeField] private RougeFlameTowerAugment flameAugment;
     [SerializeField] private RougeLaserTowerBranch laserBranch;
     [SerializeField] private RougeLaserTowerAugment laserAugment;
     [SerializeField] private RougeTowerPlaceEffect towerPlaceEffect;
@@ -131,6 +133,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [System.NonSerialized] internal int projectileBurstPrimaryTargetIndex = -1;
     [System.NonSerialized] internal Vector3 projectileBurstPrimaryTarget;
     [System.NonSerialized] internal float iceSpikeTimer;
+    [System.NonSerialized] internal float flamethrowerRotationDegrees;
+    [System.NonSerialized] internal float flamethrowerPresentationTimer;
     [System.NonSerialized] private System.Action playAttackSoundReleaseCue;
     [System.NonSerialized] private bool echoAttackCycleActive;
     [System.NonSerialized] private int echoAttackRepeatsRemaining;
@@ -176,16 +180,43 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int Level => level;
     public int MaxLevel => TowerDefenseVisuals.MaxTowerLevel;
     public bool CanUpgrade => !IsSpecialTower && level < MaxLevel;
-    public float Damage => Stats.Damage * GetBuffMultiplier(RougeTowerBuffStat.Damage) *
-        (UsesLaserRefractionAttack
-            ? TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackDamageMultiplier
-            : 1f);
-    public float AttackInterval => UsesLaserRefractionAttack
-        ? TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackInterval
-        : Stats.AttackInterval;
+    public float Damage
+    {
+        get
+        {
+            float damage = Stats.Damage;
+            if (UsesFlamethrower)
+            {
+                RougeFlameTowerSpecializationConfig flame =
+                    TowerDefenseVisuals.GetFlameSpecializationConfig();
+                damage = TowerDefenseVisuals.ApplyRuntimeTowerDamage(
+                    UsesRotatingFlamethrower
+                    ? flame.rotatingDamage
+                    : flame.flamethrowerDamage);
+                if (UsesFanFlamethrower &&
+                    targetPriority == RougeTowerTargetPriority.BossFirst)
+                    damage *= 1f + Mathf.Max(1, AttackProjectileCount) *
+                        flame.focusedDamageBonusPerProjectile;
+            }
+            if (UsesLaserRefractionAttack)
+                damage *= TowerDefenseVisuals.GetLaserSpecializationConfig()
+                    .refractionAttackDamageMultiplier;
+            return damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
+        }
+    }
+    public float AttackInterval => UsesFlamethrower
+        ? TowerDefenseVisuals.ApplyRuntimeTowerAttackInterval(
+            UsesRotatingFlamethrower
+            ? TowerDefenseVisuals.GetFlameSpecializationConfig().rotatingAttackInterval
+            : TowerDefenseVisuals.GetFlameSpecializationConfig().flamethrowerAttackInterval)
+        : UsesLaserRefractionAttack
+            ? TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackInterval
+            : Stats.AttackInterval;
     public float EffectiveAttackInterval => AttackInterval /
-        Mathf.Max(0.01f, GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed));
-    public float AttackRange => Stats.AttackRadius * GetBuffMultiplier(RougeTowerBuffStat.Range);
+        Mathf.Max(0.01f, AttackSpeedMultiplier);
+    public float AttackRange => (UsesFlamethrower
+        ? TowerDefenseVisuals.GetFlameSpecializationConfig().flamethrowerRange
+        : Stats.AttackRadius) * GetBuffMultiplier(RougeTowerBuffStat.Range);
     public Vector2Int FootprintCells => Vector2Int.one;
     public int TargetCount => Stats.TargetCount;
     public int ProjectileCount => Stats.ProjectileCount;
@@ -254,7 +285,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         : RougeMachineGunAugment.None;
     public bool RequiresUpgradeChoice => CanUpgrade &&
         (towerType == RougeTowerType.Ice || towerType == RougeTowerType.MachineGun ||
-         towerType == RougeTowerType.Cannon || towerType == RougeTowerType.Laser);
+         towerType == RougeTowerType.Cannon || towerType == RougeTowerType.Flame ||
+         towerType == RougeTowerType.Laser);
     public bool NeedsMachineGunBranchChoice => towerType == RougeTowerType.MachineGun &&
                                                machineGunBranch == RougeMachineGunBranch.None;
     public bool UsesMachineGunCritical => towerType == RougeTowerType.MachineGun &&
@@ -289,6 +321,27 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         cannonAugment == RougeCannonAugment.PersistentKnockback;
     public bool HasUpgradedPersistentCannonTicks => UsesPersistentCannonShell &&
         cannonAugment == RougeCannonAugment.PersistentExtraTicks;
+    public RougeFlameTowerBranch FlameBranch => towerType == RougeTowerType.Flame
+        ? flameBranch
+        : RougeFlameTowerBranch.None;
+    public RougeFlameTowerAugment FlameAugment => towerType == RougeTowerType.Flame
+        ? flameAugment
+        : RougeFlameTowerAugment.None;
+    public bool NeedsFlameBranchChoice => towerType == RougeTowerType.Flame &&
+                                          flameBranch == RougeFlameTowerBranch.None;
+    public bool UsesFlamethrower => towerType == RougeTowerType.Flame &&
+                                    flameBranch == RougeFlameTowerBranch.Flamethrower;
+    public bool UsesRotatingFlamethrower => UsesFlamethrower &&
+        flameAugment == RougeFlameTowerAugment.RotatingFlamethrower;
+    public bool UsesFanFlamethrower => UsesFlamethrower &&
+        flameAugment == RougeFlameTowerAugment.FanFlamethrower;
+    public bool AppliesTowerBurn => towerType == RougeTowerType.Flame &&
+                                    flameBranch == RougeFlameTowerBranch.Burning;
+    public bool UsesStackingBurn => AppliesTowerBurn &&
+        flameAugment == RougeFlameTowerAugment.StackingBurn;
+    public bool UsesConflagration => AppliesTowerBurn &&
+        flameAugment == RougeFlameTowerAugment.Conflagration;
+    public bool CanToggleTargetPriority => !UsesRotatingFlamethrower;
     public RougeLaserTowerBranch LaserBranch => towerType == RougeTowerType.Laser
         ? laserBranch
         : RougeLaserTowerBranch.None;
@@ -314,7 +367,17 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int LaserRefractionAttackCount => Mathf.Clamp(AttackTargetCount *
         TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackTargetMultiplier,
         1, FindTowerTargetsJob.MaxTargetsPerTower * 2);
-    public float AttackSpeedMultiplier => GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed);
+    public float AttackSpeedMultiplier
+    {
+        get
+        {
+            float multiplier = GetBuffMultiplier(RougeTowerBuffStat.AttackSpeed);
+            if (!AppliesTowerBurn) return multiplier;
+            float effectiveness = TowerDefenseVisuals.GetFlameSpecializationConfig()
+                .attackSpeedBuffEffectiveness;
+            return Mathf.Max(0.01f, 1f + (multiplier - 1f) * effectiveness);
+        }
+    }
     public bool IsOverclocked => overclockRemaining > 0f;
     public int ReinforcementAuraBuffLevel => IsReinforcementTower
         ? TowerDefenseVisuals.GetReinforcementAuraBuffLevel()
@@ -339,7 +402,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int RelocationCost => RougeTowerPlaceEffectRules.GetRelocationGoldCost(investedGold);
     public int UpgradeCost => CanUpgrade
         ? level >= 2 && (NeedsIceBranchChoice || NeedsMachineGunBranchChoice ||
-                         NeedsCannonBranchChoice || NeedsLaserBranchChoice)
+                         NeedsCannonBranchChoice || NeedsFlameBranchChoice ||
+                         NeedsLaserBranchChoice)
             ? 0
             : ScaleUpgradeGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
         : 0;
@@ -347,6 +411,16 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         ? "充能塔"
         : IsReinforcementTower
             ? "强化塔"
+            : towerType == RougeTowerType.Flame && UsesRotatingFlamethrower
+                ? "旋转喷火器"
+                : towerType == RougeTowerType.Flame && UsesFanFlamethrower
+                    ? "扇形喷火器"
+                    : towerType == RougeTowerType.Flame && UsesFlamethrower
+                        ? "喷火器"
+                        : towerType == RougeTowerType.Flame && UsesConflagration
+                            ? "爆燃火塔"
+                            : towerType == RougeTowerType.Flame && UsesStackingBurn
+                                ? "叠燃火塔"
             : TowerDefenseVisuals.GetTowerName(towerType);
 
     private bool UsesEchoBarrageMultiplier => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
@@ -419,7 +493,13 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         machineGunAugment = RougeMachineGunAugment.None;
         cannonBranch = RougeCannonBranch.None;
         cannonAugment = RougeCannonAugment.None;
+        flameBranch = RougeFlameTowerBranch.None;
+        flameAugment = RougeFlameTowerAugment.None;
+        laserBranch = RougeLaserTowerBranch.None;
+        laserAugment = RougeLaserTowerAugment.None;
         iceSpikeTimer = 0f;
+        flamethrowerRotationDegrees = 0f;
+        flamethrowerPresentationTimer = 0f;
         towerPlaceEffect = RougeTowerPlaceEffect.None;
         hasChargeTargetCell = false;
         chargeTargetCell = default;
@@ -490,6 +570,18 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         Collider collider = GetComponent<Collider>();
         if (collider != null) collider.enabled = false;
         TowerDefenseVisuals.SetRenderersTransparent(gameObject, false, Color.white);
+    }
+
+    /// <summary>
+    /// Reconciles a discounted purchase after the normal placement/upgrade path has
+    /// recorded its listed cost. Refunds and relocation costs must follow the gold
+    /// that was actually paid, not the pre-discount value.
+    /// </summary>
+    internal void RecordActualGoldPaid(int listedCost, int actualPaidCost)
+    {
+        int listed = Mathf.Max(0, listedCost);
+        int paid = Mathf.Clamp(actualPaidCost, 0, listed);
+        investedGold = Mathf.Max(0, investedGold - (listed - paid));
     }
 
     internal void Ensure2DVisual()
@@ -644,6 +736,29 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 level++;
             }
         }
+        else if (towerType == RougeTowerType.Flame)
+        {
+            if (NeedsFlameBranchChoice)
+            {
+                flameBranch = choiceIndex == 0
+                    ? RougeFlameTowerBranch.Flamethrower
+                    : RougeFlameTowerBranch.Burning;
+                if (level < 2) level++;
+            }
+            else
+            {
+                flameAugment = flameBranch == RougeFlameTowerBranch.Flamethrower
+                    ? choiceIndex == 0
+                        ? RougeFlameTowerAugment.RotatingFlamethrower
+                        : RougeFlameTowerAugment.FanFlamethrower
+                    : choiceIndex == 0
+                        ? RougeFlameTowerAugment.StackingBurn
+                        : RougeFlameTowerAugment.Conflagration;
+                if (flameAugment == RougeFlameTowerAugment.RotatingFlamethrower)
+                    targetPriority = RougeTowerTargetPriority.NearestToGoal;
+                level++;
+            }
+        }
         else
         {
             if (NeedsCannonBranchChoice)
@@ -667,6 +782,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         }
         investedGold += cost;
         iceSpikeTimer = 0f;
+        flamethrowerRotationDegrees = 0f;
+        flamethrowerPresentationTimer = 0f;
         ResetCombatAfterLevelChange();
         RefreshFocusedModeBuff();
         return true;
@@ -681,6 +798,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
 
     private void ResetCombatAfterLevelChange()
     {
+        if (towerType == RougeTowerType.Flame)
+            attackTimer = Mathf.Min(attackTimer, EffectiveAttackInterval * 0.25f);
         targetIndex = -1;
         projectileBurstShotsRemaining = 0;
         projectileBurstShotIndex = 0;
@@ -693,6 +812,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
 
     internal void ToggleTargetPriority()
     {
+        if (!CanToggleTargetPriority) return;
         targetPriority = targetPriority == RougeTowerTargetPriority.BossFirst
             ? RougeTowerTargetPriority.NearestToGoal
             : RougeTowerTargetPriority.BossFirst;
@@ -1010,6 +1130,16 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     internal void UpdatePresentation(float dt)
     {
         UpdateOverclock(dt);
+        flamethrowerPresentationTimer = Mathf.Max(0f,
+            flamethrowerPresentationTimer - Mathf.Max(0f, dt));
+        if (!UsesRotatingFlamethrower) return;
+        float speed = TowerDefenseVisuals.GetFlameSpecializationConfig()
+            .rotatingDegreesPerSecond;
+        flamethrowerRotationDegrees = Mathf.Repeat(
+            flamethrowerRotationDegrees + Mathf.Max(0f, dt) * speed, 360f);
+        float radians = flamethrowerRotationDegrees * Mathf.Deg2Rad;
+        AimAt(transform.position + new Vector3(Mathf.Sin(radians), 0f,
+            Mathf.Cos(radians)));
     }
 
     internal Vector3 GetCrystalLaserOrigin()
@@ -1220,6 +1350,25 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 cannonAugment != RougeCannonAugment.None &&
                 cannonAugment < RougeCannonAugment.PersistentKnockback)
                 cannonAugment = RougeCannonAugment.None;
+        }
+
+        if (towerType != RougeTowerType.Flame)
+        {
+            flameBranch = RougeFlameTowerBranch.None;
+            flameAugment = RougeFlameTowerAugment.None;
+        }
+        else
+        {
+            if (flameBranch == RougeFlameTowerBranch.None && level >= 3) level = 2;
+            if (level < 2) flameBranch = RougeFlameTowerBranch.None;
+            if (level < 3) flameAugment = RougeFlameTowerAugment.None;
+            if (flameBranch == RougeFlameTowerBranch.Flamethrower &&
+                flameAugment > RougeFlameTowerAugment.FanFlamethrower)
+                flameAugment = RougeFlameTowerAugment.None;
+            if (flameBranch == RougeFlameTowerBranch.Burning &&
+                flameAugment != RougeFlameTowerAugment.None &&
+                flameAugment < RougeFlameTowerAugment.StackingBurn)
+                flameAugment = RougeFlameTowerAugment.None;
         }
 
         if (towerType != RougeTowerType.Laser)

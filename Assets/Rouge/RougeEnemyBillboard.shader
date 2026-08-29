@@ -85,6 +85,7 @@ Shader "Rouge/EnemyBillboard"
                 float airborne : TEXCOORD6;
                 float2 overlayUv : TEXCOORD7;
                 float frozen : TEXCOORD8;
+                float burn : TEXCOORD9;
             };
 
             Varyings Vert(Attributes input)
@@ -114,6 +115,7 @@ Shader "Rouge/EnemyBillboard"
                 float visualFlags = floor(max(state.w, 0.0) / 10.0 + 0.001);
                 float slowed = step(0.5, fmod(floor(visualFlags * 0.125), 2.0));
                 float frozen = step(0.5, fmod(floor(visualFlags * 0.015625), 2.0));
+                float burning = step(0.5, fmod(floor(visualFlags * 0.0078125), 2.0));
                 float4 positionHCS = TransformWorldToHClip(positionWS);
                 float4 feetHCS = TransformWorldToHClip(positionScale.xyz);
                 // A camera-facing quad normally has a depth gradient across its plane,
@@ -177,6 +179,7 @@ Shader "Rouge/EnemyBillboard"
                 output.dead = dead;
                 output.slow = slowed;
                 output.frozen = frozen;
+                output.burn = burning;
                 output.enemyKind = enemyKind;
                 float launchBuffered = step(0.5, fmod(floor(visualFlags * 0.25), 2.0));
                 float aboveGround = step(_RenderHeight + 0.05, positionScale.y);
@@ -208,6 +211,12 @@ Shader "Rouge/EnemyBillboard"
                 color.rgb = lerp(color.rgb,
                     color.rgb * half3(0.55, 0.78, 1.35) + half3(0.02, 0.08, 0.2),
                     input.slow * 0.68);
+                // Burn wins the body tint while slow remains readable as a cool rim;
+                // the separate frozen overlay is composited afterwards.
+                half burnPulse = 0.78h + 0.14h * sin(_Time.y * 12.0h + input.overlayUv.y * 9.0h);
+                color.rgb = lerp(color.rgb,
+                    color.rgb * half3(1.38, 0.56, 0.20) + half3(0.42, 0.055, 0.008),
+                    input.burn * burnPulse);
                 color.rgb = lerp(color.rgb, frozenOverlay.rgb,
                     saturate(frozenOverlay.a * 0.92h));
                 color.a = max(color.a, frozenOverlay.a);

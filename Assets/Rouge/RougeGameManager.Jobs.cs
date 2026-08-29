@@ -1495,6 +1495,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
     private const int FacingLeftVisualFlag = 16;
     private const int FacingValidVisualFlag = 32;
     private const int FrozenVisualFlag = 64;
+    private const int BurnVisualFlag = 128;
     private const float LaunchMotionDuration = 0.22f;
     private const float LaunchStackDuration = 0.12f;
     private const float LaunchPlanarImpulseFactor = 1.05f;
@@ -1755,7 +1756,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     health,
                     radius,
                     maxSpeed,
-                    EncodeVisualState(flashTimer, false, true, false, false, false,
+                    EncodeVisualState(flashTimer, false, true, false, false, false, false,
                         effects.FacingDirection < 0f));
                 effectOutPtr[sourceIndex] = effects;
                 continue;
@@ -2007,6 +2008,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             ProcessIceSpikeCell(ref health, ref flashTimer, ref vel,
                                 ref tornadoMark, ref effects, pos, skill);
                             break;
+                        case 22:
+                            ProcessTowerCone(ref health, ref flashTimer, ref vel,
+                                ref tornadoMark, ref effects, pos, skill);
+                            break;
                     }
                     int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
                     if ((uint)sourceTowerType < (uint)TowerDefenseVisuals.TowerTypeCount &&
@@ -2071,15 +2076,26 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                 effects.BurnTickTimer -= DeltaTime;
                 while (effects.BurnTimer > 0f && effects.BurnTickTimer <= 0f)
                 {
-                    health -= ApplyArmor(effects.BurnDamage, effects);
+                    float burnDamage = effects.BurnDamage *
+                        (1f + math.max(0, effects.BurnStacks) *
+                         math.max(0f, effects.BurnDamageBonusPerStack));
+                    health -= ApplyArmor(burnDamage, effects);
                     flashTimer = math.max(flashTimer, 0.3f);
-                    effects.BurnTickTimer += BurnTickInterval;
+                    effects.BurnTickTimer += math.max(0.01f,
+                        effects.BurnTickInterval > 0f
+                            ? effects.BurnTickInterval
+                            : BurnTickInterval);
                 }
 
                 if (effects.BurnTimer <= 0f)
                 {
                     effects.BurnTickTimer = 0f;
                     effects.BurnDamage = 0f;
+                    effects.BurnTickInterval = 0f;
+                    effects.BurnStacks = 0;
+                    effects.BurnMaximumStacks = 0;
+                    effects.BurnDamageBonusPerStack = 0f;
+                    effects.BurnCreatesGround = 0;
                     effects.BurnDuration = 0f;
                     effects.BurnReapplyCooldown = 0f;
                 }
@@ -2088,6 +2104,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             {
                 effects.BurnTickTimer = 0f;
                 effects.BurnDamage = 0f;
+                effects.BurnTickInterval = 0f;
+                effects.BurnStacks = 0;
+                effects.BurnMaximumStacks = 0;
+                effects.BurnDamageBonusPerStack = 0f;
+                effects.BurnCreatesGround = 0;
                 effects.BurnDuration = 0f;
                 effects.BurnReapplyCooldown = 0f;
             }
@@ -2361,7 +2382,8 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     });
                 }
 
-                if (effects.BurnTimer > 0f && effects.BurnDamage > 0f)
+                if (effects.BurnTimer > 0f && effects.BurnDamage > 0f &&
+                    effects.BurnCreatesGround != 0)
                 {
                     SkillEventQueue.Enqueue(new RougeSkillEvent
                     {
@@ -2459,6 +2481,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                     bufferedLaunchDeath && launchKillPending && health > 0f,
                     effects.SlowTimer > 0f && effects.SlowPercent > 0f,
                     effects.FreezeTimer > 0f,
+                    effects.BurnTimer > 0f,
                     effects.FacingDirection < 0f));
             effectOutPtr[sourceIndex] = effects;
         }
@@ -2471,7 +2494,7 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
     private static float EncodeVisualState(float flashTimer, bool hasCurseVisual, bool isDeadVisual,
         bool isBufferedLaunchVisual, bool isSlowedVisual, bool isFrozenVisual,
-        bool isFacingLeft)
+        bool isBurningVisual, bool isFacingLeft)
     {
         int flags = 0;
         if (hasCurseVisual)
@@ -2497,6 +2520,11 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
         if (isFrozenVisual)
         {
             flags |= FrozenVisualFlag;
+        }
+
+        if (isBurningVisual)
+        {
+            flags |= BurnVisualFlag;
         }
 
         flags |= FacingValidVisualFlag;
@@ -3016,8 +3044,59 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             flashTimer = math.max(flashTimer, skill.Type == 14 ? 0.2f : 0.8f);
         }
 
+        if (skill.EffectConflagrationDamage > 0f && effects.FreezeTimer > 0f)
+        {
+            health -= ApplyArmor(skill.EffectConflagrationDamage, effects);
+            effects.FreezeTimer = 0f;
+            ClearBurnStatus(ref effects);
+            skill.EffectFlags &= ~(int)SkillHitEffectTag.Burn;
+            flashTimer = math.max(flashTimer, 0.99f);
+            SkillEventQueue.Enqueue(new RougeSkillEvent
+            {
+                Type = (int)RougeSkillEventType.Conflagration,
+                Position = pos.xz,
+                Radius = math.max(1.5f, skill.Radius * 0.28f)
+            });
+        }
+
         ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects, pos, skill);
         return repelled;
+    }
+
+    private void ProcessTowerCone(ref float health, ref float flashTimer,
+        ref float3 vel, ref float tornadoMark, ref RougeEnemyEffectState effects,
+        float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 offset = pos.xz - skill.Position;
+        float distanceSq = math.lengthsq(offset);
+        float range = math.max(0f, skill.Radius);
+        if (distanceSq > range * range) return;
+        if (distanceSq > 0.0001f)
+        {
+            float cosine = math.cos(math.radians(math.clamp(skill.AuxA, 0f, 180f)));
+            if (math.dot(offset * math.rsqrt(distanceSq),
+                    math.normalizesafe(skill.Direction, new float2(0f, 1f))) < cosine)
+                return;
+        }
+        health -= ApplyArmor(math.max(0f, skill.Damage), effects);
+        flashTimer = math.max(flashTimer, 0.24f);
+        ApplySkillEffects(ref vel, ref flashTimer, ref tornadoMark, ref effects,
+            pos, skill);
+    }
+
+    private static void ClearBurnStatus(ref RougeEnemyEffectState effects)
+    {
+        effects.BurnTimer = 0f;
+        effects.BurnTickTimer = 0f;
+        effects.BurnDamage = 0f;
+        effects.BurnTickInterval = 0f;
+        effects.BurnStacks = 0;
+        effects.BurnMaximumStacks = 0;
+        effects.BurnDamageBonusPerStack = 0f;
+        effects.BurnCreatesGround = 0;
+        effects.BurnDuration = 0f;
+        effects.BurnReapplyCooldown = 0f;
     }
 
     private void ProcessTowerLaser(ref float health, ref float flashTimer,
@@ -3337,7 +3416,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
 
             if (effects.BurnTimer <= 0f)
             {
-                effects.BurnTickTimer = BurnTickInterval;
+                effects.BurnTickTimer = skill.EffectBurnTickInterval > 0f
+                    ? skill.EffectBurnTickInterval
+                    : BurnTickInterval;
+                effects.BurnStacks = 0;
             }
 
             if (isBurnPatch)
@@ -3360,7 +3442,27 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             }
 
             effects.BurnDamage = math.max(effects.BurnDamage, burnDamage);
+            int maximumStacks = math.max(1, skill.EffectBurnMaximumStacks);
+            if (maximumStacks > 1)
+                effects.BurnStacks = math.min(maximumStacks,
+                    math.max(0, effects.BurnStacks) + 1);
+            else
+                effects.BurnStacks = 1;
+            effects.BurnMaximumStacks = maximumStacks;
+            effects.BurnDamageBonusPerStack = math.max(
+                effects.BurnDamageBonusPerStack,
+                math.max(0f, skill.EffectBurnDamageBonusPerStack));
+            effects.BurnTickInterval = effects.BurnTickInterval > 0f
+                ? math.min(effects.BurnTickInterval,
+                    skill.EffectBurnTickInterval > 0f
+                        ? skill.EffectBurnTickInterval
+                        : BurnTickInterval)
+                : skill.EffectBurnTickInterval > 0f
+                    ? skill.EffectBurnTickInterval
+                    : BurnTickInterval;
             effects.BurnDuration = math.max(effects.BurnDuration, burnDuration);
+            if (skill.SourceTowerTypePlusOne != (int)RougeTowerType.Flame + 1)
+                effects.BurnCreatesGround = 1;
         }
 
         flashTimer = math.max(flashTimer, 0.25f);
@@ -3865,7 +3967,10 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                 effects.BurnTickTimer -= DeltaTime;
                 while (effects.BurnTimer > 0f && effects.BurnTickTimer <= 0f)
                 {
-                    health -= effects.BurnDamage;
+                    float burnDamage = effects.BurnDamage *
+                        (1f + math.max(0, effects.BurnStacks) *
+                         math.max(0f, effects.BurnDamageBonusPerStack));
+                    health -= burnDamage;
                     flashTimer = math.max(flashTimer, 0.3f);
                     effects.BurnTickTimer += BurnTickInterval;
                 }
@@ -4090,7 +4195,8 @@ public unsafe struct SimulateEnemiesJob : IJobParallelForBatch
                     });
                 }
 
-                if (effects.BurnTimer > 0f && effects.BurnDamage > 0f)
+                if (effects.BurnTimer > 0f && effects.BurnDamage > 0f &&
+                    effects.BurnCreatesGround != 0)
                 {
                     SkillEventQueue.Enqueue(new RougeSkillEvent
                     {

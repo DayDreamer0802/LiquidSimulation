@@ -934,6 +934,18 @@ public partial class RougeGameManager : MonoBehaviour
                         skillEvent.WealthCellIndexPlusOne,
                         skillEvent.TileEffect);
                     break;
+
+                case RougeSkillEventType.Conflagration:
+                    SpawnExplosionVFX(
+                        new Vector3(skillEvent.Position.x, renderHeight + 0.65f,
+                            skillEvent.Position.y),
+                        math.max(2f, skillEvent.Radius * 0.65f));
+                    SpawnAOERing(
+                        new Vector3(skillEvent.Position.x, renderHeight + 0.06f,
+                            skillEvent.Position.y),
+                        math.max(1.5f, skillEvent.Radius), 0.28f,
+                        new Color(1f, 0.16f, 0.015f, 1f));
+                    break;
             }
         }
 
@@ -4031,6 +4043,10 @@ public struct RougeSkillArea
     public float EffectCurseExplosionRadius;
     public float EffectBurnDamage;
     public float EffectBurnDuration;
+    public float EffectBurnTickInterval;
+    public int EffectBurnMaximumStacks;
+    public float EffectBurnDamageBonusPerStack;
+    public float EffectConflagrationDamage;
     public int SourceTowerTypePlusOne;
     public int SourceTowerTileEffect;
     public int SourceTowerKillGoldBonus;
@@ -4063,6 +4079,11 @@ public struct RougeEnemyEffectState
     public float BurnTimer;
     public float BurnTickTimer;
     public float BurnDamage;
+    public float BurnTickInterval;
+    public int BurnStacks;
+    public int BurnMaximumStacks;
+    public float BurnDamageBonusPerStack;
+    public int BurnCreatesGround;
     public float BurnReapplyCooldown;
     public float CurseExplosionDamage;
     public float CurseExplosionRadius;
@@ -4096,7 +4117,8 @@ public enum RougeSkillEventType
     EnemyDeathBurst = 5,
     TowerTileExplosion = 6,
     VulnerabilityLandingBlast = 7,
-    MachineGunEmbeddedFragments = 8
+    MachineGunEmbeddedFragments = 8,
+    Conflagration = 9
 }
 
 public struct RougeSkillEvent

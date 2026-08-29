@@ -346,6 +346,7 @@ public partial class RougeGameManager
     private void CastWindmillSkill(float2 position, float2 direction)
     {
         _towerDefenseGold -= _windmillSkillCost;
+        RecordTowerDefenseGoldSpent(_windmillSkillCost);
         _windmillSkillCost = GetNextTacticalSkillCost(_windmillSkillCost, tacticalSkillBalance.windmill.costMultiplier);
         _windmillSkillCooldown = tacticalSkillBalance.windmill.cooldown;
         GameObject visual = CreateWindmillVisual(position, out Transform spinner);
@@ -370,6 +371,7 @@ public partial class RougeGameManager
     private void CastBlackHoleSkill(float2 position)
     {
         _towerDefenseGold -= _blackHoleSkillCost;
+        RecordTowerDefenseGoldSpent(_blackHoleSkillCost);
         _blackHoleSkillCost = GetNextTacticalSkillCost(_blackHoleSkillCost, tacticalSkillBalance.blackHole.costMultiplier);
         _blackHoleSkillCooldown = tacticalSkillBalance.blackHole.cooldown;
         _activeBlackHoleSkills.Add(new ActiveBlackHoleSkill
@@ -401,6 +403,7 @@ public partial class RougeGameManager
         }
         if (affected == 0) return;
         _towerDefenseGold -= _overclockSkillCost;
+        RecordTowerDefenseGoldSpent(_overclockSkillCost);
         _overclockSkillCost = GetNextTacticalSkillCost(_overclockSkillCost,
             tacticalSkillBalance.overclock.costMultiplier);
         _overclockSkillCooldown = tacticalSkillBalance.overclock.cooldown;

@@ -400,6 +400,8 @@ public partial class RougeGameManager
         {
             Canvas canvas = canvases[i];
             if (canvas == null || !canvas.gameObject.activeInHierarchy ||
+                canvas == _towerDefenseAutoplayCanvas ||
+                canvas == _towerDefenseLevelEventCanvas ||
                 canvas.GetComponent<RougeCameraModeToast>() != null ||
                 !seen.Add(canvas.gameObject)) continue;
             _observationHiddenUiObjects.Add(canvas.gameObject);
