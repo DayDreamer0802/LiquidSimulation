@@ -22,6 +22,8 @@ public partial class RougeGameManager
     private const float TowerProjectileBurstInterval = 0.25f;
     private const float EchoAttackRepeatDelay = 0.25f;
     private const float FlameLandingOffsetRadiusMultiplier = 0.2f;
+    private const int TowerFlameJetPointCount = 9;
+    private const float TowerFlameJetTransientDuration = 0.24f;
     private const float PiercingLaserChargeStageDuration = 0.5f;
     private const int PiercingLaserChargeStageCount = 3;
     private const float PiercingLaserChargeDuration =
@@ -31,7 +33,6 @@ public partial class RougeGameManager
     private const float PiercingLaserDamageTime = 0.25f;
     private const float PiercingLaserBeamRadius = 2.8f;
     private const float PiercingLaserMaxVisualWidthMultiplier = 1.25f;
-    private const int TowerDefenseFixedRandomSeed = 1337;
     private const int ChargeTowerBaseGoldCost = 4000;
     private const float ChargeTowerCountCostMultiplier = 0.25f;
     private const int ReinforcementTowerBaseGoldCost = 6000;
@@ -71,6 +72,7 @@ public partial class RougeGameManager
     private static readonly int LaserNoiseStrengthId = Shader.PropertyToID("_NoiseStrength");
     private static readonly int LaserFlowScaleId = Shader.PropertyToID("_FlowScale");
     private static readonly int LaserFlowSpeedId = Shader.PropertyToID("_FlowSpeed");
+    private static readonly int FlameJetPhaseId = Shader.PropertyToID("_Phase");
     private static readonly string[] TowerPrefabResourcePaths =
     {
         "Prefab/tower/Ice",
@@ -85,6 +87,58 @@ public partial class RougeGameManager
         "Prefab/tower/ReinforcementTower"
     };
     public static bool TowerDefenseBuildModeActive { get; private set; }
+
+    private struct TowerDefenseRandomStream
+    {
+        private const uint NonZeroFallbackState = 0x6D2B79F5u;
+        private uint _state;
+
+        public TowerDefenseRandomStream(uint seed)
+        {
+            _state = seed != 0u ? seed : NonZeroFallbackState;
+        }
+
+        public uint NextUInt()
+        {
+            uint value = _state != 0u ? _state : NonZeroFallbackState;
+            value ^= value << 13;
+            value ^= value >> 17;
+            value ^= value << 5;
+            _state = value != 0u ? value : NonZeroFallbackState;
+            return _state;
+        }
+
+        public float NextFloat01()
+        {
+            return (NextUInt() >> 8) * (1f / 16777216f);
+        }
+
+        public bool Chance(float chance01)
+        {
+            float roll = NextFloat01();
+            return roll < Mathf.Clamp01(chance01);
+        }
+
+        public int Range(int minimumInclusive, int maximumExclusive)
+        {
+            if (maximumExclusive <= minimumInclusive) return minimumInclusive;
+            uint span = (uint)(maximumExclusive - minimumInclusive);
+            return minimumInclusive + (int)(NextUInt() % span);
+        }
+
+        public float Range(float minimumInclusive, float maximumInclusive)
+        {
+            if (maximumInclusive <= minimumInclusive) return minimumInclusive;
+            return Mathf.Lerp(minimumInclusive, maximumInclusive, NextFloat01());
+        }
+
+        public Vector2 InsideUnitCircle()
+        {
+            float angle = NextFloat01() * Mathf.PI * 2f;
+            float radius = Mathf.Sqrt(NextFloat01());
+            return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+        }
+    }
 
     [Header("Tower Defense")]
     [SerializeField] private bool towerDefenseEnabled = true;
@@ -107,6 +161,7 @@ public partial class RougeGameManager
         new List<TowerFlameJetVisual>();
     private readonly Stack<GameObject> _towerFlameJetVisualPool = new Stack<GameObject>();
     private Material _towerFlameJetMaterial;
+    private MaterialPropertyBlock _towerFlameJetProperties;
     private readonly List<TowerPersistentCannonZone> _towerPersistentCannonZones =
         new List<TowerPersistentCannonZone>();
     private Material _towerFireZoneMaterial;
@@ -133,6 +188,12 @@ public partial class RougeGameManager
     private readonly int[] _accumulatedWealthPendingGold = new int[TowerDefenseMapCellCapacity];
     private readonly float[] _accumulatedWealthPayoutTimers = new float[TowerDefenseMapCellCapacity];
     private bool _towerDefenseInitialized;
+    private int _towerDefenseGameplaySeed = RougeTowerDefenseMap.DefaultGameplaySeed;
+    private TowerDefenseRandomStream _towerDefenseSpawnRandom;
+    private TowerDefenseRandomStream _towerDefenseCombatRandom;
+    private TowerDefenseRandomStream _towerDefenseSkillRandom;
+    private TowerDefenseRandomStream _towerDefenseChoiceRandom;
+    private uint _towerDefenseSimulationStep;
     private bool _towerDefenseStartupActive;
     private Coroutine _towerDefenseStartupRoutine;
     private bool _towerPlacementMode;
@@ -150,6 +211,8 @@ public partial class RougeGameManager
     private int _towerDefenseGoldEarnedTotal;
     private int _towerDefenseAliveEstimate;
     private int _towerDefenseSpawnedTotal;
+    private bool _towerDefenseHasSpawnedAnyEnemy;
+    private float _towerDefenseFirstEnemySpawnGameTime = float.PositiveInfinity;
     private float _towerDefenseSpawnerResolveRetryTimer;
     private bool _towerDefenseAllSpawnersExhausted;
     private float _nextKillAllVerificationTime;
@@ -179,6 +242,8 @@ public partial class RougeGameManager
     private const float TowerMiddleClickDragThreshold = 10f;
     private bool _pendingMainTowerAoe;
     private Canvas _towerDefenseCanvas;
+    private CanvasGroup _towerDefenseHudGroup;
+    private Coroutine _towerDefenseHudRevealRoutine;
     private Text _towerDefenseStatusText;
     private Text _towerDefenseControlsText;
     private Button _visualQualityButton;
@@ -206,7 +271,6 @@ public partial class RougeGameManager
     private Text _towerTargetPriorityButtonText;
     private Button _towerRelocateButton;
     private Text _towerRelocateButtonText;
-    private Text _towerDamageRankingText;
     private Button _chargeTowerBuildButton;
     private Text _chargeTowerBuildButtonText;
     private Button _reinforcementTowerBuildButton;
@@ -220,10 +284,24 @@ public partial class RougeGameManager
     private readonly Button[] _towerBuildButtons = new Button[TowerDefenseVisuals.StandardTowerTypeCount];
     private readonly Text[] _towerBuildButtonTexts = new Text[TowerDefenseVisuals.StandardTowerTypeCount];
     private readonly int[] _towerDamageRankOrder = new int[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Image[] _towerDamageRankBackgrounds =
+        new Image[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Image[] _towerDamageRankAccents =
+        new Image[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Text[] _towerDamageRankLabels =
+        new Text[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Text[] _towerDamageRankValues =
+        new Text[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Image[] _towerDamageRankTracks =
+        new Image[TowerDefenseVisuals.StandardTowerTypeCount];
+    private readonly Image[] _towerDamageRankFills =
+        new Image[TowerDefenseVisuals.StandardTowerTypeCount];
     private float _nextTowerDefenseUiRefreshTime;
     private Image _bossHealthFill;
     private Text _bossStatusText;
     private GameObject _bossPanel;
+    private CanvasGroup _bossPanelGroup;
+    private bool _bossPanelTargetVisible;
     private readonly Image[] _bossThresholdMarkers = new Image[3];
     private readonly Text[] _bossThresholdLabels = new Text[3];
     private static Font s_towerDefenseHudFont;
@@ -339,10 +417,17 @@ public partial class RougeGameManager
     {
         public GameObject Root;
         public LineRenderer Line;
+        public RougeDefenseTower SourceTower;
+        public Vector3 FixedStart;
+        public float2 FixedDirection;
+        public float Range;
+        public float Width;
+        public float JetOffsetDegrees;
+        public float Phase;
+        public float Age;
         public float Remaining;
         public float Duration;
-        public float StartWidth;
-        public float EndWidth;
+        public bool TracksRotatingTower;
     }
 
     private struct TowerPersistentCannonZone
@@ -416,13 +501,59 @@ public partial class RougeGameManager
     private readonly Matrix4x4[] _orbitSphereRenderMatrices = new Matrix4x4[1023];
     private Material _orbitSphereRenderMaterial;
 
+    private static uint MixTowerDefenseRandomSeed(int gameplaySeed, uint streamSalt)
+    {
+        unchecked
+        {
+            uint value = (uint)gameplaySeed + streamSalt + 0x9E3779B9u;
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            value ^= value >> 16;
+            return value != 0u ? value : 0x6D2B79F5u;
+        }
+    }
+
+    private TowerDefenseRandomStream CreateTowerDefenseRandomStream(uint streamSalt)
+    {
+        return new TowerDefenseRandomStream(
+            MixTowerDefenseRandomSeed(_towerDefenseGameplaySeed, streamSalt));
+    }
+
+    private void InitializeTowerDefenseGameplayRandom(int gameplaySeed)
+    {
+        _towerDefenseGameplaySeed = gameplaySeed;
+        _towerDefenseSpawnRandom = CreateTowerDefenseRandomStream(0x53504157u);
+        _towerDefenseCombatRandom = CreateTowerDefenseRandomStream(0x434F4D42u);
+        _towerDefenseSkillRandom = CreateTowerDefenseRandomStream(0x534B494Cu);
+        _towerDefenseChoiceRandom = CreateTowerDefenseRandomStream(0x43484F49u);
+        _towerDefenseSimulationStep = 0u;
+    }
+
+    private void NextTowerDefenseSimulationSeeds(out uint enemySeed,
+        out uint crowdSeed)
+    {
+        unchecked
+        {
+            uint step = ++_towerDefenseSimulationStep;
+            enemySeed = MixTowerDefenseRandomSeed(_towerDefenseGameplaySeed,
+                0x454E454Du ^ step * 0x9E3779B9u);
+            crowdSeed = MixTowerDefenseRandomSeed(_towerDefenseGameplaySeed,
+                0x43525744u ^ step * 0x85EBCA6Bu);
+        }
+    }
+
     private void InitializeTowerDefense()
     {
         if (!towerDefenseEnabled || _towerDefenseInitialized) return;
 
         _towerDefenseInitialized = true;
+        _towerDefenseLevel = RougeTowerDefenseMapLoader.ActiveMap;
+        InitializeTowerDefenseGameplayRandom(_towerDefenseLevel != null
+            ? _towerDefenseLevel.GameplaySeed
+            : RougeTowerDefenseMap.DefaultGameplaySeed);
         RougeDefenseTower.PreloadTowerAudio();
-        UnityEngine.Random.InitState(TowerDefenseFixedRandomSeed);
         if (RougeTowerDefenseBalanceJson.TryLoad(out RougeTowerDefenseBalanceJsonData jsonBalance))
         {
             mainTowerBalance = jsonBalance.mainTowerBalance;
@@ -443,7 +574,6 @@ public partial class RougeGameManager
         enemyBalance.EnsureDefaults();
         EnsureBossBalanceDefaults();
         tacticalSkillBalance.EnsureDefaults();
-        _towerDefenseLevel = RougeTowerDefenseMapLoader.ActiveMap;
         InitializePlayerSettings();
         cameraZoomMultiplier = 1f;
         _cameraViewMode = CameraViewMode.Default;
@@ -462,6 +592,9 @@ public partial class RougeGameManager
         System.Array.Clear(_accumulatedWealthPayoutTimers, 0,
             _accumulatedWealthPayoutTimers.Length);
         _towerDefenseAliveEstimate = 0;
+        _towerDefenseSpawnedTotal = 0;
+        _towerDefenseHasSpawnedAnyEnemy = false;
+        _towerDefenseFirstEnemySpawnGameTime = float.PositiveInfinity;
         _towerDefenseSpawnSearchCursor = 0;
         _towerDefenseAllSpawnersExhausted = false;
         _nextKillAllVerificationTime = 0f;
@@ -504,6 +637,7 @@ public partial class RougeGameManager
         _towerDefenseBossArrivalTimer = 0f;
         _towerDefenseBossLandingShakeRemaining = 0f;
         InitializeTowerDefenseFailurePresentation();
+        InitializeTowerDefenseVictoryPresentation();
         BuildBossSchedule();
         InitializeTowerDefenseLevelEvents();
 
@@ -541,6 +675,7 @@ public partial class RougeGameManager
         PrewarmTowerDefenseCameraUiGlyphs();
         RougeCameraModeToast.Prewarm(GetTowerDefenseHudFont());
         BuildPlayerSettingsUi();
+        ApplyActiveCommanderUiTheme();
         ApplyDamageStatisticsVisibility();
         RefreshTowerDefenseUi();
         BeginTowerDefenseStartup();
@@ -559,6 +694,7 @@ public partial class RougeGameManager
         _towerDefenseStartupActive = true;
         Time.timeScale = 0f;
         if (_towerDefenseCanvas != null) _towerDefenseCanvas.gameObject.SetActive(false);
+        if (_towerDefenseHudGroup != null) _towerDefenseHudGroup.alpha = 0f;
         _towerDefenseStartupRoutine = StartCoroutine(PlayTowerDefenseStartup(loader));
     }
 
@@ -595,13 +731,43 @@ public partial class RougeGameManager
 
         if (tiltShift != null) tiltShift.SetEffectEnabled(false);
         if (_towerDefenseCanvas != null) _towerDefenseCanvas.gameObject.SetActive(true);
+        if (_towerDefenseHudRevealRoutine != null)
+            StopCoroutine(_towerDefenseHudRevealRoutine);
+        _towerDefenseHudRevealRoutine = StartCoroutine(RevealTowerDefenseHud());
         _towerDefenseStartupActive = false;
         if (_towerDefenseGameOver)
             Time.timeScale = 0f;
         else
             ApplyTowerDefenseTimeScale();
         RefreshTowerDefenseUi(true);
+        RougeCameraModeToast.Show(
+            "战术网格已上线 · 准备战斗",
+            ActiveCommanderVisualTheme.Accent);
         _towerDefenseStartupRoutine = null;
+    }
+
+    private IEnumerator RevealTowerDefenseHud()
+    {
+        if (_towerDefenseHudGroup == null) yield break;
+        const float duration = 0.28f;
+        float elapsed = 0f;
+        _towerDefenseHudGroup.alpha = 0f;
+        _towerDefenseHudGroup.interactable = false;
+        _towerDefenseHudGroup.blocksRaycasts = false;
+        while (elapsed < duration && _towerDefenseHudGroup != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            _towerDefenseHudGroup.alpha = 1f - (1f - t) * (1f - t);
+            yield return null;
+        }
+        if (_towerDefenseHudGroup != null)
+        {
+            _towerDefenseHudGroup.alpha = 1f;
+            _towerDefenseHudGroup.interactable = true;
+            _towerDefenseHudGroup.blocksRaycasts = true;
+        }
+        _towerDefenseHudRevealRoutine = null;
     }
 
     private void EnsureTowerDefenseInitialized()
@@ -623,12 +789,18 @@ public partial class RougeGameManager
         ResetTowerDefenseAutoplaySession();
         DisposeTowerDefenseAutoplayUi();
         DisposeTowerDefenseLevelEvents();
+        DisposeTowerDefenseVictoryPresentation();
         DisposeTowerDefenseFailurePresentation();
         StopAllTowerAttackSounds();
         if (_towerDefenseStartupRoutine != null)
         {
             StopCoroutine(_towerDefenseStartupRoutine);
             _towerDefenseStartupRoutine = null;
+        }
+        if (_towerDefenseHudRevealRoutine != null)
+        {
+            StopCoroutine(_towerDefenseHudRevealRoutine);
+            _towerDefenseHudRevealRoutine = null;
         }
         RougeTowerDefenseMapLoader.Active?.CancelStartupReveal();
         _towerDefenseStartupActive = false;
@@ -712,6 +884,7 @@ public partial class RougeGameManager
         }
         if (_towerFlameJetMaterial != null) Destroy(_towerFlameJetMaterial);
         _towerFlameJetMaterial = null;
+        _towerFlameJetProperties = null;
         for (int i = 0; i < _towerBeamVisuals.Count; i++)
         {
             DestroyTowerBeamVisual(_towerBeamVisuals[i]);
@@ -728,6 +901,7 @@ public partial class RougeGameManager
         _iceSpikeCandidateCells.Clear();
         if (_towerDefenseCanvas != null) Destroy(_towerDefenseCanvas.gameObject);
         _towerDefenseCanvas = null;
+        _towerDefenseHudGroup = null;
         _towerDamagePanel = null;
         DisposePlayerSettingsUi();
         _towerTargetRequestCount = 0;
@@ -986,6 +1160,7 @@ public partial class RougeGameManager
             if (useRuntimeMap && point.GetComponentInParent<RougeRuntimeMapObject>() == null) continue;
             _towerDefenseSpawners.Add(point);
         }
+        _towerDefenseSpawners.Sort(CompareTowerDefenseSpawnPoints);
 
         if (_towerDefenseSpawners.Count == 0)
         {
@@ -1012,6 +1187,7 @@ public partial class RougeGameManager
             map.WorldToCell(mainTower.transform.position, out Vector2Int mainTowerCell))
             occupiedCells.Add(mainTowerCell);
         RougeDefenseTower[] towers = UnityEngine.Object.FindObjectsByType<RougeDefenseTower>(FindObjectsSortMode.None);
+        System.Array.Sort(towers, CompareExistingDefenseTowers);
         for (int i = 0; i < towers.Length; i++)
         {
             RougeDefenseTower tower = towers[i];
@@ -1080,6 +1256,54 @@ public partial class RougeGameManager
             if (tower != null && tower.CreatesPermanentFrostTiles && tower.IsOnFrostTile)
                 ApplyPermanentFrostAroundIceTower(tower);
         }
+    }
+
+    private static int CompareTowerDefenseSpawnPoints(RougeEnemySpawnPoint left,
+        RougeEnemySpawnPoint right)
+    {
+        if (ReferenceEquals(left, right)) return 0;
+        if (left == null) return 1;
+        if (right == null) return -1;
+        Transform leftTransform = left.transform;
+        Transform rightTransform = right.transform;
+        if (leftTransform.parent == rightTransform.parent)
+        {
+            int siblingComparison = leftTransform.GetSiblingIndex()
+                .CompareTo(rightTransform.GetSiblingIndex());
+            if (siblingComparison != 0) return siblingComparison;
+        }
+        int comparison = leftTransform.position.z.CompareTo(
+            rightTransform.position.z);
+        if (comparison != 0) return comparison;
+        comparison = leftTransform.position.x.CompareTo(rightTransform.position.x);
+        if (comparison != 0) return comparison;
+        comparison = left.startDelay.CompareTo(right.startDelay);
+        if (comparison != 0) return comparison;
+        comparison = ((int)left.enemyType).CompareTo((int)right.enemyType);
+        if (comparison != 0) return comparison;
+        comparison = left.spawnInterval.CompareTo(right.spawnInterval);
+        if (comparison != 0) return comparison;
+        return string.CompareOrdinal(left.name, right.name);
+    }
+
+    private static int CompareExistingDefenseTowers(RougeDefenseTower left,
+        RougeDefenseTower right)
+    {
+        if (ReferenceEquals(left, right)) return 0;
+        if (left == null) return 1;
+        if (right == null) return -1;
+        int comparison = left.transform.position.z.CompareTo(
+            right.transform.position.z);
+        if (comparison != 0) return comparison;
+        comparison = left.transform.position.x.CompareTo(
+            right.transform.position.x);
+        if (comparison != 0) return comparison;
+        comparison = string.CompareOrdinal(left.name, right.name);
+        if (comparison != 0) return comparison;
+        if (left.transform.parent == right.transform.parent)
+            return left.transform.GetSiblingIndex().CompareTo(
+                right.transform.GetSiblingIndex());
+        return 0;
     }
 
     private void RefreshReinforcementTowerAuras()
@@ -1346,11 +1570,20 @@ public partial class RougeGameManager
     private void UpdateTowerDefenseInput(float unscaledDt)
     {
         if (!_towerDefenseInitialized) return;
+        UpdateTowerDefenseLevelEventUi(unscaledDt);
+        UpdateBossHudTransition(unscaledDt);
         UpdateF2MainTowerHealth(unscaledDt);
         if (_towerDefenseStartupActive) return;
 
         Keyboard keyboard = Keyboard.current;
         Mouse mouse = Mouse.current;
+        if (IsPlayerSettingsOpen)
+        {
+            EnforceSystemModalHudIsolation();
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+                HandlePlayerSettingsEscape();
+            return;
+        }
         if (_towerDefenseGameOver && !_towerDefenseVictory)
         {
             if (!_towerDefenseFailureSequenceActive &&
@@ -1359,14 +1592,17 @@ public partial class RougeGameManager
                 ReloadTowerDefenseScene();
             return;
         }
-        if (HandleTowerDefenseAutoplayToggleInput(keyboard)) return;
-        SyncTowerDefenseAutoplayPresentation();
-        if (IsPlayerSettingsOpen)
+        if (_towerDefenseGameOver && _towerDefenseVictory)
         {
-            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
-                ClosePlayerSettings();
+            if (_towerDefenseVictoryResultReady && keyboard != null &&
+                (keyboard.rKey.wasPressedThisFrame ||
+                 keyboard.enterKey.wasPressedThisFrame ||
+                 keyboard.numpadEnterKey.wasPressedThisFrame))
+                ReloadTowerDefenseScene();
             return;
         }
+        if (HandleTowerDefenseAutoplayToggleInput(keyboard)) return;
+        SyncTowerDefenseAutoplayPresentation();
         if (UpdateCameraViewTransition()) return;
         if (_towerDefenseAutoplayEnabled)
         {
@@ -2341,7 +2577,7 @@ public partial class RougeGameManager
         for (int i = 0; i < indices.Length; i++) indices[i] = i;
         for (int i = indices.Length - 1; i > 0; i--)
         {
-            int swapIndex = UnityEngine.Random.Range(0, i + 1);
+            int swapIndex = _towerDefenseChoiceRandom.Range(0, i + 1);
             (indices[i], indices[swapIndex]) = (indices[swapIndex], indices[i]);
         }
         for (int i = 0; i < _chargeTowerEffectChoices.Length; i++)
@@ -2522,6 +2758,7 @@ public partial class RougeGameManager
 
         if (_bossDeathSequenceActive)
         {
+            RecycleAllTowerFlameJetVisuals();
             UpdateBossDeathSequence(Time.unscaledDeltaTime);
             RefreshTowerDefenseUi();
             return;
@@ -2539,6 +2776,15 @@ public partial class RougeGameManager
 
         if (CommanderSkillsEnabled) UpdateTacticalSkills(dt);
         UpdateTowerDefenseBoss();
+        if (_bossDeathSequenceActive)
+        {
+            // BeginBossDeathSequence can be entered from UpdateTowerDefenseBoss.
+            // Do not let towers attack once more later in this same frame and
+            // recreate the persistent flame ribbons we just retired.
+            RecycleAllTowerFlameJetVisuals();
+            RefreshTowerDefenseUi();
+            return;
+        }
         UpdateTowerDefenseSpawners(dt);
         ApplyPendingMainTowerAoe();
         UpdateTowerPersistentCannonZones(dt);
@@ -2546,10 +2792,12 @@ public partial class RougeGameManager
         UpdateTowerProjectiles(dt);
         UpdateRocketBarrageSystem(dt);
         UpdateTowerBeamVisuals(dt);
-        UpdateTowerFlameJetVisuals(dt);
         UpdateOrbitSphereAttacks(dt);
         UpdateIceSpikeVisuals(dt);
         UpdateDefenseTowers(dt);
+        // Rotating flame ribbons read the angle advanced by UpdateDefenseTowers,
+        // just as crystal ribbons are rebuilt from their current attack state.
+        UpdateTowerFlameJetVisuals(dt);
         UpdateAccumulatedWealthTiles(dt);
         PrepareTowerTargetRequests();
         EvaluateTowerDefenseVictoryConditions();
@@ -2692,6 +2940,7 @@ public partial class RougeGameManager
         }
         _towerDefenseAliveEstimate++;
         _towerDefenseSpawnedTotal++;
+        RecordTowerDefenseFirstEnemySpawn();
         RefreshTowerDefenseUi();
         return true;
     }
@@ -2729,6 +2978,7 @@ public partial class RougeGameManager
         if (_bossDeathSequenceActive || _towerDefenseVictory) return;
         _bossDeathSequenceActive = true;
         StopAllTowerAttackSounds();
+        RecycleAllTowerFlameJetVisuals();
         _bossDeathSequenceTimer = 0f;
         _bossDeathShockwaveStep = 0;
         _bossDeathExplosionTriggered = false;
@@ -2872,18 +3122,7 @@ public partial class RougeGameManager
 
     private void TriggerTowerDefenseVictory(string reason)
     {
-        if (_towerDefenseGameOver) return;
-        StopTowerDefenseAutoplayForConclusion();
-        if (_cameraViewMode != CameraViewMode.Default) ExitDebugUnitView();
-        _towerDefenseVictory = true;
-        _towerDefenseGameOver = true;
-        _towerDefenseGameOverReason = string.IsNullOrWhiteSpace(reason) ? "胜利条件已达成" : reason;
-        HideTowerDefenseSpawnWarnings();
-        StopAllTowerAttackSounds();
-        Time.timeScale = 0f;
-        RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
-        if (follow != null) follow.SetCinematicShake(0f);
-        RefreshTowerDefenseUi(true);
+        BeginTowerDefenseVictoryPresentation(reason);
     }
 
     private void EvaluateTowerDefenseVictoryConditions()
@@ -3199,7 +3438,15 @@ public partial class RougeGameManager
         _effectStateB[index] = initialEffects;
         _towerDefenseEnemyKinds[index] = kind;
         if (_enemyRenderKinds.IsCreated) _enemyRenderKinds[index] = kind;
+        RecordTowerDefenseFirstEnemySpawn();
         return true;
+    }
+
+    private void RecordTowerDefenseFirstEnemySpawn()
+    {
+        if (_towerDefenseHasSpawnedAnyEnemy) return;
+        _towerDefenseHasSpawnedAnyEnemy = true;
+        _towerDefenseFirstEnemySpawnGameTime = Mathf.Max(0f, _survivalTime);
     }
 
     private void ApplyEnemySpriteSheetTextures()
@@ -3434,7 +3681,7 @@ public partial class RougeGameManager
         float eliteChance = Mathf.Clamp01(
             enemyBalance.EvaluateEliteChance01(GetTowerDefenseEnemyLevel()) *
             _towerDefenseLevelEventEliteChanceMultiplier);
-        if (UnityEngine.Random.value < eliteChance) kind |= EliteEnemyFlag;
+        if (_towerDefenseSpawnRandom.Chance(eliteChance)) kind |= EliteEnemyFlag;
         return kind;
     }
 
@@ -3476,7 +3723,7 @@ public partial class RougeGameManager
         SpawnIceSpikeAttack(tower);
         RougeIceTowerSpecializationConfig config =
             TowerDefenseVisuals.GetIceSpecializationConfig();
-        tower.iceSpikeTimer = UnityEngine.Random.Range(
+        tower.iceSpikeTimer = _towerDefenseCombatRandom.Range(
             config.iceSpikeIntervalMin, config.iceSpikeIntervalMax);
     }
 
@@ -3507,7 +3754,7 @@ public partial class RougeGameManager
         RougeIceTowerSpecializationConfig config =
             TowerDefenseVisuals.GetIceSpecializationConfig();
         int spawnCount = Mathf.Min(_iceSpikeCandidateCells.Count,
-            UnityEngine.Random.Range(config.iceSpikeMinCells,
+            _towerDefenseCombatRandom.Range(config.iceSpikeMinCells,
                 config.iceSpikeMaxCells + 1));
         float spikeDamageMultiplier = config.iceSpikeDamageMultiplier;
         float spikeFreezeMultiplier = config.iceSpikeFreezeDurationMultiplier;
@@ -3521,7 +3768,8 @@ public partial class RougeGameManager
 
         for (int i = 0; i < spawnCount; i++)
         {
-            int selectedIndex = UnityEngine.Random.Range(i, _iceSpikeCandidateCells.Count);
+            int selectedIndex = _towerDefenseCombatRandom.Range(i,
+                _iceSpikeCandidateCells.Count);
             (_iceSpikeCandidateCells[i], _iceSpikeCandidateCells[selectedIndex]) =
                 (_iceSpikeCandidateCells[selectedIndex], _iceSpikeCandidateCells[i]);
             Vector2Int targetCell = _iceSpikeCandidateCells[i];
@@ -3720,13 +3968,18 @@ public partial class RougeGameManager
                 else
                 {
                     int catchUpShots = 0;
+                    // attackTimer is already negative here. Preserve that first
+                    // due-time so every catch-up sample can be placed at the exact
+                    // angle it crossed, including backlog carried from a long frame.
+                    float firstDueTimer = tower.attackTimer;
                     do
                     {
                         tower.attackTimer += tower.AttackInterval;
                         catchUpShots++;
                     }
                     while (tower.attackTimer <= 0f && catchUpShots < 8);
-                    FireFlamethrower(tower, rotatingTarget, catchUpShots);
+                    FireFlamethrower(tower, rotatingTarget, catchUpShots,
+                        firstDueTimer);
                 }
                 continue;
             }
@@ -4440,7 +4693,7 @@ public partial class RougeGameManager
                     if (IsEnemyTargetValid(targetIndex, tower.transform.position, rangeSq,
                         out Vector3 currentFlameTarget))
                         flameLandingTarget = currentFlameTarget;
-                    Vector2 landingOffset = UnityEngine.Random.insideUnitCircle *
+                    Vector2 landingOffset = _towerDefenseCombatRandom.InsideUnitCircle() *
                         (tower.AoeRadius * FlameLandingOffsetRadiusMultiplier);
                     // Fireballs target a ground location rather than homing on an enemy
                     // index. This prevents later slot reuse from teleporting the AOE.
@@ -4568,21 +4821,17 @@ public partial class RougeGameManager
     }
 
     private void FireFlamethrower(RougeDefenseTower tower, Vector3 target,
-        int shotCount = 1)
+        int shotCount = 1, float firstDueTimer = 0f)
     {
         if (tower == null) return;
         RougeFlameTowerSpecializationConfig flame =
             TowerDefenseVisuals.GetFlameSpecializationConfig();
         Vector3 origin3 = tower.transform.position;
         Vector2 aim = new Vector2(target.x - origin3.x, target.z - origin3.z);
-        if (tower.UsesRotatingFlamethrower)
-        {
-            Vector3 rotatingDirection = tower.GetCurrentAimDirection();
-            aim = new Vector2(rotatingDirection.x, rotatingDirection.z);
-        }
         if (aim.sqrMagnitude <= 0.0001f) aim = Vector2.up;
         aim.Normalize();
 
+        bool rotating = tower.UsesRotatingFlamethrower;
         int configuredJets = Mathf.Max(1, tower.AttackProjectileCount);
         bool focusedFan = tower.UsesFanFlamethrower &&
             tower.TargetPriority == RougeTowerTargetPriority.BossFirst;
@@ -4597,52 +4846,80 @@ public partial class RougeGameManager
         float coneAngle = flame.flamethrowerAngle + (focusedFan
             ? configuredJets * flame.focusedAnglePerProjectile
             : 0f);
-        bool showPresentation = tower.flamethrowerPresentationTimer <= 0f;
-        for (int jet = 0; jet < emittedJets; jet++)
+        bool playPresentationCue = tower.flamethrowerPresentationTimer <= 0f;
+        int sweepSamples = rotating ? Mathf.Max(1, shotCount) : 1;
+        for (int sample = 0; sample < sweepSamples; sample++)
         {
-            float offsetDegrees = 0f;
-            if (emittedJets > 1)
+            float historicalDegrees = rotating
+                ? flame.rotatingDegreesPerSecond * Mathf.Min(0f,
+                    firstDueTimer + sample * tower.AttackInterval)
+                : 0f;
+            Vector2 sampleAim = aim;
+            if (rotating)
             {
-                if (tower.UsesFanFlamethrower)
-                {
-                    float spacing = flame.flamethrowerAngle +
-                                    flame.fanSpacingPaddingDegrees;
-                    offsetDegrees = (jet - (emittedJets - 1) * 0.5f) * spacing;
-                }
-                else
-                {
-                    offsetDegrees = 360f * jet / emittedJets;
-                }
+                Vector3 rotatingDirection =
+                    tower.GetRotatingFlamethrowerDirection(historicalDegrees);
+                sampleAim = new Vector2(rotatingDirection.x,
+                    rotatingDirection.z);
             }
-            float radians = offsetDegrees * Mathf.Deg2Rad;
-            float sin = Mathf.Sin(radians);
-            float cos = Mathf.Cos(radians);
-            float2 direction = new float2(
-                aim.x * cos - aim.y * sin,
-                aim.x * sin + aim.y * cos);
-            TryAddTowerDirectDamageArea(new RougeSkillArea
+
+            for (int jet = 0; jet < emittedJets; jet++)
             {
-                Type = 22,
-                Position = new float2(origin3.x, origin3.z),
-                Direction = direction,
-                Radius = tower.AttackRange,
-                // Boss-first fire needs a larger broadphase. The simulation applies
-                // this padding to the boss body, never to ordinary enemies.
-                Length = focusedBossFlame ? focusedBossRangePadding : 0f,
-                Damage = tower.Damage * Mathf.Max(1, shotCount),
-                AuxA = coneAngle * 0.5f,
-                SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1,
-                SourceTowerTileEffect = (int)tower.TowerPlaceEffect,
-                SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
-                SourceTowerWealthCellIndexPlusOne =
-                    GetTowerWealthCellIndexPlusOne(tower)
-            }, TowerFrostAreaSlowMultiplier);
-            if (showPresentation)
-                SpawnTowerFlameJetVisual(tower.GetShootPosition(), direction,
-                    tower.AttackRange, coneAngle);
+                float offsetDegrees = 0f;
+                if (emittedJets > 1)
+                {
+                    if (tower.UsesFanFlamethrower)
+                    {
+                        float spacing = flame.flamethrowerAngle +
+                                        flame.fanSpacingPaddingDegrees;
+                        offsetDegrees = (jet - (emittedJets - 1) * 0.5f) *
+                                        spacing;
+                    }
+                    else
+                    {
+                        offsetDegrees = 360f * jet / emittedJets;
+                    }
+                }
+                float radians = offsetDegrees * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(radians);
+                float cos = Mathf.Cos(radians);
+                float2 direction = new float2(
+                    sampleAim.x * cos - sampleAim.y * sin,
+                    sampleAim.x * sin + sampleAim.y * cos);
+                TryAddTowerDirectDamageArea(new RougeSkillArea
+                {
+                    Type = 22,
+                    Position = new float2(origin3.x, origin3.z),
+                    Direction = direction,
+                    Radius = tower.AttackRange,
+                    // Boss-first fire needs a larger broadphase. The simulation applies
+                    // this padding to the boss body, never to ordinary enemies.
+                    Length = focusedBossFlame ? focusedBossRangePadding : 0f,
+                    // Rotating catch-up samples are submitted at the angles they swept
+                    // through instead of stacking every missed tick on the newest angle.
+                    // A delayed one-shot echo stalls a continuous flame for longer
+                    // than its entire cadence. Preserve Echo's intended +100% output
+                    // without interrupting the stream.
+                    Damage = tower.Damage *
+                        (rotating ? 1 : Mathf.Max(1, shotCount)) *
+                        (tower.DoublesContinuousFlameFromEcho ? 2f : 1f),
+                    AuxA = coneAngle * 0.5f,
+                    SourceTowerTypePlusOne = (int)RougeTowerType.Flame + 1,
+                    SourceTowerTileEffect = (int)tower.TowerPlaceEffect,
+                    SourceTowerKillGoldBonus = tower.KillGoldPercentBonus,
+                    SourceTowerWealthCellIndexPlusOne =
+                        GetTowerWealthCellIndexPlusOne(tower)
+                }, TowerFrostAreaSlowMultiplier);
+
+                bool newestSweepSample = sample == sweepSamples - 1;
+                if (newestSweepSample && (rotating || playPresentationCue))
+                    SpawnTowerFlameJetVisual(tower, tower.GetShootPosition(),
+                        direction, tower.AttackRange, coneAngle, offsetDegrees,
+                        rotating);
+            }
         }
 
-        if (showPresentation)
+        if (playPresentationCue)
         {
             tower.PlayAttackAnimation(null);
             tower.flamethrowerPresentationTimer = 0.18f;
@@ -4650,96 +4927,247 @@ public partial class RougeGameManager
         CompleteEchoAttackStep(tower);
     }
 
-    private void SpawnTowerFlameJetVisual(Vector3 start, float2 direction,
-        float range, float coneAngle)
+    private void SpawnTowerFlameJetVisual(RougeDefenseTower sourceTower,
+        Vector3 start, float2 direction, float range, float coneAngle,
+        float jetOffsetDegrees, bool tracksRotatingTower)
     {
+        float coneEndWidth = 2f * Mathf.Max(0.1f, range) * Mathf.Tan(
+            Mathf.Clamp(coneAngle * 0.5f, 0.5f, 72f) * Mathf.Deg2Rad);
+        // Telegraph most of the real hit cone, but shape it as a swelling,
+        // torn-edged flame tongue instead of a straight triangular fill.
+        float visualWidth = Mathf.Clamp(coneEndWidth * 0.92f, 1.6f, 12f);
+        if (tracksRotatingTower)
+        {
+            for (int i = 0; i < _towerFlameJetVisuals.Count; i++)
+            {
+                TowerFlameJetVisual existing = _towerFlameJetVisuals[i];
+                if (!existing.TracksRotatingTower ||
+                    existing.SourceTower != sourceTower ||
+                    Mathf.Abs(Mathf.DeltaAngle(existing.JetOffsetDegrees,
+                        jetOffsetDegrees)) > 0.1f) continue;
+                existing.FixedStart = start;
+                existing.FixedDirection = direction;
+                existing.Range = range;
+                existing.Width = visualWidth;
+                UpdateTowerFlameJetGeometry(ref existing, 1f);
+                _towerFlameJetVisuals[i] = existing;
+                return;
+            }
+        }
+
         GameObject root = null;
         while (_towerFlameJetVisualPool.Count > 0 && root == null)
             root = _towerFlameJetVisualPool.Pop();
-        LineRenderer line;
         if (root == null)
         {
-            root = new GameObject("Flamethrower Jet");
+            root = new GameObject("Flame Ribbon");
             root.transform.SetParent(transform, false);
+        }
+        root.name = tracksRotatingTower
+            ? "Rotating Flamethrower Ribbon"
+            : "Flamethrower Ribbon";
+        LineRenderer line = root.GetComponent<LineRenderer>();
+        if (line == null)
+        {
             line = root.AddComponent<LineRenderer>();
-            line.useWorldSpace = true;
-            line.positionCount = 2;
-            line.alignment = LineAlignment.View;
-            line.textureMode = LineTextureMode.Stretch;
-            line.numCapVertices = 3;
-            line.numCornerVertices = 2;
-            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            line.receiveShadows = false;
+            ConfigureTowerFlameJetRenderer(line);
         }
-        else
-        {
-            line = root.GetComponent<LineRenderer>();
-        }
-        if (line == null) return;
-        if (_towerFlameJetMaterial == null)
-        {
-            Shader shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (shader != null)
-            {
-                _towerFlameJetMaterial = new Material(shader)
-                {
-                    name = "Tower Flamethrower Jet Material",
-                    hideFlags = HideFlags.DontSave
-                };
-            }
-        }
-        line.sharedMaterial = _towerFlameJetMaterial;
-        float2 normalized = math.normalizesafe(direction, new float2(0f, 1f));
-        Vector3 flatStart = new Vector3(start.x,
-            Mathf.Max(renderHeight + 0.35f, start.y), start.z);
-        Vector3 end = flatStart + new Vector3(normalized.x, 0f, normalized.y) * range;
-        line.SetPosition(0, flatStart);
-        line.SetPosition(1, end);
-        float startWidth = 0.38f;
-        float endWidth = Mathf.Clamp(2f * range *
-            Mathf.Tan(Mathf.Clamp(coneAngle * 0.5f, 0f, 80f) * Mathf.Deg2Rad),
-            0.8f, 14f);
-        line.startWidth = startWidth;
-        line.endWidth = endWidth;
-        line.startColor = new Color(1f, 0.92f, 0.25f, 0.72f);
-        line.endColor = new Color(1f, 0.08f, 0.01f, 0.04f);
-        root.SetActive(true);
-        _towerFlameJetVisuals.Add(new TowerFlameJetVisual
+        line.sharedMaterial = GetTowerFlameJetMaterial();
+
+        float phase = Mathf.Repeat((sourceTower != null
+                ? sourceTower.GetInstanceID() * 0.173f
+                : 0f) + jetOffsetDegrees * 0.037f + Time.time * 0.61f,
+            31.7f);
+        if (_towerFlameJetProperties == null)
+            _towerFlameJetProperties = new MaterialPropertyBlock();
+        _towerFlameJetProperties.Clear();
+        _towerFlameJetProperties.SetFloat(FlameJetPhaseId, phase);
+        line.SetPropertyBlock(_towerFlameJetProperties);
+
+        TowerFlameJetVisual visual = new TowerFlameJetVisual
         {
             Root = root,
             Line = line,
-            Remaining = 0.14f,
-            Duration = 0.14f,
-            StartWidth = startWidth,
-            EndWidth = endWidth
-        });
+            SourceTower = sourceTower,
+            FixedStart = start,
+            FixedDirection = math.normalizesafe(direction, new float2(0f, 1f)),
+            Range = Mathf.Max(0.1f, range),
+            Width = visualWidth,
+            JetOffsetDegrees = jetOffsetDegrees,
+            Phase = phase,
+            Age = 0f,
+            Remaining = tracksRotatingTower
+                ? float.PositiveInfinity
+                : TowerFlameJetTransientDuration,
+            Duration = tracksRotatingTower
+                ? 0f
+                : TowerFlameJetTransientDuration,
+            TracksRotatingTower = tracksRotatingTower
+        };
+        root.SetActive(true);
+        UpdateTowerFlameJetGeometry(ref visual,
+            tracksRotatingTower ? 0f : 1f);
+        _towerFlameJetVisuals.Add(visual);
+    }
+
+    private static void ConfigureTowerFlameJetRenderer(LineRenderer line)
+    {
+        if (line == null) return;
+        line.useWorldSpace = true;
+        line.positionCount = TowerFlameJetPointCount;
+        line.alignment = LineAlignment.View;
+        line.textureMode = LineTextureMode.Stretch;
+        line.numCapVertices = 0;
+        line.numCornerVertices = 3;
+        line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        line.receiveShadows = false;
+        line.generateLightingData = false;
+        line.widthCurve = new AnimationCurve(
+            new Keyframe(0f, 0.045f),
+            new Keyframe(0.08f, 0.18f),
+            new Keyframe(0.28f, 0.44f),
+            new Keyframe(0.55f, 0.72f),
+            new Keyframe(0.78f, 1f),
+            new Keyframe(0.94f, 0.88f),
+            new Keyframe(1f, 0.06f));
+    }
+
+    private Material GetTowerFlameJetMaterial()
+    {
+        if (_towerFlameJetMaterial != null) return _towerFlameJetMaterial;
+        Shader shader = Resources.Load<Shader>("Shaders/RougeTowerFlameJet");
+        if (shader == null) shader = Shader.Find("Rouge/TowerFlameJet");
+        bool usesFlameShader = shader != null;
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null) return null;
+
+        _towerFlameJetMaterial = new Material(shader)
+        {
+            name = "Tower Procedural Flame Ribbon Material",
+            hideFlags = HideFlags.DontSave,
+            renderQueue = 3045,
+            enableInstancing = true
+        };
+        if (usesFlameShader)
+        {
+            _towerFlameJetMaterial.SetColor("_CoreColor",
+                new Color(2.8f, 2.35f, 0.88f, 1f));
+            _towerFlameJetMaterial.SetColor("_FlameColor",
+                new Color(2.25f, 0.42f, 0.035f, 1f));
+            _towerFlameJetMaterial.SetColor("_EdgeColor",
+                new Color(0.82f, 0.025f, 0.004f, 1f));
+            _towerFlameJetMaterial.SetFloat("_FlowSpeed", 3.8f);
+            _towerFlameJetMaterial.SetFloat("_Turbulence", 0.32f);
+            _towerFlameJetMaterial.SetFloat("_SparkIntensity", 1.25f);
+            _towerFlameJetMaterial.SetFloat("_Intensity", 1.05f);
+        }
+        return _towerFlameJetMaterial;
     }
 
     private void UpdateTowerFlameJetVisuals(float dt)
     {
+        float safeDt = Mathf.Max(0f, dt);
         for (int i = _towerFlameJetVisuals.Count - 1; i >= 0; i--)
         {
             TowerFlameJetVisual visual = _towerFlameJetVisuals[i];
-            visual.Remaining -= Mathf.Max(0f, dt);
-            if (visual.Remaining <= 0f || visual.Root == null || visual.Line == null)
+            if (visual.Root == null || visual.Line == null)
             {
-                if (visual.Root != null)
-                {
-                    visual.Root.SetActive(false);
-                    _towerFlameJetVisualPool.Push(visual.Root);
-                }
                 _towerFlameJetVisuals.RemoveAt(i);
                 continue;
             }
-            float life = Mathf.Clamp01(visual.Remaining /
-                                       Mathf.Max(0.01f, visual.Duration));
-            visual.Line.startWidth = visual.StartWidth * (0.7f + life * 0.3f);
-            visual.Line.endWidth = visual.EndWidth * (0.6f + life * 0.4f);
-            visual.Line.startColor = new Color(1f, 0.92f, 0.25f, life * 0.72f);
-            visual.Line.endColor = new Color(1f, 0.08f, 0.01f, life * 0.08f);
+
+            visual.Age += safeDt;
+            float intensity;
+            if (visual.TracksRotatingTower)
+            {
+                if (visual.SourceTower == null ||
+                    !visual.SourceTower.UsesRotatingFlamethrower)
+                {
+                    visual.Root.SetActive(false);
+                    _towerFlameJetVisualPool.Push(visual.Root);
+                    _towerFlameJetVisuals.RemoveAt(i);
+                    continue;
+                }
+                intensity = Mathf.SmoothStep(0f, 1f,
+                    Mathf.Clamp01(visual.Age / 0.10f));
+            }
+            else
+            {
+                visual.Remaining -= safeDt;
+                if (visual.Remaining <= 0f)
+                {
+                    visual.Root.SetActive(false);
+                    _towerFlameJetVisualPool.Push(visual.Root);
+                    _towerFlameJetVisuals.RemoveAt(i);
+                    continue;
+                }
+                float life = Mathf.Clamp01(visual.Remaining /
+                    Mathf.Max(0.01f, visual.Duration));
+                intensity = Mathf.SmoothStep(0f, 1f, life);
+            }
+
+            UpdateTowerFlameJetGeometry(ref visual, intensity);
             _towerFlameJetVisuals[i] = visual;
         }
+    }
+
+    private void RecycleAllTowerFlameJetVisuals()
+    {
+        for (int i = 0; i < _towerFlameJetVisuals.Count; i++)
+        {
+            GameObject root = _towerFlameJetVisuals[i].Root;
+            if (root == null) continue;
+            root.SetActive(false);
+            _towerFlameJetVisualPool.Push(root);
+        }
+        _towerFlameJetVisuals.Clear();
+    }
+
+    private void UpdateTowerFlameJetGeometry(ref TowerFlameJetVisual visual,
+        float intensity)
+    {
+        if (visual.Line == null) return;
+        Vector3 start = visual.FixedStart;
+        float2 planar = math.normalizesafe(visual.FixedDirection,
+            new float2(0f, 1f));
+        if (visual.TracksRotatingTower && visual.SourceTower != null)
+        {
+            start = visual.SourceTower.GetShootPosition();
+            Vector3 tracked = visual.SourceTower.GetRotatingFlamethrowerDirection(
+                visual.JetOffsetDegrees);
+            planar = new float2(tracked.x, tracked.z);
+        }
+
+        Vector3 origin = new Vector3(start.x,
+            Mathf.Max(renderHeight + 0.35f, start.y), start.z);
+        Vector3 forward = new Vector3(planar.x, 0f, planar.y);
+        Vector3 side = new Vector3(-forward.z, 0f, forward.x);
+        float timePhase = Time.time * 17f + visual.Phase;
+        float pulse = 0.94f + Mathf.Sin(timePhase * 0.73f) * 0.06f;
+        visual.Line.widthMultiplier = visual.Width * pulse;
+        for (int point = 0; point < TowerFlameJetPointCount; point++)
+        {
+            float progress = point / (float)(TowerFlameJetPointCount - 1);
+            float envelope = Mathf.Sin(progress * Mathf.PI);
+            float primary = Mathf.Sin(progress * 14.5f - timePhase);
+            float secondary = Mathf.Sin(progress * 31f - timePhase * 1.73f +
+                visual.Phase * 0.61f);
+            float lateral = (primary * 0.145f + secondary * 0.052f) *
+                visual.Width * envelope * (0.28f + progress * 0.72f);
+            float lift = envelope * (0.10f + visual.Width * 0.035f) +
+                secondary * envelope * 0.035f;
+            Vector3 position = origin + forward * (visual.Range * progress) +
+                side * lateral + Vector3.up * lift;
+            visual.Line.SetPosition(point, position);
+        }
+
+        float alpha = Mathf.Clamp01(intensity);
+        visual.Line.startColor = new Color(1f, 0.76f, 0.16f,
+            alpha * 0.96f);
+        visual.Line.endColor = new Color(1f, 0.08f, 0.005f,
+            alpha * 0.42f);
     }
 
     private bool CompleteEchoAttackStep(RougeDefenseTower tower)
@@ -5131,7 +5559,7 @@ public partial class RougeGameManager
         }
 
         if (projectile.CannonSecondaryProjectileCount > 0 &&
-            UnityEngine.Random.value < projectile.CannonSecondaryTriggerChance)
+            _towerDefenseCombatRandom.Chance(projectile.CannonSecondaryTriggerChance))
         {
             SpawnSecondaryCannonProjectiles(projectile);
         }
@@ -5170,7 +5598,7 @@ public partial class RougeGameManager
     {
         bool critical = projectile.MachineGunProjectileMode ==
                         MachineGunProjectileNormal &&
-                        UnityEngine.Random.value < projectile.CriticalChance;
+                        _towerDefenseCombatRandom.Chance(projectile.CriticalChance);
         bool killed = AccumulateTowerTargetDamage(RougeTowerType.MachineGun,
             projectile.KillGoldBonus, projectile.WealthCellIndexPlusOne,
             projectile.TileEffect, enemyIndex, projectile.Damage,
@@ -5178,7 +5606,7 @@ public partial class RougeGameManager
             critical ? projectile.CriticalDamageMultiplier : 1f);
         if (projectile.MachineGunProjectileMode == MachineGunProjectileNormal &&
             projectile.EmbeddedFragmentChance > 0f &&
-            UnityEngine.Random.value < projectile.EmbeddedFragmentChance)
+            _towerDefenseCombatRandom.Chance(projectile.EmbeddedFragmentChance))
         {
             AddEmbeddedMachineGunFragment(enemyIndex,
                 projectile.Damage * projectile.FragmentDamageMultiplier,
@@ -5188,7 +5616,7 @@ public partial class RougeGameManager
         if (!killed || projectile.MachineGunProjectileMode !=
             MachineGunProjectileNormal || projectile.FragmentCount <= 0 ||
             projectile.EmbeddedFragmentChance > 0f ||
-            UnityEngine.Random.value >= projectile.FragmentTriggerChance)
+            !_towerDefenseCombatRandom.Chance(projectile.FragmentTriggerChance))
             return;
 
         float4 enemyPosition = _positionsA[enemyIndex];
@@ -5204,7 +5632,7 @@ public partial class RougeGameManager
         int count = Mathf.Max(1, source.CannonSecondaryProjectileCount);
         float travelDistance = source.Radius *
                                source.CannonSecondaryTravelDistanceMultiplier;
-        float phase = UnityEngine.Random.value * Mathf.PI * 2f;
+        float phase = _towerDefenseCombatRandom.NextFloat01() * Mathf.PI * 2f;
         Vector3 start = source.End;
         start.y = renderHeight + 0.2f;
         for (int i = 0; i < count; i++)
@@ -5989,6 +6417,7 @@ public partial class RougeGameManager
         _towerDefenseGameOverReason = reason;
         HideTowerDefenseSpawnWarnings();
         StopAllTowerAttackSounds();
+        RecycleAllTowerFlameJetVisuals();
         _towerPlacementMode = false;
         TowerDefenseBuildModeActive = false;
         ClearTowerRelocationState();
@@ -6030,8 +6459,13 @@ public partial class RougeGameManager
         CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
         RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
         canvasObject.AddComponent<GraphicRaycaster>();
+        _towerDefenseHudGroup = canvasObject.AddComponent<CanvasGroup>();
+        _towerDefenseHudGroup.alpha = 1f;
+        _towerDefenseHudGroup.interactable = true;
+        _towerDefenseHudGroup.blocksRaycasts = true;
 
-        GameObject statusPanel = CreateUiPanel("Status Panel", canvasObject.transform, new Color(0.025f, 0.04f, 0.07f, 0.88f));
+        GameObject statusPanel = CreateUiPanel("Status Panel", canvasObject.transform,
+            new Color(0.006f, 0.018f, 0.032f, 0.40f));
         RectTransform statusRect = statusPanel.GetComponent<RectTransform>();
         RougeTowerDefenseUiLayout.ConfigureStatusPanel(statusRect);
         AddHudPanelChrome(statusPanel, new Color(0.08f, 0.72f, 0.94f, 1f));
@@ -6078,7 +6512,7 @@ public partial class RougeGameManager
         StretchRect(_mainTowerHealthText.rectTransform, 3f, 1f, 3f, 1f);
 
         _towerDamagePanel = CreateUiPanel("Tower Damage Ranking", canvasObject.transform,
-            new Color(0.025f, 0.04f, 0.07f, 0.88f));
+            new Color(0.006f, 0.018f, 0.032f, 0.34f));
         RectTransform damageRect = _towerDamagePanel.GetComponent<RectTransform>();
         RougeTowerDefenseUiLayout.ConfigureDamagePanel(damageRect);
         AddHudPanelChrome(_towerDamagePanel, new Color(0.08f, 0.72f, 0.94f, 1f));
@@ -6092,12 +6526,23 @@ public partial class RougeGameManager
         damageTitle.text = "塔楼输出";
         damageTitle.fontStyle = FontStyle.Bold;
         damageTitle.color = new Color(0.44f, 0.90f, 1f, 1f);
-        _towerDamageRankingText = CreateUiText("Damage Ranking", _towerDamagePanel.transform, 18, TextAnchor.UpperLeft);
-        _towerDamageRankingText.lineSpacing = 1.32f;
-        StretchRect(_towerDamageRankingText.rectTransform, 18f, 43f, 18f, 12f);
+        Text damageValueHeader = CreateUiText("Damage Value Header",
+            _towerDamagePanel.transform, 12, TextAnchor.MiddleRight);
+        RectTransform damageValueHeaderRect = damageValueHeader.rectTransform;
+        damageValueHeaderRect.anchorMin = new Vector2(1f, 1f);
+        damageValueHeaderRect.anchorMax = new Vector2(1f, 1f);
+        damageValueHeaderRect.pivot = new Vector2(1f, 1f);
+        damageValueHeaderRect.anchoredPosition = new Vector2(-18f, -8f);
+        damageValueHeaderRect.sizeDelta = new Vector2(96f, 28f);
+        damageValueHeader.text = "累计伤害";
+        damageValueHeader.color = new Color(0.52f, 0.68f, 0.76f, 0.9f);
+        Image damageHeaderRule = CreateUiImage("Damage Header Rule",
+            _towerDamagePanel.transform, new Color(0.08f, 0.72f, 0.94f, 0.34f));
+        SetTopStretchRect(damageHeaderRule.rectTransform, 18f, 39f, 18f, 1f);
+        BuildTowerDamageRankingRows(_towerDamagePanel.transform);
 
         _towerPlaceEffectPanel = CreateUiPanel("Tower Intelligence", canvasObject.transform,
-            new Color(0.004f, 0.018f, 0.029f, 0.76f));
+            new Color(0.004f, 0.018f, 0.029f, 0.50f));
         RectTransform towerInfoRect = _towerPlaceEffectPanel.GetComponent<RectTransform>();
         towerInfoRect.anchorMin = new Vector2(0f, 1f);
         towerInfoRect.anchorMax = new Vector2(0f, 1f);
@@ -6125,7 +6570,7 @@ public partial class RougeGameManager
         _towerPlaceEffectPanel.SetActive(false);
 
         GameObject buildPanel = CreateUiPanel("Command Dock", canvasObject.transform,
-            new Color(0.004f, 0.014f, 0.024f, 0.995f));
+            new Color(0.004f, 0.014f, 0.024f, 0.72f));
         RectTransform buildRect = buildPanel.GetComponent<RectTransform>();
         RougeTowerDefenseUiLayout.ConfigureCommandDock(buildRect);
         AddHudPanelChrome(buildPanel, new Color(0.08f, 0.68f, 0.9f, 1f));
@@ -6267,30 +6712,41 @@ public partial class RougeGameManager
 
         BuildChargeTowerEffectSelectionUi(canvasObject.transform);
 
-        _bossPanel = CreateUiPanel("Boss Panel", canvasObject.transform, new Color(0.08f, 0.015f, 0.1f, 0.94f));
+        _bossPanel = CreateUiPanel("Boss Panel", canvasObject.transform,
+            new Color(0.055f, 0.008f, 0.045f, 0.52f));
         RectTransform bossRect = _bossPanel.GetComponent<RectTransform>();
         bossRect.anchorMin = new Vector2(0.5f, 1f);
         bossRect.anchorMax = new Vector2(0.5f, 1f);
         bossRect.pivot = new Vector2(0.5f, 1f);
         bossRect.anchoredPosition = new Vector2(0f, -24f);
-        bossRect.sizeDelta = new Vector2(680f, 112f);
+        bossRect.sizeDelta = new Vector2(700f, 92f);
         AddHudPanelChrome(_bossPanel, new Color(0.92f, 0.12f, 0.78f, 1f));
-        _bossStatusText = CreateUiText("Boss Status", _bossPanel.transform, 23, TextAnchor.UpperCenter);
+        _bossPanelGroup = _bossPanel.AddComponent<CanvasGroup>();
+        _bossPanelGroup.alpha = 0f;
+        _bossPanelGroup.blocksRaycasts = false;
+        _bossPanelTargetVisible = false;
+        _bossStatusText = CreateUiText("Boss Status", _bossPanel.transform, 20,
+            TextAnchor.UpperCenter);
         RectTransform bossTextRect = _bossStatusText.rectTransform;
         bossTextRect.anchorMin = new Vector2(0f, 1f);
         bossTextRect.anchorMax = new Vector2(1f, 1f);
         bossTextRect.pivot = new Vector2(0.5f, 1f);
-        bossTextRect.anchoredPosition = new Vector2(0f, -8f);
-        bossTextRect.sizeDelta = new Vector2(-20f, 58f);
-        Image bossHpBackground = CreateUiImage("Boss HP Background", _bossPanel.transform, new Color(0.12f, 0.04f, 0.14f, 1f));
+        bossTextRect.anchoredPosition = new Vector2(0f, -7f);
+        bossTextRect.sizeDelta = new Vector2(-34f, 42f);
+        Image bossHpBackground = CreateUiImage("Boss HP Background",
+            _bossPanel.transform, new Color(0.12f, 0.02f, 0.09f, 0.64f));
         RectTransform bossHpRect = bossHpBackground.rectTransform;
         bossHpRect.anchorMin = new Vector2(0f, 0f);
         bossHpRect.anchorMax = new Vector2(1f, 0f);
         bossHpRect.pivot = new Vector2(0.5f, 0f);
-        bossHpRect.anchoredPosition = new Vector2(0f, 16f);
-        bossHpRect.sizeDelta = new Vector2(-36f, 30f);
+        bossHpRect.anchoredPosition = new Vector2(0f, 15f);
+        bossHpRect.sizeDelta = new Vector2(-56f, 18f);
+        Outline bossTrackOutline = bossHpBackground.gameObject.AddComponent<Outline>();
+        bossTrackOutline.effectColor = new Color(0.92f, 0.12f, 0.78f, 0.72f);
+        bossTrackOutline.effectDistance = new Vector2(1f, 1f);
+        bossTrackOutline.useGraphicAlpha = false;
         _bossHealthFill = CreateUiImage("Boss HP Fill", bossHpBackground.transform, new Color(0.88f, 0.08f, 0.8f, 1f));
-        StretchRect(_bossHealthFill.rectTransform, 3f, 3f, 3f, 3f);
+        StretchRect(_bossHealthFill.rectTransform, 2f, 2f, 2f, 2f);
         _bossHealthFill.type = Image.Type.Simple;
         _bossHealthFill.rectTransform.pivot = new Vector2(0f, 0.5f);
         CreateBossThresholdMarker(bossHpBackground.transform, 0, 0.75f, "J", new Color(1f, 0.08f, 0.75f, 1f));
@@ -6348,7 +6804,8 @@ public partial class RougeGameManager
         {
             _selectedTowerPortrait.enabled = false;
             _selectedTowerPortrait.sprite = null;
-            _selectedTowerPortraitFrame.color = new Color(0.025f, 0.065f, 0.09f, 0.96f);
+            _selectedTowerPortraitFrame.color = RemapCommanderInterfaceColor(
+                new Color(0.025f, 0.065f, 0.09f, 0.96f));
             _selectedTowerSummaryText.text = "<b>未选择塔楼</b>";
             _selectedTowerBuffText.text = string.Empty;
             return;
@@ -6378,9 +6835,14 @@ public partial class RougeGameManager
 
         string route = GetTowerRouteHudLabel(tower);
         string buffs = ColorizeTowerBuffText(tower.GetBuffDisplayText());
+        string tileAccentHex = CommanderInterfaceColorHex(
+            new Color32(0x8C, 0xFF, 0xF0, 0xFF));
+        string detailHex = CommanderInterfaceColorHex(
+            new Color32(0xC8, 0xDC, 0xE8, 0xFF));
         string tile = tower.TowerPlaceEffect == RougeTowerPlaceEffect.None
             ? string.Empty
-            : $"<color=#8CFFF0>◆ {GetTowerPlaceEffectShortName(tower.TowerPlaceEffect)}</color>";
+            : $"<color=#{tileAccentHex}>◆ " +
+              $"{GetTowerPlaceEffectShortName(tower.TowerPlaceEffect)}</color>";
         System.Text.StringBuilder builder = _hudBuilder;
         builder.Clear();
         if (!string.IsNullOrEmpty(route)) builder.Append(route);
@@ -6401,7 +6863,7 @@ public partial class RougeGameManager
             if (!string.IsNullOrWhiteSpace(tileDescription))
             {
                 if (builder.Length > 0) builder.AppendLine();
-                builder.Append("<color=#C8DCE8>")
+                builder.Append("<color=#").Append(detailHex).Append(">")
                     .Append(tileDescription.Trim()).Append("</color>");
             }
             if (builder.Length > 0) builder.AppendLine();
@@ -6829,7 +7291,9 @@ public partial class RougeGameManager
         }
         if (_bossPanel != null)
         {
-            _bossPanel.SetActive(_bossSpawned || _bossDeathSequenceActive);
+            _bossPanelTargetVisible = _bossSpawned || _bossDeathSequenceActive;
+            if (_bossPanelTargetVisible && !_bossPanel.activeSelf)
+                _bossPanel.SetActive(true);
             float bossHealth = _bossSpawned ? Mathf.Max(0f, _bossCurrentHealth) : 0f;
             float bossMaximumHealth = GetCurrentBossMaxHealth();
             float bossHealthRatio = Mathf.Clamp01(bossHealth / bossMaximumHealth);
@@ -6900,8 +7364,10 @@ public partial class RougeGameManager
     private void RefreshTowerDamageRanking()
     {
         // UI callbacks can run after LateUpdate scheduled the next simulation.
-        // Keep the last ranking text instead of reading a NativeArray still owned by a job.
-        if (_simulationResultBackBufferReady || _towerDamageRankingText == null || !_towerDamageTotalsFixed.IsCreated) return;
+        // Keep the last row state instead of reading a NativeArray still owned by a job.
+        if (_simulationResultBackBufferReady || _towerDamagePanel == null ||
+            _towerDamageRankLabels[0] == null ||
+            !_towerDamageTotalsFixed.IsCreated) return;
         for (int i = 0; i < _towerDamageRankOrder.Length; i++) _towerDamageRankOrder[i] = i;
         for (int i = 0; i < _towerDamageRankOrder.Length - 1; i++)
         {
@@ -6916,8 +7382,6 @@ public partial class RougeGameManager
             _towerDamageRankOrder[best] = temp;
         }
 
-        System.Text.StringBuilder builder = _hudBuilder;
-        builder.Clear();
         double topDamage = _towerDamageTotalsFixed[_towerDamageRankOrder[0]] / 1000.0;
         for (int rank = 0; rank < _towerDamageRankOrder.Length; rank++)
         {
@@ -6926,20 +7390,126 @@ public partial class RougeGameManager
             RougeTowerType type = (RougeTowerType)typeIndex;
             Color towerColor = Color.Lerp(TowerDefenseVisuals.GetTowerColor(type),
                 Color.white, 0.08f);
-            string colorHex = ColorUtility.ToHtmlStringRGB(towerColor);
-            int filledSegments = topDamage > 0.001
-                ? Mathf.Clamp(Mathf.CeilToInt((float)(damage / topDamage) * 6f), 1, 6)
-                : 0;
-            builder.Append("<color=#").Append(colorHex).Append("><b>")
-                .Append(rank + 1).Append(". ")
-                .Append(TowerDefenseVisuals.GetTowerName(type)).Append("</b>  ")
-                .Append('━', filledSegments).Append("</color>")
-                .Append("<color=#29485A>").Append('━', 6 - filledSegments)
-                .Append("</color>  <b>").Append(FormatCompactDamage(damage))
-                .Append("</b>");
-            if (rank < _towerDamageRankOrder.Length - 1) builder.AppendLine();
+            bool hasOutput = damage > 0.0005d;
+            bool champion = rank == 0 && hasOutput;
+            Color accent = champion
+                ? new Color(1f, 0.76f, 0.22f, 1f)
+                : towerColor;
+            float barRatio = topDamage > 0.001d && hasOutput
+                ? Mathf.Clamp01((float)(damage / topDamage))
+                : 0f;
+            if (hasOutput) barRatio = Mathf.Max(0.035f, barRatio);
+
+            Text label = _towerDamageRankLabels[rank];
+            Text value = _towerDamageRankValues[rank];
+            Image background = _towerDamageRankBackgrounds[rank];
+            Image rankAccent = _towerDamageRankAccents[rank];
+            Image track = _towerDamageRankTracks[rank];
+            Image fill = _towerDamageRankFills[rank];
+
+            label.text = $"{rank + 1:00}  {TowerDefenseVisuals.GetTowerName(type)}";
+            value.text = FormatCompactDamage(damage);
+            label.fontSize = champion ? 17 : 16;
+            value.fontSize = champion ? 18 : 17;
+            label.color = champion
+                ? Color.Lerp(accent, Color.white, 0.22f)
+                : hasOutput
+                    ? Color.Lerp(towerColor, Color.white, 0.32f)
+                    : new Color(0.48f, 0.57f, 0.62f, 0.46f);
+            value.color = champion
+                ? new Color(1f, 0.9f, 0.58f, 1f)
+                : hasOutput
+                    ? new Color(0.84f, 0.94f, 0.98f, 1f)
+                    : new Color(0.48f, 0.57f, 0.62f, 0.42f);
+            background.color = champion
+                ? new Color(0.22f, 0.16f, 0.045f, 0.48f)
+                : hasOutput
+                    ? new Color(towerColor.r * 0.16f, towerColor.g * 0.16f,
+                        towerColor.b * 0.16f, 0.38f)
+                    : new Color(0.025f, 0.045f, 0.055f, 0.18f);
+            rankAccent.color = hasOutput
+                ? accent
+                : new Color(0.26f, 0.34f, 0.38f, 0.28f);
+            track.color = hasOutput
+                ? new Color(0.055f, 0.105f, 0.13f, 0.82f)
+                : new Color(0.04f, 0.065f, 0.075f, 0.38f);
+            fill.color = champion
+                ? accent
+                : new Color(towerColor.r, towerColor.g, towerColor.b, 0.9f);
+            SetTowerDamageRankingFill(fill, barRatio);
         }
-        _towerDamageRankingText.text = builder.ToString();
+    }
+
+    private void BuildTowerDamageRankingRows(Transform parent)
+    {
+        const float firstRowTop = 45f;
+        const float rowHeight = 35f;
+        const float rowStep = 37f;
+        for (int rank = 0; rank < _towerDamageRankOrder.Length; rank++)
+        {
+            Image background = CreateUiImage($"Damage Rank {rank + 1}", parent,
+                new Color(0.025f, 0.05f, 0.065f, 0.3f));
+            SetTopStretchRect(background.rectTransform, 16f,
+                firstRowTop + rank * rowStep, 16f, rowHeight);
+            _towerDamageRankBackgrounds[rank] = background;
+
+            Image accent = CreateUiImage("Accent", background.transform,
+                new Color(0.08f, 0.72f, 0.94f, 1f));
+            RectTransform accentRect = accent.rectTransform;
+            accentRect.anchorMin = new Vector2(0f, 0f);
+            accentRect.anchorMax = new Vector2(0f, 1f);
+            accentRect.pivot = new Vector2(0f, 0.5f);
+            accentRect.anchoredPosition = Vector2.zero;
+            accentRect.sizeDelta = new Vector2(rank == 0 ? 4f : 3f, 0f);
+            _towerDamageRankAccents[rank] = accent;
+
+            Text label = CreateUiText("Rank And Tower", background.transform,
+                16, TextAnchor.MiddleLeft);
+            RectTransform labelRect = label.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 0f);
+            labelRect.anchorMax = new Vector2(0f, 1f);
+            labelRect.pivot = new Vector2(0f, 0.5f);
+            labelRect.anchoredPosition = new Vector2(11f, 0f);
+            labelRect.sizeDelta = new Vector2(130f, 0f);
+            label.fontStyle = FontStyle.Bold;
+            label.horizontalOverflow = HorizontalWrapMode.Overflow;
+            label.verticalOverflow = VerticalWrapMode.Truncate;
+            _towerDamageRankLabels[rank] = label;
+
+            Image track = CreateUiImage("Damage Track", background.transform,
+                new Color(0.055f, 0.105f, 0.13f, 0.82f));
+            StretchRect(track.rectTransform, 142f, 14f, 106f, 14f);
+            _towerDamageRankTracks[rank] = track;
+            Image fill = CreateUiImage("Damage Fill", track.transform,
+                new Color(0.08f, 0.72f, 0.94f, 0.9f));
+            StretchRect(fill.rectTransform, 0f, 0f, 0f, 0f);
+            _towerDamageRankFills[rank] = fill;
+
+            Text value = CreateUiText("Damage Value", background.transform,
+                17, TextAnchor.MiddleRight);
+            RectTransform valueRect = value.rectTransform;
+            valueRect.anchorMin = new Vector2(1f, 0f);
+            valueRect.anchorMax = new Vector2(1f, 1f);
+            valueRect.pivot = new Vector2(1f, 0.5f);
+            valueRect.anchoredPosition = new Vector2(-10f, 0f);
+            valueRect.sizeDelta = new Vector2(92f, 0f);
+            value.fontStyle = FontStyle.Bold;
+            value.horizontalOverflow = HorizontalWrapMode.Overflow;
+            value.verticalOverflow = VerticalWrapMode.Truncate;
+            _towerDamageRankValues[rank] = value;
+        }
+    }
+
+    private static void SetTowerDamageRankingFill(Image fill, float normalized)
+    {
+        if (fill == null) return;
+        float value = Mathf.Clamp01(normalized);
+        RectTransform rect = fill.rectTransform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = new Vector2(value, 1f);
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        fill.enabled = value > 0.0001f;
     }
 
     private void RefreshTowerPlaceEffectHud()
@@ -6997,7 +7567,9 @@ public partial class RougeGameManager
         if (!contextTower.IsSpecialTower)
         {
             builder.AppendLine();
-            builder.Append("<color=#7FEAFF><b>")
+            builder.Append("<color=#").Append(CommanderInterfaceColorHex(
+                    new Color32(0x7F, 0xEA, 0xFF, 0xFF)))
+                .Append("><b>")
                 .Append(GetTowerUiStats(contextTower))
                 .AppendLine("</b></color>");
         }
@@ -7034,12 +7606,14 @@ public partial class RougeGameManager
         }
     }
 
-    private static void AppendTowerInfoSection(System.Text.StringBuilder builder,
+    private void AppendTowerInfoSection(System.Text.StringBuilder builder,
         string title, string description, bool addDiamonds = true)
     {
         if (string.IsNullOrWhiteSpace(description)) return;
         if (builder.Length > 0) builder.AppendLine();
-        builder.Append("<color=#7FEAFF><b>").Append(title)
+        builder.Append("<color=#").Append(CommanderInterfaceColorHex(
+                new Color32(0x7F, 0xEA, 0xFF, 0xFF)))
+            .Append("><b>").Append(title)
             .AppendLine("</b></color>");
         if (!addDiamonds)
         {
@@ -7696,15 +8270,15 @@ public partial class RougeGameManager
         float anchorMinX, float anchorMaxX)
     {
         GameObject section = CreateUiPanel(name, parent,
-            new Color(0.006f, 0.018f, 0.028f, 0.94f));
+            new Color(0.006f, 0.018f, 0.028f, 0.26f));
         RectTransform rect = section.GetComponent<RectTransform>();
         rect.anchorMin = new Vector2(anchorMinX, 0f);
         rect.anchorMax = new Vector2(anchorMaxX, 1f);
         rect.offsetMin = new Vector2(6f, 8f);
         rect.offsetMax = new Vector2(-6f, -8f);
         Outline outline = section.AddComponent<Outline>();
-        outline.effectColor = new Color(0.10f, 0.58f, 0.78f, 0.30f);
-        outline.effectDistance = new Vector2(1f, -1f);
+        outline.effectColor = new Color(0.10f, 0.58f, 0.78f, 0.58f);
+        outline.effectDistance = new Vector2(1f, 1f);
         return section;
     }
 
@@ -7712,22 +8286,23 @@ public partial class RougeGameManager
     {
         if (button == null) return;
         Color background = Color.Lerp(new Color(0.012f, 0.028f, 0.044f, 1f),
-            accent, 0.16f);
+            accent, 0.10f);
+        background.a = 0.34f;
         Image image = button.GetComponent<Image>();
         if (image != null) image.color = background;
         ColorBlock colors = button.colors;
-        colors.normalColor = background;
-        colors.highlightedColor = Color.Lerp(background, accent, 0.30f);
-        colors.pressedColor = Color.Lerp(background, Color.black, 0.24f);
+        colors.normalColor = Color.white;
+        colors.highlightedColor = Color.Lerp(Color.white, accent, 0.22f);
+        colors.pressedColor = Color.Lerp(Color.white, accent, 0.42f);
         colors.selectedColor = colors.highlightedColor;
-        colors.disabledColor = new Color(0.035f, 0.050f, 0.062f, 0.72f);
+        colors.disabledColor = new Color(0.34f, 0.39f, 0.43f, 0.52f);
         colors.colorMultiplier = 1f;
         button.colors = colors;
         Outline outline = button.GetComponent<Outline>();
         if (outline != null)
         {
-            outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.62f);
-            outline.effectDistance = new Vector2(1.25f, -1.25f);
+            outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.78f);
+            outline.effectDistance = new Vector2(1f, 1f);
         }
         Image accentLine = CreateUiImage("Button Accent", button.transform, accent);
         RectTransform accentRect = accentLine.rectTransform;
@@ -7741,7 +8316,7 @@ public partial class RougeGameManager
     private static void CreateBuildButtonGlyph(Transform parent, string glyph, Color accent)
     {
         GameObject plate = CreateUiPanel("Glyph Plate", parent,
-            Color.Lerp(new Color(0.012f, 0.028f, 0.044f, 0.98f), accent, 0.18f));
+            Color.Lerp(new Color(0.012f, 0.028f, 0.044f, 0.28f), accent, 0.12f));
         RectTransform plateRect = plate.GetComponent<RectTransform>();
         plateRect.anchorMin = new Vector2(0f, 0.5f);
         plateRect.anchorMax = new Vector2(0f, 0.5f);
@@ -7749,8 +8324,8 @@ public partial class RougeGameManager
         plateRect.anchoredPosition = new Vector2(5f, 0f);
         plateRect.sizeDelta = new Vector2(34f, 44f);
         Outline outline = plate.AddComponent<Outline>();
-        outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.62f);
-        outline.effectDistance = new Vector2(1f, -1f);
+        outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.76f);
+        outline.effectDistance = new Vector2(1f, 1f);
         Text icon = CreateUiText("Glyph", plate.transform, 25, TextAnchor.MiddleCenter);
         icon.text = glyph;
         icon.color = Color.Lerp(accent, Color.white, 0.16f);
@@ -7761,37 +8336,84 @@ public partial class RougeGameManager
     private static void AddHudPanelChrome(GameObject panel, Color accentColor)
     {
         if (panel == null) return;
-        Outline outline = panel.AddComponent<Outline>();
-        outline.effectColor = new Color(accentColor.r, accentColor.g, accentColor.b, 0.32f);
-        outline.effectDistance = new Vector2(1.5f, -1.5f);
-        outline.useGraphicAlpha = true;
-
         Image accent = CreateUiImage("Accent", panel.transform, accentColor);
         RectTransform accentRect = accent.rectTransform;
         accentRect.anchorMin = new Vector2(0f, 1f);
         accentRect.anchorMax = new Vector2(1f, 1f);
         accentRect.pivot = new Vector2(0.5f, 1f);
         accentRect.anchoredPosition = Vector2.zero;
-        accentRect.sizeDelta = new Vector2(0f, 4f);
+        accentRect.sizeDelta = new Vector2(0f, 2f);
+
+        Image baseline = CreateUiImage("Baseline", panel.transform,
+            new Color(accentColor.r, accentColor.g, accentColor.b, 0.46f));
+        RectTransform baselineRect = baseline.rectTransform;
+        baselineRect.anchorMin = new Vector2(0f, 0f);
+        baselineRect.anchorMax = new Vector2(1f, 0f);
+        baselineRect.pivot = new Vector2(0.5f, 0f);
+        baselineRect.anchoredPosition = Vector2.zero;
+        baselineRect.sizeDelta = new Vector2(0f, 1f);
+
+        Image leftRail = CreateUiImage("Left Rail", panel.transform,
+            new Color(accentColor.r, accentColor.g, accentColor.b, 0.38f));
+        RectTransform leftRect = leftRail.rectTransform;
+        leftRect.anchorMin = new Vector2(0f, 0f);
+        leftRect.anchorMax = new Vector2(0f, 1f);
+        leftRect.pivot = new Vector2(0f, 0.5f);
+        leftRect.anchoredPosition = Vector2.zero;
+        leftRect.sizeDelta = new Vector2(1f, -2f);
+
+        Image rightRail = CreateUiImage("Right Rail", panel.transform,
+            new Color(accentColor.r, accentColor.g, accentColor.b, 0.24f));
+        RectTransform rightRect = rightRail.rectTransform;
+        rightRect.anchorMin = new Vector2(1f, 0f);
+        rightRect.anchorMax = new Vector2(1f, 1f);
+        rightRect.pivot = new Vector2(1f, 0.5f);
+        rightRect.anchoredPosition = Vector2.zero;
+        rightRect.sizeDelta = new Vector2(1f, -2f);
     }
 
     private void CreateBossThresholdMarker(Transform parent, int index, float normalizedX, string glyph, Color color)
     {
-        Image marker = CreateUiImage("Boss Threshold " + glyph, parent, Color.Lerp(color, Color.black, 0.58f));
+        Image marker = CreateUiImage("Boss Threshold " + glyph, parent,
+            Color.Lerp(color, Color.black, 0.34f));
         RectTransform rect = marker.rectTransform;
         rect.anchorMin = new Vector2(normalizedX, 0.5f);
         rect.anchorMax = new Vector2(normalizedX, 0.5f);
         rect.pivot = new Vector2(0.5f, 0.5f);
         rect.anchoredPosition = Vector2.zero;
-        rect.sizeDelta = new Vector2(24f, 24f);
-        rect.localRotation = Quaternion.Euler(0f, 0f, 45f);
-        Text label = CreateUiText("Glyph", marker.transform, 14, TextAnchor.MiddleCenter);
-        StretchRect(label.rectTransform, 0f, 0f, 0f, 0f);
-        label.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -45f);
+        rect.sizeDelta = new Vector2(2f, 22f);
+        Text label = CreateUiText("Glyph", marker.transform, 11,
+            TextAnchor.MiddleCenter);
+        RectTransform labelRect = label.rectTransform;
+        labelRect.anchorMin = labelRect.anchorMax = new Vector2(0.5f, 1f);
+        labelRect.pivot = new Vector2(0.5f, 0f);
+        labelRect.anchoredPosition = new Vector2(0f, 2f);
+        labelRect.sizeDelta = new Vector2(24f, 16f);
         label.text = glyph;
         label.color = Color.white;
         _bossThresholdMarkers[index] = marker;
         _bossThresholdLabels[index] = label;
+    }
+
+    private void UpdateBossHudTransition(float unscaledDt)
+    {
+        if (_bossPanel == null || _bossPanelGroup == null) return;
+        float target = _bossPanelTargetVisible ? 1f : 0f;
+        float duration = _bossPanelTargetVisible ? 0.24f : 0.18f;
+        _bossPanelGroup.alpha = Mathf.MoveTowards(_bossPanelGroup.alpha, target,
+            Mathf.Max(0f, unscaledDt) / duration);
+        RectTransform rect = _bossPanel.transform as RectTransform;
+        if (rect != null)
+        {
+            Vector2 position = rect.anchoredPosition;
+            position.y = Mathf.Lerp(-34f, -24f,
+                1f - (1f - _bossPanelGroup.alpha) *
+                (1f - _bossPanelGroup.alpha));
+            rect.anchoredPosition = position;
+        }
+        if (!_bossPanelTargetVisible && _bossPanelGroup.alpha <= 0.001f &&
+            _bossPanel.activeSelf)
+            _bossPanel.SetActive(false);
     }
 
     private void RefreshBossThresholdMarkers()
@@ -7989,9 +8611,7 @@ public partial class RougeGameManager
             if (_activeRocketBarrageSalvos[i].Tower == tower) return;
         }
 
-        uint seed = (uint)tower.GetInstanceID() * 747796405u +
-                    (uint)Mathf.Max(1, _towerLaserDamageFrame) * 2891336453u;
-        if (seed == 0u) seed = 0x9E3779B9u;
+        uint seed = _towerDefenseCombatRandom.NextUInt();
         _activeRocketBarrageSalvos.Add(new ActiveRocketBarrageSalvo
         {
             Tower = tower,

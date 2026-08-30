@@ -14,6 +14,7 @@ public sealed partial class RougeTowerDefenseMapLoader
         viewObject.transform.SetParent(transform, false);
         _commanderSelectionView = viewObject.AddComponent<RougeCommanderSelectionView>();
         _commanderSelectionView.BeginLoading(commanderConfigName);
+        RougeAudioVisualizerPlayer.EnterSelectionMusic();
 
         // Let the loading layer render before synchronous package validation begins.
         yield return null;
@@ -118,9 +119,17 @@ public sealed partial class RougeTowerDefenseMapLoader
         // Resolve once here so the GameManager can only ever observe the committed
         // package, including when the originally requested package fell back to Lan.
         _ = RougeAutoplayCommanderJson.Active;
+        ApplyCommanderVisualTheme(
+            RougeCommanderVisualThemes.ResolveActive());
+
+        // Build and prime the selected commander's battlefield while the opaque
+        // commitment layer is still covering the scene. The first visible frame
+        // is therefore the empty anchor zone, never a cyan map that later repaints.
+        if (loadOnEnable) LoadMap();
 
         Debug.Log("Commander selected: " + selected.CommanderId + " [" +
                   selected.LocaleId + "]. Entering level.", this);
+        RougeAudioVisualizerPlayer.ExitSelectionMusic();
         yield return _commanderSelectionView.PlayCommitAndFade();
 
         DisposeCommanderSelectionView();
@@ -141,9 +150,11 @@ public sealed partial class RougeTowerDefenseMapLoader
 
 public sealed class RougeCommanderSelectionView : MonoBehaviour
 {
-    private const float RosterCardHeight = 86f;
-    private const float RosterCardSpacing = 10f;
+    private const float RosterCardHeight = 112f;
+    private const float RosterCardSpacing = 12f;
     private const float RosterViewportHeight = 584f;
+    private const float ThemeTransitionDuration = 0.45f;
+    private const string SfxVolumePreference = "Rouge.Audio.SfxVolume";
 
     private static readonly Color BackdropColor =
         new Color(0.003f, 0.016f, 0.035f, 0.965f);
@@ -159,16 +170,51 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         new Color(0.45f, 0.68f, 0.76f, 1f);
     private static readonly Color Gold =
         new Color(1f, 0.71f, 0.28f, 1f);
+    private static readonly Color WashBottomLeft =
+        new Color(0.08f, 0.82f, 1f, 0.012f);
+    private static readonly Color WashTopLeft =
+        new Color(0.08f, 0.82f, 1f, 0.035f);
+    private static readonly Color WashTopRight =
+        new Color(0.24f, 0.92f, 1f, 0.055f);
+    private static readonly Color WashBottomRight =
+        new Color(0.08f, 0.72f, 0.92f, 0.022f);
+    private static readonly Color ScanBandColor =
+        new Color(0.24f, 0.92f, 1f, 0.095f);
+
+    private sealed class ThemeGraphicState
+    {
+        public Graphic Graphic;
+        public Color LanColor;
+        public Color TaotaoColor;
+    }
+
+    private sealed class ThemeShadowState
+    {
+        public Shadow Shadow;
+        public Color LanColor;
+        public Color TaotaoColor;
+    }
+
+    private sealed class ThemeSelectableState
+    {
+        public Selectable Selectable;
+        public ColorBlock LanColors;
+        public ColorBlock TaotaoColors;
+    }
 
     private static Font s_font;
 
     private CanvasGroup _canvasGroup;
     private CanvasGroup _loadingGroup;
     private CanvasGroup _selectionGroup;
+    private RougeCommanderThemeWashGraphic _themeWash;
+    private RougeCommanderThemeScanBandGraphic _themeScanBand;
+    private RectTransform _themeScanBandRect;
     private RectTransform _loadingProgressFill;
     private Image[] _loadingSegments;
     private Text _loadingTitle;
     private Text _loadingProtocol;
+    private RectTransform _heroStage;
     private RectTransform _heroScanline;
     private Image _heroPortrait;
     private Image _heroGlow;
@@ -180,6 +226,10 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
     private Text _thinkingText;
     private Text _talentText;
     private Text _sourceText;
+    private Text _affinityTierText;
+    private Text _affinityValueText;
+    private RectTransform _affinityProgressFill;
+    private Image _affinityProgressImage;
     private RougeCommanderRadarGraphic _radar;
     private Text[] _radarLabels;
     private RougeAutoplayCommanderDefinition[] _commanders =
@@ -192,12 +242,37 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
     private RectTransform _rosterViewport;
     private RectTransform _rosterContent;
     private int _lockedCommanderIndex = -1;
-    private int _previewCommanderIndex = -1;
     private Button _confirmButton;
     private Text _confirmLabel;
     private bool _confirmed;
     private float _loadingPhase;
     private float _selectionReveal;
+    private float _affinityNormalized;
+    private float _themeBlend;
+    private float _themeTransitionFrom;
+    private float _themeTransitionTarget;
+    private float _themeTransitionElapsed;
+    private float _themeSweepElapsed = 1f;
+    private float _themeSweepDirection = 1f;
+    private bool _themeBaselineCaptured;
+    private bool _themeTransitionActive;
+    private readonly List<ThemeGraphicState> _themeGraphics =
+        new List<ThemeGraphicState>();
+    private readonly List<ThemeShadowState> _themeShadows =
+        new List<ThemeShadowState>();
+    private readonly List<ThemeSelectableState> _themeSelectables =
+        new List<ThemeSelectableState>();
+    private readonly HashSet<Graphic> _capturedThemeGraphics =
+        new HashSet<Graphic>();
+    private readonly HashSet<Shadow> _capturedThemeShadows =
+        new HashSet<Shadow>();
+    private readonly HashSet<Selectable> _capturedThemeSelectables =
+        new HashSet<Selectable>();
+    private AudioSource _selectionVoiceSource;
+    private readonly Dictionary<string, AudioClip[]> _selectionVoiceClips =
+        new Dictionary<string, AudioClip[]>(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _lastSelectionVoiceIndices =
+        new Dictionary<string, int>(StringComparer.Ordinal);
 
     public RougeAutoplayCommanderDefinition SelectedCommander { get; private set; }
 
@@ -213,6 +288,15 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         _canvasGroup.alpha = 1f;
         _canvasGroup.interactable = true;
         _canvasGroup.blocksRaycasts = true;
+
+        _selectionVoiceSource = gameObject.AddComponent<AudioSource>();
+        _selectionVoiceSource.playOnAwake = false;
+        _selectionVoiceSource.loop = false;
+        _selectionVoiceSource.spatialBlend = 0f;
+        _selectionVoiceSource.ignoreListenerPause = true;
+        _selectionVoiceSource.priority = 64;
+        _selectionVoiceSource.volume = Mathf.Clamp01(
+            PlayerPrefs.GetFloat(SfxVolumePreference, 1f));
 
         RectTransform rootRect = GetComponent<RectTransform>();
         Stretch(rootRect);
@@ -278,6 +362,12 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
             rect.sizeDelta = new Vector2(5f, 18f + i * 1.6f);
             _loadingSegments[i] = segment;
         }
+
+        // Theme the loading layer before its first rendered frame. BuildSelection
+        // later captures only newly-created controls, so this never turns a
+        // previously remapped colour into a new baseline.
+        CaptureCommanderThemeBaseline();
+        ApplyCommanderThemeImmediate(requestedPackage);
     }
 
     public void SetLoadingStage(string title, string protocol)
@@ -328,6 +418,10 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         ConfigureNavigation();
         RefreshLockedCards();
         RenderCommander(_lockedCommanderIndex);
+        CaptureCommanderThemeBaseline();
+        ApplyCommanderThemeImmediate(SelectedCommander != null
+            ? SelectedCommander.CommanderId
+            : RougeAutoplayCommanderJson.DefaultCommanderName);
     }
 
     public IEnumerator RevealSelection()
@@ -396,6 +490,8 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
     {
         float dt = Time.unscaledDeltaTime;
         _loadingPhase += dt;
+        UpdateCommanderTheme(dt);
+        UpdateThemeScanBand(dt);
         if (_loadingProgressFill != null && _loadingGroup != null &&
             _loadingGroup.gameObject.activeSelf)
         {
@@ -406,14 +502,20 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
             {
                 float wave = 0.5f + 0.5f * Mathf.Sin(
                     _loadingPhase * 7f - i * 0.62f);
-                _loadingSegments[i].color = new Color(
-                    Cyan.r, Cyan.g, Cyan.b, Mathf.Lerp(0.12f, 0.9f, wave));
+                Color signal = RougeCommanderSelectionPalette.BlendLanToTaotao(
+                    Cyan, _themeBlend);
+                signal.a = Mathf.Lerp(0.12f, 0.9f, wave);
+                _loadingSegments[i].color = signal;
             }
         }
 
         if (_heroScanline != null && _selectionReveal > 0f)
         {
-            float y = Mathf.Lerp(-300f, 300f,
+            float stageHeight = _heroStage != null
+                ? Mathf.Max(1f, _heroStage.rect.height)
+                : 600f;
+            float halfTravel = stageHeight * 0.5f + 4f;
+            float y = Mathf.Lerp(-halfTravel, halfTravel,
                 Mathf.Repeat(_loadingPhase * 0.19f, 1f));
             _heroScanline.anchoredPosition = new Vector2(0f, y);
         }
@@ -427,6 +529,13 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         // The startup screen is modal. Consume clicks on otherwise empty space so
         // they cannot reach the paused gameplay UI beneath this canvas.
         backdrop.raycastTarget = true;
+
+        GameObject washObject = CreateRect("Commander Theme Wash", parent);
+        Stretch(washObject.GetComponent<RectTransform>());
+        _themeWash = washObject.AddComponent<RougeCommanderThemeWashGraphic>();
+        _themeWash.raycastTarget = false;
+        _themeWash.SetCornerColors(WashBottomLeft, WashTopLeft,
+            WashTopRight, WashBottomRight);
 
         for (int i = 1; i < 16; i++)
         {
@@ -446,6 +555,20 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
             rect.anchorMax = new Vector2(1f, i / 9f);
             rect.sizeDelta = new Vector2(0f, i % 2 == 0 ? 2f : 1f);
         }
+
+        GameObject scanBandObject = CreateRect(
+            "Commander Theme Diagonal Scan", parent);
+        _themeScanBandRect = scanBandObject.GetComponent<RectTransform>();
+        _themeScanBandRect.anchorMin = _themeScanBandRect.anchorMax =
+            new Vector2(0.5f, 0.5f);
+        _themeScanBandRect.pivot = new Vector2(0.5f, 0.5f);
+        _themeScanBandRect.sizeDelta = new Vector2(2600f, 176f);
+        _themeScanBandRect.localRotation = Quaternion.Euler(0f, 0f, -16f);
+        _themeScanBand =
+            scanBandObject.AddComponent<RougeCommanderThemeScanBandGraphic>();
+        _themeScanBand.color = ScanBandColor;
+        _themeScanBand.raycastTarget = false;
+        UpdateThemeScanBand(0f);
 
         Image topGlow = CreateImage("Top Signal", parent,
             new Color(Cyan.r, Cyan.g, Cyan.b, 0.34f));
@@ -481,10 +604,10 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
 
     private void BuildRoster(Transform parent)
     {
-        Text label = CreateText("Roster Label", parent, 14,
+        Text label = CreateText("Roster Label", parent, 16,
             TextAnchor.MiddleLeft, SecondaryText);
         SetTopLeft(label.rectTransform, new Vector2(64f, -174f),
-            new Vector2(330f, 24f));
+            new Vector2(390f, 24f));
         label.text = _commanders.Length > 6
             ? "AVAILABLE // 可选角色  ·  SCROLL"
             : "AVAILABLE // 可选角色";
@@ -494,7 +617,7 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         scrollSurface.raycastTarget = true;
         RectTransform scrollRect = scrollSurface.rectTransform;
         SetTopLeft(scrollRect, new Vector2(60f, -204f),
-            new Vector2(330f, RosterViewportHeight));
+            new Vector2(390f, RosterViewportHeight));
         _rosterScroll = scrollSurface.gameObject.AddComponent<ScrollRect>();
         _rosterScroll.horizontal = false;
         _rosterScroll.vertical = true;
@@ -543,7 +666,7 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         cardRect.pivot = new Vector2(0f, 1f);
         cardRect.anchoredPosition = new Vector2(4f,
             -commanderIndex * (RosterCardHeight + RosterCardSpacing));
-        cardRect.sizeDelta = new Vector2(318f, RosterCardHeight);
+        cardRect.sizeDelta = new Vector2(376f, RosterCardHeight);
 
         RougeCommanderSlantedGraphic fill =
             cardObject.AddComponent<RougeCommanderSlantedGraphic>();
@@ -553,8 +676,8 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
 
         Image portraitBackdrop = CreateImage("Portrait Backdrop",
             cardObject.transform, new Color(0.02f, 0.18f, 0.24f, 0.8f));
-        SetTopLeft(portraitBackdrop.rectTransform, new Vector2(7f, -6f),
-            new Vector2(76f, 74f));
+        SetTopLeft(portraitBackdrop.rectTransform, new Vector2(8f, -7f),
+            new Vector2(98f, 98f));
         Image image = CreateImage("Portrait", portraitBackdrop.transform,
             Color.white);
         Stretch(image.rectTransform, 2f);
@@ -564,35 +687,35 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
 
         Image accent = CreateImage("Selection Accent", cardObject.transform,
             new Color(Cyan.r, Cyan.g, Cyan.b, 0.72f));
-        SetTopLeft(accent.rectTransform, new Vector2(0f, -6f),
-            new Vector2(3f, 74f));
+        SetTopLeft(accent.rectTransform, new Vector2(0f, -8f),
+            new Vector2(4f, 96f));
         accent.raycastTarget = false;
 
-        Text index = CreateText("Index", cardObject.transform, 11,
+        Text index = CreateText("Index", cardObject.transform, 14,
             TextAnchor.MiddleLeft, Cyan);
-        SetTopLeft(index.rectTransform, new Vector2(96f, -7f),
-            new Vector2(198f, 18f));
+        SetTopLeft(index.rectTransform, new Vector2(120f, -9f),
+            new Vector2(226f, 21f));
         bool builtIn = string.Equals(commander.CommanderId,
             RougeAutoplayCommanderJson.DefaultCommanderName,
             StringComparison.Ordinal);
         index.text = (commanderIndex + 1).ToString("D2") + "  /  " +
                      (builtIn ? "BUILT-IN" : "RESOURCE MOD");
 
-        Text name = CreateText("Name", cardObject.transform, 23,
+        Text name = CreateText("Name", cardObject.transform, 29,
             TextAnchor.MiddleLeft, MainText);
-        SetTopLeft(name.rectTransform, new Vector2(96f, -24f),
-            new Vector2(198f, 31f));
+        SetTopLeft(name.rectTransform, new Vector2(120f, -31f),
+            new Vector2(226f, 38f));
         name.text = commander.Name;
         name.fontStyle = FontStyle.Bold;
 
-        Text persona = CreateText("Persona", cardObject.transform, 12,
+        Text persona = CreateText("Persona", cardObject.transform, 15,
             TextAnchor.MiddleLeft, SecondaryText);
-        SetTopLeft(persona.rectTransform, new Vector2(96f, -55f),
-            new Vector2(198f, 22f));
+        SetTopLeft(persona.rectTransform, new Vector2(120f, -73f),
+            new Vector2(226f, 28f));
         persona.text = commander.Persona;
         persona.resizeTextForBestFit = true;
-        persona.resizeTextMinSize = 10;
-        persona.resizeTextMaxSize = 12;
+        persona.resizeTextMinSize = 13;
+        persona.resizeTextMaxSize = 15;
 
         RougeCommanderSlantedGraphic border = AddPanelBorder(
             cardObject.transform, 18f, CyanSoft, 2f);
@@ -605,7 +728,7 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         button.onClick.AddListener(() => SelectCommander(capturedIndex));
         RougeCommanderSelectionCard card =
             cardObject.AddComponent<RougeCommanderSelectionCard>();
-        card.Initialize(this, commanderIndex, fill, border, image,
+        card.Initialize(fill, border, image,
             cardRect.anchoredPosition);
         _cards[commanderIndex] = card;
         _cardButtons[commanderIndex] = button;
@@ -616,10 +739,11 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         RougeCommanderSlantedGraphic stage = CreatePanel(
             "Portrait Stage", parent, new Color(0.005f, 0.035f, 0.065f, 0.72f), 46f);
         RectTransform stageRect = stage.rectTransform;
-        stageRect.anchorMin = new Vector2(0.215f, 0.13f);
-        stageRect.anchorMax = new Vector2(0.55f, 0.86f);
+        stageRect.anchorMin = new Vector2(0.235f, 0.13f);
+        stageRect.anchorMax = new Vector2(0.56f, 0.86f);
         stageRect.offsetMin = Vector2.zero;
         stageRect.offsetMax = Vector2.zero;
+        _heroStage = stageRect;
         stage.gameObject.AddComponent<Mask>().showMaskGraphic = true;
 
         _heroGlow = CreateImage("Portrait Glow", stage.transform,
@@ -640,7 +764,7 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         _heroScanline.anchorMin = new Vector2(0f, 0.5f);
         _heroScanline.anchorMax = new Vector2(1f, 0.5f);
         _heroScanline.pivot = new Vector2(0.5f, 0.5f);
-        _heroScanline.sizeDelta = new Vector2(0f, 2f);
+        _heroScanline.sizeDelta = new Vector2(0f, 4f);
 
         RougeCommanderSlantedGraphic border = AddPanelBorder(
             parent, 46f, new Color(Cyan.r, Cyan.g, Cyan.b, 0.5f), 2f);
@@ -659,68 +783,114 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         AddPanelBorder(panel.transform, 28f,
             new Color(Cyan.r, Cyan.g, Cyan.b, 0.38f), 2f);
 
-        _sourceText = CreateText("Source", panel.transform, 14,
+        _sourceText = CreateText("Source", panel.transform, 15,
             TextAnchor.MiddleLeft, Cyan);
-        SetTopLeft(_sourceText.rectTransform, new Vector2(38f, -30f),
-            new Vector2(610f, 22f));
+        SetTopLeft(_sourceText.rectTransform, new Vector2(38f, -26f),
+            new Vector2(640f, 24f));
 
-        _nameText = CreateText("Commander Name", panel.transform, 40,
+        _nameText = CreateText("Commander Name", panel.transform, 42,
             TextAnchor.MiddleLeft, MainText);
-        SetTopLeft(_nameText.rectTransform, new Vector2(38f, -56f),
-            new Vector2(610f, 52f));
+        SetTopLeft(_nameText.rectTransform, new Vector2(38f, -53f),
+            new Vector2(360f, 54f));
         _nameText.fontStyle = FontStyle.Bold;
 
-        _roleText = CreateText("Role", panel.transform, 18,
+        _roleText = CreateText("Role", panel.transform, 19,
             TextAnchor.MiddleLeft, SecondaryText);
-        SetTopLeft(_roleText.rectTransform, new Vector2(40f, -110f),
-            new Vector2(610f, 28f));
+        SetTopLeft(_roleText.rectTransform, new Vector2(40f, -111f),
+            new Vector2(350f, 28f));
 
-        _personaText = CreateText("Persona", panel.transform, 18,
+        _personaText = CreateText("Persona", panel.transform, 19,
             TextAnchor.MiddleLeft, Gold);
         SetTopLeft(_personaText.rectTransform, new Vector2(40f, -143f),
-            new Vector2(610f, 28f));
+            new Vector2(350f, 28f));
 
-        _traitsText = CreateText("Traits", panel.transform, 15,
+        _traitsText = CreateText("Traits", panel.transform, 16,
             TextAnchor.UpperLeft, MainText);
-        SetTopLeft(_traitsText.rectTransform, new Vector2(40f, -182f),
-            new Vector2(610f, 54f));
+        SetTopLeft(_traitsText.rectTransform, new Vector2(40f, -180f),
+            new Vector2(350f, 44f));
+
+        RougeCommanderSlantedGraphic affinitySurface = CreatePanel(
+            "Affinity Surface", panel.transform,
+            new Color(0.018f, 0.12f, 0.17f, 0.94f), 12f);
+        SetTopLeft(affinitySurface.rectTransform, new Vector2(420f, -64f),
+            new Vector2(260f, 144f));
+        AddPanelBorder(affinitySurface.transform, 12f,
+            new Color(Cyan.r, Cyan.g, Cyan.b, 0.48f), 1.5f);
+
+        Text affinityTitle = CreateText("Affinity Title",
+            affinitySurface.transform, 13, TextAnchor.MiddleLeft, Cyan);
+        SetTopLeft(affinityTitle.rectTransform, new Vector2(18f, -13f),
+            new Vector2(224f, 22f));
+        affinityTitle.text = "LINK AFFINITY // 默契";
+
+        _affinityTierText = CreateText("Affinity Tier",
+            affinitySurface.transform, 23, TextAnchor.MiddleLeft, Gold);
+        SetTopLeft(_affinityTierText.rectTransform, new Vector2(18f, -39f),
+            new Vector2(132f, 34f));
+        _affinityTierText.fontStyle = FontStyle.Bold;
+
+        _affinityValueText = CreateText("Affinity Value",
+            affinitySurface.transform, 17, TextAnchor.MiddleRight, MainText);
+        SetTopRight(_affinityValueText.rectTransform, new Vector2(-18f, -43f),
+            new Vector2(96f, 28f));
+
+        Image affinityTrack = CreateImage("Affinity Track",
+            affinitySurface.transform, new Color(0.05f, 0.24f, 0.3f, 0.92f));
+        SetTopLeft(affinityTrack.rectTransform, new Vector2(18f, -82f),
+            new Vector2(224f, 10f));
+        _affinityProgressImage = CreateImage("Affinity Progress",
+            affinityTrack.transform, Cyan);
+        _affinityProgressFill = _affinityProgressImage.rectTransform;
+        _affinityProgressFill.anchorMin = Vector2.zero;
+        _affinityProgressFill.anchorMax = new Vector2(0f, 1f);
+        _affinityProgressFill.pivot = new Vector2(0f, 0.5f);
+        _affinityProgressFill.anchoredPosition = Vector2.zero;
+        _affinityProgressFill.sizeDelta = Vector2.zero;
+
+        Text affinityHint = CreateText("Affinity Hint",
+            affinitySurface.transform, 12, TextAnchor.MiddleLeft, SecondaryText);
+        SetTopLeft(affinityHint.rectTransform, new Vector2(18f, -102f),
+            new Vector2(224f, 24f));
+        affinityHint.text = "随战局互动累积  ·  记录到角色档案";
 
         Text backgroundLabel = CreateText("Background Label", panel.transform,
-            13, TextAnchor.MiddleLeft, Cyan);
-        SetTopLeft(backgroundLabel.rectTransform, new Vector2(40f, -244f),
-            new Vector2(610f, 20f));
+            14, TextAnchor.MiddleLeft, Cyan);
+        SetTopLeft(backgroundLabel.rectTransform, new Vector2(40f, -236f),
+            new Vector2(300f, 22f));
         backgroundLabel.text = "BACKGROUND // 背景";
-        _backgroundText = CreateText("Background", panel.transform, 16,
+        _backgroundText = CreateText("Background", panel.transform, 18,
             TextAnchor.UpperLeft, SecondaryText);
-        SetTopLeft(_backgroundText.rectTransform, new Vector2(40f, -270f),
-            new Vector2(610f, 84f));
+        SetTopLeft(_backgroundText.rectTransform, new Vector2(40f, -263f),
+            new Vector2(300f, 132f));
         _backgroundText.resizeTextForBestFit = true;
-        _backgroundText.resizeTextMinSize = 13;
-        _backgroundText.resizeTextMaxSize = 16;
+        _backgroundText.resizeTextMinSize = 16;
+        _backgroundText.resizeTextMaxSize = 18;
+        _backgroundText.lineSpacing = 1.08f;
 
         Text thinkingLabel = CreateText("Thinking Label", panel.transform,
-            13, TextAnchor.MiddleLeft, Cyan);
-        SetTopLeft(thinkingLabel.rectTransform, new Vector2(40f, -366f),
-            new Vector2(610f, 20f));
+            14, TextAnchor.MiddleLeft, Cyan);
+        SetTopLeft(thinkingLabel.rectTransform, new Vector2(365f, -236f),
+            new Vector2(315f, 22f));
         thinkingLabel.text = "DECISION MODEL // 思考方式";
-        _thinkingText = CreateText("Thinking", panel.transform, 16,
+        _thinkingText = CreateText("Thinking", panel.transform, 18,
             TextAnchor.UpperLeft, SecondaryText);
-        SetTopLeft(_thinkingText.rectTransform, new Vector2(40f, -392f),
-            new Vector2(610f, 80f));
+        SetTopLeft(_thinkingText.rectTransform, new Vector2(365f, -263f),
+            new Vector2(315f, 132f));
         _thinkingText.resizeTextForBestFit = true;
-        _thinkingText.resizeTextMinSize = 13;
-        _thinkingText.resizeTextMaxSize = 16;
+        _thinkingText.resizeTextMinSize = 16;
+        _thinkingText.resizeTextMaxSize = 18;
+        _thinkingText.lineSpacing = 1.08f;
 
-        Text radarTitle = CreateText("Radar Title", panel.transform, 13,
+        Text radarTitle = CreateText("Radar Title", panel.transform, 14,
             TextAnchor.MiddleLeft, Cyan);
-        SetBottomLeft(radarTitle.rectTransform, new Vector2(40f, 278f),
+        SetBottomLeft(radarTitle.rectTransform, new Vector2(40f, 286f),
             new Vector2(360f, 22f));
         radarTitle.text = "TACTICAL STYLE // 六维对立倾向";
 
         GameObject radarObject = CreateRect("Tactical Spectrum", panel.transform);
         RectTransform radarRect = radarObject.GetComponent<RectTransform>();
-        SetBottomLeft(radarRect, new Vector2(42f, 40f),
-            new Vector2(270f, 230f));
+        SetBottomLeft(radarRect, new Vector2(42f, 48f),
+            new Vector2(270f, 224f));
         _radar = radarObject.AddComponent<RougeCommanderRadarGraphic>();
         _radar.color = new Color(Cyan.r, Cyan.g, Cyan.b, 0.28f);
 
@@ -734,29 +904,30 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         string[] names = { "存钱", "控场", "攻坚", "铺塔", "纯伤", "清群" };
         for (int i = 0; i < 6; i++)
         {
-            Text axis = CreateText("Axis " + names[i], panel.transform, 13,
+            Text axis = CreateText("Axis " + names[i], panel.transform, 14,
                 TextAnchor.MiddleCenter, SecondaryText);
             RectTransform axisRect = axis.rectTransform;
             SetBottomLeft(axisRect,
                 new Vector2(42f + labelPositions[i].x,
-                    40f + labelPositions[i].y),
+                    48f + labelPositions[i].y),
                 new Vector2(82f, 24f));
             _radarLabels[i] = axis;
         }
 
-        Text budget = CreateText("Spectrum Rule", panel.transform, 12,
-            TextAnchor.MiddleLeft, SecondaryText);
-        SetBottomLeft(budget.rectTransform, new Vector2(340f, 164f),
-            new Vector2(320f, 86f));
-        budget.text = "存钱 ↔ 铺塔\n控场减益 ↔ 直接伤害\n清群 ↔ 攻坚（精英/首领）\n每项 0–50 · 每对合计 50";
+        Text budget = CreateText("Spectrum Rule", panel.transform, 14,
+            TextAnchor.UpperLeft, SecondaryText);
+        SetBottomLeft(budget.rectTransform, new Vector2(350f, 194f),
+            new Vector2(310f, 74f));
+        budget.text = "存钱 ↔ 铺塔\n控场减益 ↔ 直接伤害\n清群 ↔ 攻坚（单体/破甲/精英首领）\n每项 0–50 · 每对合计 50";
 
-        _talentText = CreateText("Talent", panel.transform, 15,
+        _talentText = CreateText("Talent", panel.transform, 17,
             TextAnchor.UpperLeft, MainText);
-        SetBottomLeft(_talentText.rectTransform, new Vector2(340f, 72f),
-            new Vector2(320f, 112f));
+        SetBottomLeft(_talentText.rectTransform, new Vector2(350f, 66f),
+            new Vector2(310f, 112f));
         _talentText.resizeTextForBestFit = true;
-        _talentText.resizeTextMinSize = 12;
-        _talentText.resizeTextMaxSize = 15;
+        _talentText.resizeTextMinSize = 15;
+        _talentText.resizeTextMaxSize = 17;
+        _talentText.lineSpacing = 1.08f;
     }
 
     private void BuildFooter(Transform parent)
@@ -765,7 +936,7 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
             TextAnchor.MiddleLeft, SecondaryText);
         SetBottomLeft(hint.rectTransform, new Vector2(64f, 42f),
             new Vector2(720f, 32f));
-        hint.text = "悬停 / 导航 预览档案   ·   点击角色锁定   ·   确认后进入战区";
+        hint.text = "悬停高亮   ·   点击角色切换并试听语音   ·   确认后进入战区";
 
         RougeCommanderSlantedGraphic surface = CreatePanel(
             "Confirm Surface", parent, new Color(0.035f, 0.22f, 0.3f, 0.98f),
@@ -833,40 +1004,24 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
         if (_confirmed || commanderIndex < 0 ||
             commanderIndex >= _commanders.Length ||
             _commanders[commanderIndex] == null) return;
+        bool changed = commanderIndex != _lockedCommanderIndex;
         _lockedCommanderIndex = commanderIndex;
-        _previewCommanderIndex = -1;
         SelectedCommander = _commanders[commanderIndex];
         RefreshLockedCards();
         RenderCommander(commanderIndex);
+        BeginCommanderThemeTransition(SelectedCommander.CommanderId);
+        if (changed) PlaySelectionVoice(SelectedCommander);
         UpdateConfirmNavigation();
         if (EventSystem.current != null && _confirmButton != null)
             EventSystem.current.SetSelectedGameObject(_confirmButton.gameObject);
     }
 
-    internal void PreviewCommander(int commanderIndex, bool active,
-        bool ensureVisible)
-    {
-        if (_confirmed || commanderIndex < 0 ||
-            commanderIndex >= _commanders.Length) return;
-        if (active)
-        {
-            _previewCommanderIndex = commanderIndex;
-            RenderCommander(commanderIndex);
-            if (ensureVisible) EnsureRosterCardVisible(commanderIndex);
-        }
-        else if (_previewCommanderIndex == commanderIndex)
-        {
-            _previewCommanderIndex = -1;
-            RenderCommander(_lockedCommanderIndex);
-        }
-    }
-
     private void ConfirmSelection()
     {
         if (_confirmed || SelectedCommander == null) return;
-        _previewCommanderIndex = -1;
         RenderCommander(_lockedCommanderIndex);
         RefreshLockedCards();
+        CompleteCommanderThemeTransition();
         _confirmed = true;
     }
 
@@ -931,12 +1086,366 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
             _talentText.text = "权限  /  " + commander.TalentName + "\n" +
                                commander.TalentDescription;
 
+        int affinity = Mathf.Clamp(PlayerPrefs.GetInt(
+            commander.AffinityPreferenceKey,
+            commander.Source.dialogue.startingAffinity), 0, 100);
+        int familiarThreshold = commander.Source.dialogue.familiarThreshold;
+        int closeThreshold = commander.Source.dialogue.closeThreshold;
+        string affinityTier = affinity >= closeThreshold
+            ? commander.CloseAffinityLabel
+            : affinity >= familiarThreshold
+                ? commander.FamiliarAffinityLabel
+                : commander.DistantAffinityLabel;
+        if (_affinityTierText != null)
+            _affinityTierText.text = affinityTier;
+        if (_affinityValueText != null)
+            _affinityValueText.text = affinity + " / 100";
+        if (_affinityProgressFill != null)
+        {
+            _affinityNormalized = affinity / 100f;
+            _affinityProgressFill.anchorMax =
+                new Vector2(_affinityNormalized, 1f);
+            _affinityProgressFill.sizeDelta = Vector2.zero;
+            ApplyAffinityThemeColor();
+        }
+
         int[] values = RougeCommanderTacticalSpectrum.Calculate(commander);
         if (_radar != null) _radar.SetScores(values, 50f);
         if (_radarLabels != null)
             for (int i = 0; i < Mathf.Min(values.Length, _radarLabels.Length); i++)
                 _radarLabels[i].text =
                     RougeCommanderTacticalSpectrum.AxisNames[i] + " " + values[i];
+    }
+
+    private void CaptureCommanderThemeBaseline()
+    {
+        Graphic[] graphics = GetComponentsInChildren<Graphic>(true);
+        for (int i = 0; i < graphics.Length; i++)
+        {
+            Graphic graphic = graphics[i];
+            if (graphic == null || IsRuntimeThemeGraphic(graphic) ||
+                !_capturedThemeGraphics.Add(graphic))
+                continue;
+            Color lanColor = graphic.color;
+            _themeGraphics.Add(new ThemeGraphicState
+            {
+                Graphic = graphic,
+                LanColor = lanColor,
+                TaotaoColor =
+                    RougeCommanderSelectionPalette.TaotaoTarget(lanColor)
+            });
+        }
+
+        Shadow[] shadows = GetComponentsInChildren<Shadow>(true);
+        for (int i = 0; i < shadows.Length; i++)
+        {
+            Shadow shadow = shadows[i];
+            if (shadow == null || !_capturedThemeShadows.Add(shadow)) continue;
+            Color lanColor = shadow.effectColor;
+            _themeShadows.Add(new ThemeShadowState
+            {
+                Shadow = shadow,
+                LanColor = lanColor,
+                TaotaoColor =
+                    RougeCommanderSelectionPalette.TaotaoTarget(lanColor)
+            });
+        }
+
+        Selectable[] selectables = GetComponentsInChildren<Selectable>(true);
+        for (int i = 0; i < selectables.Length; i++)
+        {
+            Selectable selectable = selectables[i];
+            if (selectable == null ||
+                !_capturedThemeSelectables.Add(selectable))
+                continue;
+            ColorBlock lanColors = selectable.colors;
+            _themeSelectables.Add(new ThemeSelectableState
+            {
+                Selectable = selectable,
+                LanColors = lanColors,
+                TaotaoColors = BuildTaotaoColorBlock(lanColors)
+            });
+        }
+
+        _themeBaselineCaptured = true;
+    }
+
+    private bool IsRuntimeThemeGraphic(Graphic graphic)
+    {
+        if (graphic == _themeWash || graphic == _themeScanBand ||
+            graphic == _radar || graphic == _affinityProgressImage ||
+            graphic == _heroPortrait)
+            return true;
+
+        if (_loadingSegments != null)
+            for (int i = 0; i < _loadingSegments.Length; i++)
+                if (graphic == _loadingSegments[i]) return true;
+
+        RougeCommanderSelectionCard card =
+            graphic.GetComponentInParent<RougeCommanderSelectionCard>();
+        return card != null && card.OwnsRuntimeColor(graphic);
+    }
+
+    private static ColorBlock BuildTaotaoColorBlock(ColorBlock lanColors)
+    {
+        ColorBlock result = lanColors;
+        result.normalColor = RougeCommanderSelectionPalette.TaotaoTarget(
+            lanColors.normalColor);
+        result.highlightedColor = RougeCommanderSelectionPalette.TaotaoTarget(
+            lanColors.highlightedColor);
+        result.pressedColor = RougeCommanderSelectionPalette.TaotaoTarget(
+            lanColors.pressedColor);
+        result.selectedColor = RougeCommanderSelectionPalette.TaotaoTarget(
+            lanColors.selectedColor);
+        result.disabledColor = RougeCommanderSelectionPalette.TaotaoTarget(
+            lanColors.disabledColor);
+        return result;
+    }
+
+    private void ApplyCommanderThemeImmediate(string commanderId)
+    {
+        _themeTransitionActive = false;
+        _themeTransitionElapsed = 0f;
+        _themeTransitionTarget =
+            RougeCommanderSelectionPalette.TargetBlend(commanderId);
+        _themeTransitionFrom = _themeTransitionTarget;
+        _themeSweepElapsed = 1f;
+        ApplyCommanderThemeBlend(_themeTransitionTarget);
+        ResetThemeScanBand();
+    }
+
+    private void BeginCommanderThemeTransition(string commanderId)
+    {
+        float target = RougeCommanderSelectionPalette.TargetBlend(commanderId);
+        if (!_themeBaselineCaptured)
+        {
+            _themeBlend = target;
+            return;
+        }
+
+        if (Mathf.Abs(target - _themeBlend) <= 0.0001f)
+        {
+            _themeTransitionActive = false;
+            _themeTransitionTarget = target;
+            ApplyCommanderThemeBlend(target);
+            return;
+        }
+
+        // Starting from the current scalar makes a mid-transition reversal just
+        // as smooth as a fresh selection, while every colour still derives from
+        // the immutable Lan baseline captured above.
+        _themeTransitionFrom = _themeBlend;
+        _themeTransitionTarget = target;
+        _themeTransitionElapsed = 0f;
+        _themeSweepElapsed = 0f;
+        _themeSweepDirection = target > _themeBlend ? 1f : -1f;
+        ResetThemeScanBand();
+        _themeTransitionActive = true;
+    }
+
+    private void UpdateCommanderTheme(float unscaledDeltaTime)
+    {
+        if (!_themeTransitionActive || !_themeBaselineCaptured) return;
+        _themeTransitionElapsed += Mathf.Max(0f, unscaledDeltaTime);
+        float progress = Mathf.Clamp01(
+            _themeTransitionElapsed / ThemeTransitionDuration);
+        float eased = progress * progress * (3f - 2f * progress);
+        ApplyCommanderThemeBlend(Mathf.LerpUnclamped(
+            _themeTransitionFrom, _themeTransitionTarget, eased));
+        if (progress >= 1f) _themeTransitionActive = false;
+    }
+
+    private void CompleteCommanderThemeTransition()
+    {
+        string commanderId = SelectedCommander != null
+            ? SelectedCommander.CommanderId
+            : RougeAutoplayCommanderJson.DefaultCommanderName;
+        _themeTransitionTarget =
+            RougeCommanderSelectionPalette.TargetBlend(commanderId);
+        _themeTransitionActive = false;
+        _themeTransitionElapsed = ThemeTransitionDuration;
+        ApplyCommanderThemeBlend(_themeTransitionTarget);
+        _themeSweepElapsed = 1f;
+        ResetThemeScanBand();
+    }
+
+    private void ApplyCommanderThemeBlend(float blend)
+    {
+        _themeBlend = Mathf.Clamp01(blend);
+        if (!_themeBaselineCaptured) return;
+
+        for (int i = 0; i < _themeGraphics.Count; i++)
+        {
+            ThemeGraphicState state = _themeGraphics[i];
+            if (state.Graphic != null)
+                state.Graphic.color = Color.LerpUnclamped(
+                    state.LanColor, state.TaotaoColor, _themeBlend);
+        }
+
+        for (int i = 0; i < _themeShadows.Count; i++)
+        {
+            ThemeShadowState state = _themeShadows[i];
+            if (state.Shadow != null)
+                state.Shadow.effectColor = Color.LerpUnclamped(
+                    state.LanColor, state.TaotaoColor, _themeBlend);
+        }
+
+        for (int i = 0; i < _themeSelectables.Count; i++)
+        {
+            ThemeSelectableState state = _themeSelectables[i];
+            if (state.Selectable == null) continue;
+            ColorBlock colors = state.LanColors;
+            colors.normalColor = Color.LerpUnclamped(
+                state.LanColors.normalColor,
+                state.TaotaoColors.normalColor, _themeBlend);
+            colors.highlightedColor = Color.LerpUnclamped(
+                state.LanColors.highlightedColor,
+                state.TaotaoColors.highlightedColor, _themeBlend);
+            colors.pressedColor = Color.LerpUnclamped(
+                state.LanColors.pressedColor,
+                state.TaotaoColors.pressedColor, _themeBlend);
+            colors.selectedColor = Color.LerpUnclamped(
+                state.LanColors.selectedColor,
+                state.TaotaoColors.selectedColor, _themeBlend);
+            colors.disabledColor = Color.LerpUnclamped(
+                state.LanColors.disabledColor,
+                state.TaotaoColors.disabledColor, _themeBlend);
+            state.Selectable.colors = colors;
+        }
+
+        for (int i = 0; i < _cards.Length; i++)
+            if (_cards[i] != null) _cards[i].SetThemeBlend(_themeBlend);
+        if (_radar != null) _radar.SetThemeBlend(_themeBlend);
+
+        ApplyAffinityThemeColor();
+        ApplyThemeBackdropEffects();
+        ApplyLoadingSignalTheme();
+    }
+
+    private void ApplyAffinityThemeColor()
+    {
+        if (_affinityProgressImage == null) return;
+        Color themedAccent = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            Cyan, _themeBlend);
+        _affinityProgressImage.color = Color.LerpUnclamped(
+            themedAccent, Gold, Mathf.Clamp01(_affinityNormalized));
+    }
+
+    private void ApplyThemeBackdropEffects()
+    {
+        if (_themeWash != null)
+            _themeWash.SetCornerColors(
+                RougeCommanderSelectionPalette.BlendLanToTaotao(
+                    WashBottomLeft, _themeBlend),
+                RougeCommanderSelectionPalette.BlendLanToTaotao(
+                    WashTopLeft, _themeBlend),
+                RougeCommanderSelectionPalette.BlendLanToTaotao(
+                    WashTopRight, _themeBlend),
+                RougeCommanderSelectionPalette.BlendLanToTaotao(
+                    WashBottomRight, _themeBlend));
+        if (_themeScanBand != null)
+        {
+            float currentAlpha = _themeScanBand.color.a;
+            Color scanColor = RougeCommanderSelectionPalette.BlendLanToTaotao(
+                ScanBandColor, _themeBlend);
+            scanColor.a = currentAlpha;
+            _themeScanBand.color = scanColor;
+        }
+    }
+
+    private void ApplyLoadingSignalTheme()
+    {
+        if (_loadingSegments == null) return;
+        Color themedSignal = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            Cyan, _themeBlend);
+        for (int i = 0; i < _loadingSegments.Length; i++)
+        {
+            Image segment = _loadingSegments[i];
+            if (segment == null) continue;
+            Color current = segment.color;
+            current.r = themedSignal.r;
+            current.g = themedSignal.g;
+            current.b = themedSignal.b;
+            segment.color = current;
+        }
+    }
+
+    private void UpdateThemeScanBand(float unscaledDeltaTime)
+    {
+        if (_themeScanBandRect == null) return;
+        const float sweepDuration = 0.62f;
+        _themeSweepElapsed += Mathf.Max(0f, unscaledDeltaTime);
+        bool switching = _themeSweepElapsed < sweepDuration;
+        if (!switching)
+        {
+            ResetThemeScanBand();
+            return;
+        }
+        float progress = Mathf.Clamp01(_themeSweepElapsed / sweepDuration);
+        if (switching && _themeSweepDirection < 0f) progress = 1f - progress;
+        float eased = progress * progress * (3f - 2f * progress);
+        _themeScanBandRect.anchoredPosition = Vector2.LerpUnclamped(
+            new Vector2(-520f, -760f), new Vector2(520f, 760f), eased);
+        if (_themeScanBand != null)
+        {
+            Color band = RougeCommanderSelectionPalette.BlendLanToTaotao(
+                ScanBandColor, _themeBlend);
+            float envelope = Mathf.Sin(
+                Mathf.Clamp01(_themeSweepElapsed / sweepDuration) * Mathf.PI);
+            band.a = 0.28f * envelope;
+            _themeScanBand.color = band;
+        }
+    }
+
+    private void ResetThemeScanBand()
+    {
+        Vector2 start = _themeSweepDirection < 0f
+            ? new Vector2(520f, 760f)
+            : new Vector2(-520f, -760f);
+        if (_themeScanBandRect != null)
+            _themeScanBandRect.anchoredPosition = start;
+        if (_themeScanBand == null) return;
+        Color band = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            ScanBandColor, _themeBlend);
+        band.a = 0f;
+        _themeScanBand.color = band;
+    }
+
+    private void PlaySelectionVoice(
+        RougeAutoplayCommanderDefinition commander)
+    {
+        if (_selectionVoiceSource == null || commander == null ||
+            string.IsNullOrWhiteSpace(commander.CommanderId)) return;
+
+        string commanderId = commander.CommanderId;
+        if (!_selectionVoiceClips.TryGetValue(commanderId,
+                out AudioClip[] clips))
+        {
+            clips = Resources.LoadAll<AudioClip>(
+                "Commanders/" + commanderId + "/Voices/Selection");
+            if (clips == null) clips = Array.Empty<AudioClip>();
+            Array.Sort(clips, (left, right) => string.CompareOrdinal(
+                left != null ? left.name : string.Empty,
+                right != null ? right.name : string.Empty));
+            _selectionVoiceClips[commanderId] = clips;
+        }
+
+        if (clips.Length == 0) return;
+        int clipIndex = UnityEngine.Random.Range(0, clips.Length);
+        if (clips.Length > 1 &&
+            _lastSelectionVoiceIndices.TryGetValue(commanderId,
+                out int previousIndex) && clipIndex == previousIndex)
+            clipIndex = (clipIndex + UnityEngine.Random.Range(1, clips.Length)) %
+                        clips.Length;
+        AudioClip clip = clips[clipIndex];
+        if (clip == null) return;
+
+        _lastSelectionVoiceIndices[commanderId] = clipIndex;
+        _selectionVoiceSource.Stop();
+        _selectionVoiceSource.clip = clip;
+        _selectionVoiceSource.volume = Mathf.Clamp01(
+            PlayerPrefs.GetFloat(SfxVolumePreference, 1f));
+        _selectionVoiceSource.Play();
     }
 
     private static string BuildTraitLine(string[] traits)
@@ -1083,36 +1592,125 @@ public sealed class RougeCommanderSelectionView : MonoBehaviour
     }
 }
 
+internal static class RougeCommanderSelectionPalette
+{
+    private static readonly RougeCommanderVisualTheme TaotaoTheme =
+        RougeCommanderVisualThemes.Resolve("taotao");
+    private static readonly Color PreservedGold =
+        new Color(1f, 0.71f, 0.28f, 1f);
+
+    public static float TargetBlend(string commanderId)
+    {
+        RougeCommanderVisualTheme theme =
+            RougeCommanderVisualThemes.Resolve(commanderId);
+        return theme != null && !theme.UsesDefaultPalette ? 1f : 0f;
+    }
+
+    public static Color TaotaoTarget(Color lanColor)
+    {
+        // Gold communicates commitment/affinity rather than adjutant identity.
+        // Keep it stable even if a future remapper broadens its hue matching.
+        if (Mathf.Abs(lanColor.r - PreservedGold.r) <= 0.025f &&
+            Mathf.Abs(lanColor.g - PreservedGold.g) <= 0.025f &&
+            Mathf.Abs(lanColor.b - PreservedGold.b) <= 0.025f)
+            return lanColor;
+        return TaotaoTheme.RemapInterfaceColor(lanColor);
+    }
+
+    public static Color BlendLanToTaotao(Color lanColor, float blend)
+    {
+        return Color.LerpUnclamped(lanColor, TaotaoTarget(lanColor),
+            Mathf.Clamp01(blend));
+    }
+}
+
+public sealed class RougeCommanderThemeWashGraphic : MaskableGraphic
+{
+    private Color _bottomLeft;
+    private Color _topLeft;
+    private Color _topRight;
+    private Color _bottomRight;
+
+    public void SetCornerColors(Color bottomLeft, Color topLeft,
+        Color topRight, Color bottomRight)
+    {
+        if (_bottomLeft == bottomLeft && _topLeft == topLeft &&
+            _topRight == topRight && _bottomRight == bottomRight)
+            return;
+        _bottomLeft = bottomLeft;
+        _topLeft = topLeft;
+        _topRight = topRight;
+        _bottomRight = bottomRight;
+        SetVerticesDirty();
+    }
+
+    protected override void OnPopulateMesh(VertexHelper helper)
+    {
+        helper.Clear();
+        Rect rect = GetPixelAdjustedRect();
+        helper.AddVert(new Vector2(rect.xMin, rect.yMin), _bottomLeft,
+            Vector2.zero);
+        helper.AddVert(new Vector2(rect.xMin, rect.yMax), _topLeft,
+            Vector2.up);
+        helper.AddVert(new Vector2(rect.xMax, rect.yMax), _topRight,
+            Vector2.one);
+        helper.AddVert(new Vector2(rect.xMax, rect.yMin), _bottomRight,
+            Vector2.right);
+        helper.AddTriangle(0, 1, 2);
+        helper.AddTriangle(0, 2, 3);
+    }
+}
+
+public sealed class RougeCommanderThemeScanBandGraphic : MaskableGraphic
+{
+    private static readonly float[] Stops = { 0f, 0.2f, 0.5f, 0.8f, 1f };
+    private static readonly float[] Alpha = { 0f, 0.22f, 1f, 0.22f, 0f };
+
+    protected override void OnPopulateMesh(VertexHelper helper)
+    {
+        helper.Clear();
+        Rect rect = GetPixelAdjustedRect();
+        for (int i = 0; i < Stops.Length; i++)
+        {
+            float y = Mathf.LerpUnclamped(rect.yMin, rect.yMax, Stops[i]);
+            Color rowColor = color;
+            rowColor.a *= Alpha[i];
+            helper.AddVert(new Vector2(rect.xMin, y), rowColor,
+                new Vector2(0f, Stops[i]));
+            helper.AddVert(new Vector2(rect.xMax, y), rowColor,
+                new Vector2(1f, Stops[i]));
+        }
+
+        for (int i = 0; i < Stops.Length - 1; i++)
+        {
+            int start = i * 2;
+            helper.AddTriangle(start, start + 2, start + 3);
+            helper.AddTriangle(start, start + 3, start + 1);
+        }
+    }
+}
+
 public sealed class RougeCommanderSelectionCard : MonoBehaviour,
     IPointerEnterHandler, IPointerExitHandler, ISelectHandler, IDeselectHandler
 {
-    private RougeCommanderSelectionView _owner;
-    private int _commanderIndex;
     private RougeCommanderSlantedGraphic _fill;
     private RougeCommanderSlantedGraphic _border;
     private Image _portrait;
     private Vector2 _baseAnchoredPosition;
-    private bool _previewed;
+    private bool _pointerInside;
+    private bool _selected;
     private bool _locked;
     private float _blend;
+    private float _themeBlend;
 
-    public void Initialize(RougeCommanderSelectionView owner,
-        int commanderIndex,
-        RougeCommanderSlantedGraphic fill,
+    public void Initialize(RougeCommanderSlantedGraphic fill,
         RougeCommanderSlantedGraphic border, Image portrait,
         Vector2 baseAnchoredPosition)
     {
-        _owner = owner;
-        _commanderIndex = commanderIndex;
         _fill = fill;
         _border = border;
         _portrait = portrait;
         _baseAnchoredPosition = baseAnchoredPosition;
-    }
-
-    public void SetPreviewed(bool value)
-    {
-        _previewed = value;
     }
 
     public void SetLocked(bool value)
@@ -1120,11 +1718,27 @@ public sealed class RougeCommanderSelectionCard : MonoBehaviour,
         _locked = value;
     }
 
+    public void SetThemeBlend(float value)
+    {
+        _themeBlend = Mathf.Clamp01(value);
+        ApplyVisualState();
+    }
+
+    public bool OwnsRuntimeColor(Graphic graphic)
+    {
+        return graphic == _fill || graphic == _border || graphic == _portrait;
+    }
+
     private void Update()
     {
-        float target = _previewed ? 1f : 0f;
+        float target = _pointerInside || _selected ? 1f : 0f;
         _blend = Mathf.MoveTowards(_blend, target,
             Time.unscaledDeltaTime / 0.14f);
+        ApplyVisualState();
+    }
+
+    private void ApplyVisualState()
+    {
         float eased = 1f - (1f - _blend) * (1f - _blend);
         transform.localScale = Vector3.one * Mathf.Lerp(1f, 1.014f, eased);
         RectTransform rect = transform as RectTransform;
@@ -1132,17 +1746,25 @@ public sealed class RougeCommanderSelectionCard : MonoBehaviour,
             rect.anchoredPosition = _baseAnchoredPosition +
                                     new Vector2(Mathf.Lerp(0f, 4f, eased), 0f);
         if (_fill != null)
-            _fill.color = Color.Lerp(
+        {
+            Color lanFill = Color.Lerp(
                 new Color(0.018f, 0.09f, 0.14f, 0.98f),
                 _locked
                     ? new Color(0.05f, 0.15f, 0.18f, 1f)
                     : new Color(0.025f, 0.15f, 0.21f, 1f),
                 _locked ? 0.82f : eased);
+            _fill.color = RougeCommanderSelectionPalette.BlendLanToTaotao(
+                lanFill, _themeBlend);
+        }
         if (_border != null)
-            _border.color = _locked
+        {
+            Color lanBorder = _locked
                 ? new Color(1f, 0.71f, 0.28f, 0.95f)
                 : new Color(0.08f, 0.82f, 1f,
                     Mathf.Lerp(0.35f, 0.95f, eased));
+            _border.color = RougeCommanderSelectionPalette.BlendLanToTaotao(
+                lanBorder, _themeBlend);
+        }
         if (_portrait != null)
             _portrait.color = Color.Lerp(Color.white,
                 new Color(1.06f, 1.06f, 1.06f, 1f), eased);
@@ -1150,26 +1772,22 @@ public sealed class RougeCommanderSelectionCard : MonoBehaviour,
 
     public void OnPointerEnter(PointerEventData eventData)
     {
-        _previewed = true;
-        _owner?.PreviewCommander(_commanderIndex, true, false);
+        _pointerInside = true;
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
-        _previewed = false;
-        _owner?.PreviewCommander(_commanderIndex, false, false);
+        _pointerInside = false;
     }
 
     public void OnSelect(BaseEventData eventData)
     {
-        _previewed = true;
-        _owner?.PreviewCommander(_commanderIndex, true, true);
+        _selected = true;
     }
 
     public void OnDeselect(BaseEventData eventData)
     {
-        _previewed = false;
-        _owner?.PreviewCommander(_commanderIndex, false, false);
+        _selected = false;
     }
 }
 
@@ -1246,7 +1864,22 @@ public sealed class RougeCommanderSlantedGraphic : MaskableGraphic
 
 public sealed class RougeCommanderRadarGraphic : MaskableGraphic
 {
+    private static readonly Color LanFill =
+        new Color(0.08f, 0.82f, 1f, 0.28f);
+    private static readonly Color LanGrid =
+        new Color(0.08f, 0.66f, 0.84f, 0.18f);
+    private static readonly Color LanOutline =
+        new Color(0.18f, 0.9f, 1f, 0.95f);
     private readonly float[] _scores = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+    private float _themeBlend;
+
+    public void SetThemeBlend(float value)
+    {
+        _themeBlend = Mathf.Clamp01(value);
+        color = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            LanFill, _themeBlend);
+        SetVerticesDirty();
+    }
 
     public void SetScores(int[] scores, float maximum)
     {
@@ -1264,7 +1897,8 @@ public sealed class RougeCommanderRadarGraphic : MaskableGraphic
         Vector2 center = rect.center;
         float radius = Mathf.Max(4f,
             Mathf.Min(rect.width, rect.height) * 0.43f);
-        Color grid = new Color(0.08f, 0.66f, 0.84f, 0.18f);
+        Color grid = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            LanGrid, _themeBlend);
         for (int ring = 1; ring <= 4; ring++)
         {
             float ringRadius = radius * ring / 4f;
@@ -1281,7 +1915,8 @@ public sealed class RougeCommanderRadarGraphic : MaskableGraphic
         Color fill = color;
         for (int i = 0; i < 6; i++)
             AddTriangle(helper, center, points[i], points[(i + 1) % 6], fill);
-        Color outline = new Color(0.18f, 0.9f, 1f, 0.95f);
+        Color outline = RougeCommanderSelectionPalette.BlendLanToTaotao(
+            LanOutline, _themeBlend);
         for (int i = 0; i < 6; i++)
             AddLine(helper, points[i], points[(i + 1) % 6], 2.2f, outline);
     }
@@ -1334,7 +1969,10 @@ public static class RougeCommanderTacticalSpectrum
             commander.Source.personality.concerns;
 
         float saving = SignedBias(bias.save);
-        float expansion = (SignedBias(bias.build) + SignedBias(bias.upgrade)) * 0.5f;
+        // This axis is saving versus adding another tower. Upgrade preference is
+        // compared independently in the capital market and must not masquerade as
+        // expansion here.
+        float expansion = SignedBias(bias.build);
         float hunting = (SignedBias(bias.focusedTower) +
                          SignedConcern(concern.elite) +
                          SignedConcern(concern.boss)) / 3f;

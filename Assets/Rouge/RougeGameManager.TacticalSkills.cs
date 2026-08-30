@@ -570,7 +570,8 @@ public partial class RougeGameManager
             int catchUp = 0;
             while (skill.SpawnTimer <= 0f && skill.Remaining > 0f && catchUp < 4)
             {
-                Vector2 random = UnityEngine.Random.insideUnitCircle * config.selectionRadius;
+                Vector2 random = _towerDefenseSkillRandom.InsideUnitCircle() *
+                                 config.selectionRadius;
                 Vector3 end = new Vector3(skill.Position.x + random.x, renderHeight + 0.12f,
                     skill.Position.y + random.y);
                 float2 clamped = new float2(
@@ -578,7 +579,7 @@ public partial class RougeGameManager
                     Mathf.Clamp(end.z, -arenaHalfExtent, arenaHalfExtent));
                 end.x = clamped.x;
                 end.z = clamped.y;
-                Vector2 drift = UnityEngine.Random.insideUnitCircle * 4f;
+                Vector2 drift = _towerDefenseSkillRandom.InsideUnitCircle() * 4f;
                 Vector3 start = end + new Vector3(drift.x, Mathf.Max(1f, config.fallHeight), drift.y);
                 _activeFallingMissiles.Add(new ActiveFallingMissile
                 {
@@ -588,7 +589,8 @@ public partial class RougeGameManager
                     Duration = Mathf.Max(0.05f, config.fallDuration),
                     Visual = CreateFallingMissileVisual(start)
                 });
-                skill.SpawnTimer += UnityEngine.Random.Range(minimumInterval, maximumInterval);
+                skill.SpawnTimer += _towerDefenseSkillRandom.Range(
+                    minimumInterval, maximumInterval);
                 catchUp++;
             }
             if (skill.Remaining <= 0f) _activeMissileBarrageSkills.RemoveAt(i);

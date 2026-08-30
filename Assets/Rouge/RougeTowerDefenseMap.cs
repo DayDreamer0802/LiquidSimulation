@@ -335,6 +335,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     // cell-based and never exposes or consumes these internal simulation subdivisions.
     public const int MicroCellsPerTile = 16;
     public const float DefaultEliteSpawnDelaySeconds = 180f;
+    public const int DefaultGameplaySeed = 1337;
     [Serializable]
     public sealed class TileDefinition
     {
@@ -378,6 +379,75 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         public RougeLevelVictoryConditionType type = RougeLevelVictoryConditionType.KillBoss;
         [Min(1)] public int targetAmount = 1;
         [Min(0.1f)] public float targetSeconds = 300f;
+    }
+
+    [Serializable]
+    public sealed class ScoringRules
+    {
+        [Min(0)] public int mainTowerFullHealthPoints = 100000;
+        [Min(0f)] public float remainingGoldPointsPerGold = 2f;
+        [Min(0f)] public float killPointsPerEnemy = 1f;
+        [Min(0)] public int bossDefeatPoints = 50000;
+        [Min(0.0001f)] public float damagePerPoint = 100f;
+        [Min(0)] public int gradeSThreshold = 1000000;
+        [Min(0)] public int gradeAThreshold = 800000;
+        [Min(0)] public int gradeBThreshold = 600000;
+        [Min(0)] public int gradeCThreshold = 400000;
+
+        public void Sanitize()
+        {
+            mainTowerFullHealthPoints = Mathf.Max(0, mainTowerFullHealthPoints);
+            remainingGoldPointsPerGold = Mathf.Max(0f, remainingGoldPointsPerGold);
+            killPointsPerEnemy = Mathf.Max(0f, killPointsPerEnemy);
+            bossDefeatPoints = Mathf.Max(0, bossDefeatPoints);
+            damagePerPoint = Mathf.Max(0.0001f, damagePerPoint);
+            gradeCThreshold = Mathf.Max(0, gradeCThreshold);
+            gradeBThreshold = Mathf.Max(gradeCThreshold, gradeBThreshold);
+            gradeAThreshold = Mathf.Max(gradeBThreshold, gradeAThreshold);
+            gradeSThreshold = Mathf.Max(gradeAThreshold, gradeSThreshold);
+        }
+
+        public long GetMainTowerHealthPoints(float healthRatio)
+        {
+            return (long)Math.Round(Mathf.Clamp01(healthRatio) *
+                mainTowerFullHealthPoints, MidpointRounding.AwayFromZero);
+        }
+
+        public long GetRemainingGoldPoints(int remainingGold)
+        {
+            return ScaleWholeUnits(remainingGold, remainingGoldPointsPerGold);
+        }
+
+        public long GetKillPoints(int kills)
+        {
+            return ScaleWholeUnits(kills, killPointsPerEnemy);
+        }
+
+        public long GetDamagePoints(double damage)
+        {
+            return (long)Math.Floor(Math.Max(0d, damage) /
+                Math.Max(0.0001d, damagePerPoint));
+        }
+
+        public long GetBossDefeatPoints(bool defeated)
+        {
+            return defeated ? bossDefeatPoints : 0L;
+        }
+
+        public string GetGrade(long score)
+        {
+            if (score >= gradeSThreshold) return "S";
+            if (score >= gradeAThreshold) return "A";
+            if (score >= gradeBThreshold) return "B";
+            if (score >= gradeCThreshold) return "C";
+            return "D";
+        }
+
+        private static long ScaleWholeUnits(int amount, float pointsPerUnit)
+        {
+            return (long)Math.Floor(Math.Max(0, amount) *
+                Math.Max(0d, pointsPerUnit));
+        }
     }
 
     [Serializable]
@@ -426,6 +496,9 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     [SerializeField, Min(0f)] private float towerDamageMultiplier = 1f;
     [SerializeField, Min(0.01f)] private float towerAttackSpeedMultiplier = 1f;
     [SerializeField, Min(0)] private int startingGold = 2000;
+    [SerializeField, Tooltip("Fixed seed for all gameplay-affecting randomness in this level. Visual and dialogue randomness use separate, non-deterministic streams.")]
+    private int gameplaySeed = DefaultGameplaySeed;
+    [SerializeField] private ScoringRules scoreRules = new ScoringRules();
     [SerializeField] private List<BossEncounter> bossEncounters = new List<BossEncounter>
     {
         new BossEncounter()
@@ -485,6 +558,15 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
     public float TowerDamageMultiplier => towerDamageMultiplier;
     public float TowerAttackSpeedMultiplier => towerAttackSpeedMultiplier;
     public int StartingGold => startingGold;
+    public int GameplaySeed => gameplaySeed;
+    public ScoringRules ScoreRules
+    {
+        get
+        {
+            scoreRules ??= new ScoringRules();
+            return scoreRules;
+        }
+    }
     public IReadOnlyList<BossEncounter> BossEncounters => bossEncounters;
     public IReadOnlyList<RougeLevelEventDefinition> LevelEventDefinitions =>
         levelEventDefinitions;
@@ -871,6 +953,8 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         towerDamageMultiplier = 1f;
         towerAttackSpeedMultiplier = 1f;
         startingGold = 2000;
+        gameplaySeed = DefaultGameplaySeed;
+        scoreRules = new ScoringRules();
         bossEncounters = new List<BossEncounter> { new BossEncounter() };
         levelEventDefinitions = new List<RougeLevelEventDefinition>();
         levelEventTimeline = new List<RougeLevelEventTrigger>();
@@ -910,6 +994,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         enemySpawns ??= new List<EnemySpawn>();
         victoryConditions ??= new List<VictoryCondition>();
         disabledTowerTypeIds ??= new List<int>();
+        scoreRules ??= new ScoringRules();
         bossEncounters ??= new List<BossEncounter>();
         levelEventDefinitions ??= new List<RougeLevelEventDefinition>();
         levelEventTimeline ??= new List<RougeLevelEventTrigger>();
@@ -937,6 +1022,7 @@ public sealed class RougeTowerDefenseMap : ScriptableObject
         towerAttackSpeedMultiplier = Mathf.Max(0.01f, towerAttackSpeedMultiplier);
         startingGold = Mathf.Max(0, startingGold);
         EnsureStorage();
+        scoreRules.Sanitize();
         if (legacyTileDefinitions.Count == 0)
         {
             InitializeDefaults();

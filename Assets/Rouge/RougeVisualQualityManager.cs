@@ -60,6 +60,9 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
     private static RougeVisualQualityManager _instance;
     private static RougeVisualQualityTier _activeTier = RougeVisualQualityTier.Medium;
     private static Vector2 _shadowDirection = new Vector2(0.45f, 0.3f).normalized;
+    private static readonly Color DefaultCameraBackground =
+        new Color(0.018f, 0.028f, 0.045f, 1f);
+    private static Color _commanderCameraBackground = DefaultCameraBackground;
 
     public static RougeVisualQualityTier ActiveTier => _activeTier;
     // A single instanced batch for the player and towers is inexpensive and is
@@ -136,7 +139,9 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
-        if (Input.GetKeyDown(KeyCode.F5)) CycleActiveTier();
+        if (!RougeGameManager.IsSystemModalInputBlocked &&
+            Input.GetKeyDown(KeyCode.F5))
+            CycleActiveTier();
         if (Time.unscaledTime < _nextEnvironmentRefresh) return;
         _nextEnvironmentRefresh = Time.unscaledTime + 0.75f;
         RefreshEnvironmentGlobals();
@@ -159,6 +164,16 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
         }
         _activeTier = tier;
         PlayerPrefs.SetInt(PreferenceKey, (int)tier);
+    }
+
+    public static void ApplyCommanderVisualTheme(
+        RougeCommanderVisualTheme theme)
+    {
+        _commanderCameraBackground = theme == null || theme.UsesDefaultPalette
+            ? DefaultCameraBackground
+            : Color.Lerp(DefaultCameraBackground, theme.MapBackdropOuter, 0.82f);
+        _commanderCameraBackground.a = 1f;
+        if (_instance != null) _instance.ApplyCameraQuality(_activeTier);
     }
 
     public static string GetTierLabel(RougeVisualQualityTier tier)
@@ -374,7 +389,7 @@ public sealed class RougeVisualQualityManager : MonoBehaviour
             // field visible around the board. A stable cool void costs nothing
             // and keeps every camera mode in the same sci-fi palette.
             _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.backgroundColor = new Color(0.018f, 0.028f, 0.045f, 1f);
+            _camera.backgroundColor = _commanderCameraBackground;
         }
         if (_cameraData == null) return;
         _cameraData.renderShadows = tier != RougeVisualQualityTier.Low;

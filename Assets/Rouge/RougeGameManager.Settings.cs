@@ -99,6 +99,8 @@ public partial class RougeGameManager
         else
             Debug.LogError("Missing Resources/UI/RougeSettingsMenu prefab.");
 
+        BuildArchiveUi();
+
         GameObject healthPrefab = Resources.Load<GameObject>(F2HealthResourcePath);
         if (healthPrefab == null)
         {
@@ -213,24 +215,36 @@ public partial class RougeGameManager
     {
         if (_settingsMenuOpen || _settingsMenuView == null) return;
         HideF2MainTowerHealth();
+        CaptureAndHideGameplayHudForSystemModal();
         _settingsMenuOpen = true;
         Time.timeScale = 0f;
+        NormalizeSystemModalCanvas(_settingsMenuView.gameObject);
         _settingsMenuView.gameObject.SetActive(true);
+        ApplyLineFirstSystemModalStyle(_settingsMenuView.gameObject);
         _settingsMenuView.ShowTab(0);
         RefreshPlayerSettingsUi();
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetUserInputBlocked(true);
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+        BeginSystemModalReveal();
     }
 
     private void ClosePlayerSettings()
     {
         if (!_settingsMenuOpen) return;
+        BeginSystemModalClose();
+    }
+
+    private void CompleteClosePlayerSettings()
+    {
+        if (!_settingsMenuOpen) return;
+        CancelSystemModalTransition();
         _settingsMenuOpen = false;
         if (_settingsMenuView != null) _settingsMenuView.gameObject.SetActive(false);
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetUserInputBlocked(false);
+        RestoreGameplayHudAfterSystemModal();
         PlayerPrefs.Save();
         if (_towerDefenseGameOver) Time.timeScale = 0f;
         else ApplyTowerDefenseTimeScale();
@@ -432,8 +446,10 @@ public partial class RougeGameManager
 
     private void DisposePlayerSettingsUi()
     {
+        CancelSystemModalTransition();
         RougeCameraFollow follow = RougeCameraFollow.ResolveCamera()?.GetComponent<RougeCameraFollow>();
         if (follow != null) follow.SetUserInputBlocked(false);
+        RestoreGameplayHudAfterSystemModal();
         if (_settingsMenuView != null) Destroy(_settingsMenuView.gameObject);
         if (_f2MainTowerHealthView != null) Destroy(_f2MainTowerHealthView.gameObject);
         _settingsMenuView = null;

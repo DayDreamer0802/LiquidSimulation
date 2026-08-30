@@ -31,6 +31,9 @@ public sealed partial class RougeTowerDefenseMapLoader
     [SerializeField, Range(0.4f, 4f)] private float startupRevealDuration = 1.65f;
     [SerializeField, Range(0.1f, 1.5f)] private float startupEdgeFlashDuration = 0.42f;
     [SerializeField, Range(0.2f, 2f)] private float startupMainTowerRevealDuration = 0.72f;
+    [SerializeField, Range(0f, 1f)] private float startupEmptyZoneHoldDuration = 0.32f;
+    [SerializeField, Range(0f, 1f)] private float startupAnchorHoldDuration = 0.24f;
+    [SerializeField, Range(0f, 1f)] private float startupReadyHoldDuration = 0.18f;
     [SerializeField, ColorUsage(true, true)] private Color startupCrystalColor =
         new Color(0.06f, 1.15f, 1.8f, 1f);
 
@@ -40,6 +43,10 @@ public sealed partial class RougeTowerDefenseMapLoader
     private Material _startupRevealMaterial;
     private Material _startupBoundaryMaterial;
     private Material _startupMainTowerRevealMaterial;
+    private Material _startupBackdropMaterial;
+    private Color _startupBackdropGridColor;
+    private Color _startupBackdropAccentColor;
+    private float _startupBackdropLineIntensity;
     private readonly List<Mesh> _startupMainTowerRevealMeshes = new List<Mesh>();
     private readonly Dictionary<Vector2Int, float> _startupTileTopByCell =
         new Dictionary<Vector2Int, float>();
@@ -132,35 +139,72 @@ public sealed partial class RougeTowerDefenseMapLoader
             yield break;
         }
 
-        float duration = Mathf.Max(0.1f, startupRevealDuration);
+        // 1. Empty anchor zone. The circuit backdrop is the only visible surface;
+        // the base, board, pads and arena frame are all still captured and hidden.
+        float duration = Mathf.Max(0f, startupEmptyZoneHoldDuration);
         float elapsed = 0f;
+        while (elapsed < duration && _runtimeRoot != null)
+        {
+            elapsed = Mathf.Min(duration, elapsed + GetStartupRevealFrameDelta());
+            yield return null;
+        }
+
+        // 2. The anchor vehicle is phase-transmitted and establishes the only
+        // physical point that exists before the adjutant's battlefield model.
+        float towerDuration = _startupMainTower != null
+            ? Mathf.Max(0.2f, startupMainTowerRevealDuration)
+            : 0f;
+        elapsed = 0f;
+        while (elapsed < towerDuration && _runtimeRoot != null)
+        {
+            elapsed = Mathf.Min(towerDuration,
+                elapsed + GetStartupRevealFrameDelta());
+            float towerProgress = Mathf.Clamp01(elapsed / towerDuration);
+            UpdateStartupMainTowerTransform(towerProgress);
+            if (_startupMainTowerRevealMaterial != null)
+                _startupMainTowerRevealMaterial.SetFloat(
+                    StartupProgressId, towerProgress);
+            yield return null;
+        }
+        UpdateStartupMainTowerTransform(1f);
+        RestoreStartupMainTowerVisuals();
+
+        // A short readable beat separates physical anchoring from AI scanning.
+        duration = Mathf.Max(0f, startupAnchorHoldDuration);
+        elapsed = 0f;
+        while (elapsed < duration && _runtimeRoot != null)
+        {
+            elapsed = Mathf.Min(duration, elapsed + GetStartupRevealFrameDelta());
+            yield return null;
+        }
+
+        // 3. The adjutant scans outward from the anchor and resolves the tactical
+        // grid. The reveal origin follows MainTowerCell on asymmetric maps too.
+        duration = Mathf.Max(0.1f, startupRevealDuration);
+        elapsed = 0f;
         while (elapsed < duration && _runtimeRoot != null)
         {
             elapsed = Mathf.Min(duration, elapsed + GetStartupRevealFrameDelta());
             float progress = Mathf.Clamp01(elapsed / duration);
             UpdateStartupTileTransforms(progress);
+            SetStartupBackdropTacticalVisibility(Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(0.03f, 0.88f, progress)));
             if (_startupRevealMaterial != null)
                 _startupRevealMaterial.SetFloat(StartupProgressId, progress);
             yield return null;
         }
 
-        // The board foundation and contour frame become visible on the exact frame
-        // that the boundary flash begins. The large circuit backdrop deliberately
-        // remains visible throughout the opening so the hidden board never exposes
-        // the camera's plain clear color.
+        // 4. The reconstructed board becomes authoritative, then the perimeter
+        // seal flashes once to confirm that the anchor zone is combat-ready.
         RestoreStartupMapVisuals();
         if (_startupRevealMaterial != null)
             _startupRevealMaterial.SetFloat(StartupProgressId, 1f);
 
         float flashDuration = Mathf.Max(0.05f, startupEdgeFlashDuration);
-        float towerDuration = _startupMainTower != null
-            ? Mathf.Max(0.2f, startupMainTowerRevealDuration)
-            : 0f;
-        float completionDuration = Mathf.Max(flashDuration, towerDuration);
         elapsed = 0f;
-        while (elapsed < completionDuration && _runtimeRoot != null)
+        while (elapsed < flashDuration && _runtimeRoot != null)
         {
-            elapsed = Mathf.Min(completionDuration,
+            elapsed = Mathf.Min(flashDuration,
                 elapsed + GetStartupRevealFrameDelta());
             float flashProgress = Mathf.Clamp01(elapsed / flashDuration);
             float envelope = Mathf.Sin(flashProgress * Mathf.PI);
@@ -172,18 +216,17 @@ public sealed partial class RougeTowerDefenseMapLoader
             if (_startupRevealMaterial != null)
                 _startupRevealMaterial.SetFloat(
                     StartupOverallFadeId, 1f - flashProgress);
-
-            float towerProgress = towerDuration > 0f
-                ? Mathf.Clamp01(elapsed / towerDuration)
-                : 1f;
-            UpdateStartupMainTowerTransform(towerProgress);
-            if (_startupMainTowerRevealMaterial != null)
-                _startupMainTowerRevealMaterial.SetFloat(
-                    StartupProgressId, towerProgress);
             yield return null;
         }
 
-        RestoreStartupMainTowerVisuals();
+        duration = Mathf.Max(0f, startupReadyHoldDuration);
+        elapsed = 0f;
+        while (elapsed < duration && _runtimeRoot != null)
+        {
+            elapsed = Mathf.Min(duration, elapsed + GetStartupRevealFrameDelta());
+            yield return null;
+        }
+
         _startupRevealPrimed = false;
         _startupPrimedRuntimeRoot = null;
         _startupTileTopByCell.Clear();
@@ -594,7 +637,10 @@ public sealed partial class RougeTowerDefenseMapLoader
             Renderer renderer = presentationRenderers[i];
             if (renderer != null && renderer.transform.parent == presentation &&
                 renderer.transform.name == StartupBackdropObjectName)
+            {
+                CaptureAndHideStartupBackdropTacticalLayer(renderer);
                 continue;
+            }
             CaptureAndHideRenderer(
                 renderer, _startupPresentationRendererStates);
         }
@@ -623,9 +669,44 @@ public sealed partial class RougeTowerDefenseMapLoader
 
     private void RestoreStartupMapVisuals()
     {
+        SetStartupBackdropTacticalVisibility(1f);
+        _startupBackdropMaterial = null;
         RestoreStartupTileTransforms();
         RestoreRendererStates(_startupTileRendererStates);
         RestoreRendererStates(_startupPresentationRendererStates);
+    }
+
+    private void CaptureAndHideStartupBackdropTacticalLayer(Renderer renderer)
+    {
+        _startupBackdropMaterial = renderer != null
+            ? renderer.sharedMaterial
+            : null;
+        if (_startupBackdropMaterial == null) return;
+        _startupBackdropGridColor = _startupBackdropMaterial.HasProperty("_GridColor")
+            ? _startupBackdropMaterial.GetColor("_GridColor")
+            : Color.black;
+        _startupBackdropAccentColor = _startupBackdropMaterial.HasProperty("_AccentColor")
+            ? _startupBackdropMaterial.GetColor("_AccentColor")
+            : Color.black;
+        _startupBackdropLineIntensity = _startupBackdropMaterial.HasProperty("_LineIntensity")
+            ? _startupBackdropMaterial.GetFloat("_LineIntensity")
+            : 0f;
+        SetStartupBackdropTacticalVisibility(0f);
+    }
+
+    private void SetStartupBackdropTacticalVisibility(float value)
+    {
+        if (_startupBackdropMaterial == null) return;
+        float visibility = Mathf.Clamp01(value);
+        if (_startupBackdropMaterial.HasProperty("_GridColor"))
+            _startupBackdropMaterial.SetColor("_GridColor",
+                Color.Lerp(Color.black, _startupBackdropGridColor, visibility));
+        if (_startupBackdropMaterial.HasProperty("_AccentColor"))
+            _startupBackdropMaterial.SetColor("_AccentColor",
+                Color.Lerp(Color.black, _startupBackdropAccentColor, visibility));
+        if (_startupBackdropMaterial.HasProperty("_LineIntensity"))
+            _startupBackdropMaterial.SetFloat("_LineIntensity",
+                _startupBackdropLineIntensity * visibility);
     }
 
     private static void RestoreRendererStates(Dictionary<Renderer, bool> states)
@@ -680,11 +761,12 @@ public sealed partial class RougeTowerDefenseMapLoader
         float normalized = Mathf.Clamp01(progress);
         float smooth = normalized * normalized * (3f - 2f * normalized);
         float overshoot = Mathf.Sin(normalized * Mathf.PI) *
-                          (1f - normalized) * 0.1f;
+                          (1f - normalized) * 0.045f;
+        float phaseScale = Mathf.Lerp(0.9f, 1f, smooth) + overshoot;
         towerTransform.localScale = _startupMainTowerOriginalLocalScale *
-                                    (smooth + overshoot);
+                                    phaseScale;
         towerTransform.localPosition = _startupMainTowerOriginalLocalPosition +
-                                       Vector3.down * ((1f - smooth) * 0.7f);
+                                       Vector3.up * ((1f - smooth) * 0.16f);
 
         foreach (KeyValuePair<Renderer, bool> pair in _startupMainTowerRendererStates)
         {
@@ -828,9 +910,14 @@ public sealed partial class RougeTowerDefenseMapLoader
 
     private float ResolveStartupRevealDelay(Vector2Int cell)
     {
-        Vector2 center = new Vector2((map.Width - 1) * 0.5f, (map.Height - 1) * 0.5f);
-        float maxDistance = Mathf.Max(1f, center.magnitude);
-        float radial = Mathf.Clamp01(Vector2.Distance(cell, center) / maxDistance);
+        Vector2 source = map.HasMainTower
+            ? new Vector2(map.MainTowerCell.x, map.MainTowerCell.y)
+            : new Vector2((map.Width - 1) * 0.5f, (map.Height - 1) * 0.5f);
+        float maxX = Mathf.Max(source.x, map.Width - 1f - source.x);
+        float maxY = Mathf.Max(source.y, map.Height - 1f - source.y);
+        float maxDistance = Mathf.Max(1f,
+            Mathf.Sqrt(maxX * maxX + maxY * maxY));
+        float radial = Mathf.Clamp01(Vector2.Distance(cell, source) / maxDistance);
         return 0.04f + radial * 0.56f + HashCell(cell) * 0.08f;
     }
 

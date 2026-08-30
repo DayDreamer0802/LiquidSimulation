@@ -5,7 +5,8 @@ using UnityEngine.Rendering;
 [DisallowMultipleComponent]
 public sealed class RougeTowerConstructionEffect : MonoBehaviour
 {
-    private const float Duration = 0.74f;
+    private const float ConstructionDuration = 0.74f;
+    public const float VictoryDissolveDuration = 1.08f;
     private const float RevealEnd = 0.56f;
     private const float OverlayFadeStart = 0.42f;
 
@@ -28,7 +29,13 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
     private Color _baseColor;
     private Color _accentColor;
     private float _elapsed;
+    private float _startDelay;
+    private float _duration = ConstructionDuration;
     private bool _finished;
+    private bool _victoryDissolve;
+    private Transform _towerRoot;
+    private Vector3 _towerOriginalLocalPosition;
+    private Vector3 _towerOriginalLocalScale;
 
     private struct SpriteState
     {
@@ -51,11 +58,37 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
 
         RougeTowerConstructionEffect effect =
             tower.gameObject.AddComponent<RougeTowerConstructionEffect>();
-        effect.Initialize(tower, hologramShader, Mathf.Max(0.5f, cellSize));
+        effect.Initialize(tower, hologramShader, Mathf.Max(0.5f, cellSize),
+            false, 0f);
     }
 
-    private void Initialize(RougeDefenseTower tower, Shader hologramShader, float cellSize)
+    public static void PlayVictoryDissolve(RougeDefenseTower tower,
+        Shader hologramShader, float cellSize, float startDelay)
     {
+        if (tower == null || !tower.gameObject.activeInHierarchy) return;
+        RougeTowerConstructionEffect effect =
+            tower.GetComponent<RougeTowerConstructionEffect>();
+        if (effect == null)
+            effect = tower.gameObject.AddComponent<RougeTowerConstructionEffect>();
+        else
+            effect.ResetForReplay();
+        effect.Initialize(tower, hologramShader, Mathf.Max(0.5f, cellSize),
+            true, Mathf.Max(0f, startDelay));
+    }
+
+    private void Initialize(RougeDefenseTower tower, Shader hologramShader,
+        float cellSize, bool victoryDissolve, float startDelay)
+    {
+        _finished = false;
+        _victoryDissolve = victoryDissolve;
+        _startDelay = startDelay;
+        _duration = victoryDissolve
+            ? VictoryDissolveDuration
+            : ConstructionDuration;
+        _elapsed = 0f;
+        _towerRoot = tower.transform;
+        _towerOriginalLocalPosition = _towerRoot.localPosition;
+        _towerOriginalLocalScale = _towerRoot.localScale;
         _propertyBlock = new MaterialPropertyBlock();
         ResolveConstructionColors(tower.TowerType, out _baseColor, out _accentColor);
         CreateRotatingFrames(cellSize);
@@ -76,9 +109,12 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
                 Renderer = source,
                 Color = source.color
             });
-            Color hidden = source.color;
-            hidden.a = 0f;
-            source.color = hidden;
+            if (!victoryDissolve)
+            {
+                Color hidden = source.color;
+                hidden.a = 0f;
+                source.color = hidden;
+            }
             CreateSpriteHologram(source, hologramMaterial);
         }
 
@@ -93,7 +129,7 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
                 Renderer = source,
                 Enabled = source.enabled
             });
-            source.enabled = false;
+            if (!victoryDissolve) source.enabled = false;
             CreateMeshHologram(source, hologramMaterial);
         }
     }
@@ -199,8 +235,19 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
     private void Update()
     {
         if (_finished) return;
-        _elapsed += Time.unscaledDeltaTime;
-        float progress = Mathf.Clamp01(_elapsed / Duration);
+        float delta = Time.unscaledDeltaTime;
+        if (delta <= 0f || float.IsNaN(delta) || float.IsInfinity(delta)) return;
+        _elapsed += Mathf.Min(delta, 1f / 30f);
+        if (_elapsed < _startDelay) return;
+        float progress = Mathf.Clamp01((_elapsed - _startDelay) /
+                                       Mathf.Max(0.01f, _duration));
+        if (_victoryDissolve)
+        {
+            UpdateVictoryDissolve(progress);
+            if (progress >= 1f) FinishVictoryDissolve();
+            return;
+        }
+
         float easedRotation = 1f - Mathf.Pow(1f - progress, 3f);
         float settle = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.48f, 1f, progress));
         float frameAlpha = 1f - Mathf.SmoothStep(0f, 1f,
@@ -233,6 +280,70 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
         UpdateSourceVisibility(towerAlpha, progress >= 0.30f);
 
         if (progress >= 1f) FinishImmediately();
+    }
+
+    private void UpdateVictoryDissolve(float progress)
+    {
+        float latticeIn = Mathf.SmoothStep(0f, 1f,
+            Mathf.InverseLerp(0f, 0.22f, progress));
+        float latticeOut = 1f - Mathf.SmoothStep(0f, 1f,
+            Mathf.InverseLerp(0.58f, 1f, progress));
+        float latticeAlpha = latticeIn * latticeOut;
+        float sourceAlpha = 1f - Mathf.SmoothStep(0f, 1f,
+            Mathf.InverseLerp(0.16f, 0.86f, progress));
+        float collapse = Mathf.SmoothStep(0f, 1f,
+            Mathf.InverseLerp(0.36f, 1f, progress));
+        float frameAlpha = Mathf.Sin(Mathf.Clamp01(progress) * Mathf.PI);
+        float spin = progress * progress;
+
+        if (_outerFrameTransform != null)
+        {
+            _outerFrameTransform.localRotation = Quaternion.Euler(0f,
+                spin * -620f, 0f);
+            _outerFrameTransform.localScale = Vector3.one *
+                Mathf.Lerp(1.12f, 0.18f, collapse);
+        }
+        if (_innerFrameTransform != null)
+        {
+            _innerFrameTransform.localRotation = Quaternion.Euler(0f,
+                45f + spin * 480f, 0f);
+            _innerFrameTransform.localScale = Vector3.one *
+                Mathf.Lerp(0.92f, 0.08f, collapse);
+        }
+        SetFrameColor(_outerFrame, _accentColor, frameAlpha * 0.82f);
+        SetFrameColor(_innerFrame,
+            Color.Lerp(_baseColor, Color.white, 0.48f), frameAlpha * 0.58f);
+
+        UpdateHolograms(1f - collapse, latticeAlpha);
+        UpdateVictorySourceVisibility(sourceAlpha);
+        if (_towerRoot != null)
+        {
+            float pulse = Mathf.Sin(Mathf.Clamp01(progress / 0.38f) *
+                                    Mathf.PI) * 0.08f;
+            _towerRoot.localScale = _towerOriginalLocalScale *
+                Mathf.Max(0.025f, (1f + pulse) * (1f - collapse * 0.94f));
+            _towerRoot.localPosition = _towerOriginalLocalPosition +
+                Vector3.up * (collapse * 0.72f);
+        }
+    }
+
+    private void UpdateVictorySourceVisibility(float alpha)
+    {
+        alpha = Mathf.Clamp01(alpha);
+        for (int i = 0; i < _spriteStates.Count; i++)
+        {
+            SpriteState state = _spriteStates[i];
+            if (state.Renderer == null) continue;
+            Color color = state.Color;
+            color.a *= alpha;
+            state.Renderer.color = color;
+        }
+        for (int i = 0; i < _meshStates.Count; i++)
+        {
+            MeshState state = _meshStates[i];
+            if (state.Renderer != null)
+                state.Renderer.enabled = state.Enabled && alpha > 0.08f;
+        }
     }
 
     private void UpdateHolograms(float reveal, float alpha)
@@ -281,6 +392,24 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
     {
         if (_finished) return;
         _finished = true;
+        RestoreCapturedSources();
+        ClearTemporaryObjects();
+        Destroy(this);
+    }
+
+    private void FinishVictoryDissolve()
+    {
+        if (_finished) return;
+        _finished = true;
+        UpdateVictorySourceVisibility(0f);
+        ClearTemporaryObjects();
+        if (_towerRoot != null)
+            _towerRoot.gameObject.SetActive(false);
+        Destroy(this);
+    }
+
+    private void RestoreCapturedSources()
+    {
         for (int i = 0; i < _spriteStates.Count; i++)
         {
             SpriteState state = _spriteStates[i];
@@ -291,17 +420,60 @@ public sealed class RougeTowerConstructionEffect : MonoBehaviour
             MeshState state = _meshStates[i];
             if (state.Renderer != null) state.Renderer.enabled = state.Enabled;
         }
+        if (_towerRoot != null)
+        {
+            _towerRoot.localPosition = _towerOriginalLocalPosition;
+            _towerRoot.localScale = _towerOriginalLocalScale;
+        }
+    }
+
+    private void ClearTemporaryObjects()
+    {
         for (int i = 0; i < _temporaryObjects.Count; i++)
         {
             if (_temporaryObjects[i] != null) Destroy(_temporaryObjects[i]);
         }
         _temporaryObjects.Clear();
+        _hologramRenderers.Clear();
+        _outerFrame = null;
+        _innerFrame = null;
+        _outerFrameTransform = null;
+        _innerFrameTransform = null;
+    }
+
+    private void ResetForReplay()
+    {
+        RestoreCapturedSources();
+        ClearTemporaryObjects();
+        _spriteStates.Clear();
+        _meshStates.Clear();
+        _finished = false;
+    }
+
+    public void CancelVictoryDissolve(bool restoreTower)
+    {
+        if (!_victoryDissolve || _finished) return;
+        _finished = true;
+        if (restoreTower && _towerRoot != null)
+        {
+            if (!_towerRoot.gameObject.activeSelf)
+                _towerRoot.gameObject.SetActive(true);
+            RestoreCapturedSources();
+        }
+        ClearTemporaryObjects();
         Destroy(this);
     }
 
     private void OnDisable()
     {
-        if (!_finished) FinishImmediately();
+        if (_finished) return;
+        if (_victoryDissolve)
+        {
+            _finished = true;
+            ClearTemporaryObjects();
+            return;
+        }
+        FinishImmediately();
     }
 
     private static void ResolveConstructionColors(RougeTowerType type,

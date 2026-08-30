@@ -148,8 +148,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
   m_BlockingMask:
@@ -165,8 +165,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_UiScaleMode: 0
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
@@ -572,6 +572,10 @@ MonoBehaviour:
   map: {fileID: 11400000, guid: 04dd93d95e5618a48bb11f8984112d3d, type: 2}
   loadOnEnable: 1
   clearOnDisable: 1
+  commanderConfigName: lan
+  commanderLocaleOverride: 
+  showCommanderSelectionOnStartup: 1
+  commanderLoadingMinimumSeconds: 0.42
   placedTowerGridColor: {r: 0.82, g: 1, b: 0.94, a: 0.68}
   validTowerGridColor: {r: 0.12, g: 1, b: 0.34, a: 0.98}
   invalidTowerGridColor: {r: 1, g: 0.23, b: 0.18, a: 0.9}
@@ -718,6 +722,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5a32ad9c393b02a4fb587a99e453e4c7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _towerDefenseAutoplayAffinity: 15
+  _towerDefenseAutoplayEnabled: 0
+  _towerDefenseAutoplayCleanView: 0
   player: {fileID: 0}
   enemyMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   enemyMaterial: {fileID: 2100000, guid: 3ec7e767beccce043be7c3d1d3dda5ec, type: 2}
@@ -2597,6 +2604,25 @@ MonoBehaviour:
       refractionAttackTargetMultiplier: 2
       refractionAttackDamageFalloffPerTarget: 0.05
       refractionAttackMaximumDamageFalloff: 0.5
+    flameTowerSpecialization:
+      flamethrowerDamage: 10
+      flamethrowerAttackInterval: 0.1
+      flamethrowerRange: 15
+      flamethrowerAngle: 30
+      rotatingDamage: 20
+      rotatingAttackInterval: 0.05
+      rotatingDegreesPerSecond: 360
+      fanSpacingPaddingDegrees: 10
+      focusedAnglePerProjectile: 15
+      focusedDamageBonusPerProjectile: 0.5
+      burnDuration: 3
+      burnTickInterval: 0.75
+      burnDamageMultiplier: 0.25
+      attackSpeedBuffEffectiveness: 0.5
+      maximumBurnStacks: 10
+      damageBonusPerStack: 0.1
+      burnSpeedBonus: 0.25
+      conflagrationDamageMultiplier: 5
     towers:
     - towerType: 0
       placementRadius: 2.2

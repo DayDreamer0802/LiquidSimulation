@@ -132,11 +132,14 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     private void OnEnable()
     {
         Active = this;
-        if (Application.isPlaying)
-            RougeAutoplayCommanderJson.ConfigureSelection(commanderConfigName,
-                commanderLocaleOverride);
-        if (Application.isPlaying && loadOnEnable) LoadMap();
-        if (Application.isPlaying && showCommanderSelectionOnStartup)
+        if (!Application.isPlaying) return;
+
+        RougeAutoplayCommanderJson.ConfigureSelection(commanderConfigName,
+            commanderLocaleOverride);
+        ApplyCommanderVisualTheme(
+            RougeCommanderVisualThemes.Resolve(commanderConfigName));
+
+        if (showCommanderSelectionOnStartup)
         {
             _commanderSelectionPending = true;
             _timeScaleBeforeCommanderSelection =
@@ -144,7 +147,10 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
             Time.timeScale = 0f;
             _commanderStartupRoutine = StartCoroutine(
                 RunCommanderSelectionStartup());
+            return;
         }
+
+        if (loadOnEnable) LoadMap();
     }
 
     private void OnDisable()
@@ -158,7 +164,10 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         DisposeCommanderSelectionView();
         _commanderSelectionPending = false;
         if (Application.isPlaying && interruptedCommanderSelection)
+        {
+            RougeAudioVisualizerPlayer.ExitSelectionMusic();
             Time.timeScale = _timeScaleBeforeCommanderSelection;
+        }
         if (Application.isPlaying && clearOnDisable) ClearMap();
         if (Active == this) Active = null;
     }
@@ -329,6 +338,7 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
     [ContextMenu("Clear Map")]
     public void ClearMap()
     {
+        CancelVictoryRecall(false);
         ClearStartupRevealVisuals();
         ClearTowerFootprintGridOverlays();
         _runtimeTowerPlaceEffects.Clear();
@@ -446,6 +456,7 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
             for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
                 renderer.SetPropertyBlock(null, materialIndex);
         }
+        ApplyCommanderThemeToTile(cell);
     }
 
     private static Color RecolorTileMaterial(Color source, Color target, float saturationBlend,
@@ -523,7 +534,14 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
                 Color accent = definition.editorColor;
                 accent.a = 1f;
                 padMaterial.SetColor("_AccentColor", accent);
-                padMaterial.SetColor("_BaseColor", new Color(0.07f, 0.135f, 0.19f, 1f));
+                padMaterial.SetColor("_BaseColor",
+                    _commanderVisualTheme.UsesDefaultPalette
+                        ? new Color(0.07f, 0.135f, 0.19f, 1f)
+                        : _commanderVisualTheme.MapStandardPadBase);
+                if (!_commanderVisualTheme.UsesDefaultPalette &&
+                    definition.towerPlaceEffect == RougeTowerPlaceEffect.None)
+                    padMaterial.SetColor("_AccentColor",
+                        _commanderVisualTheme.MapStandardPadAccent);
                 bool usePlaceIcon = definition.towerPlaceIcon != null;
                 padMaterial.SetFloat("_UsePlaceIcon", usePlaceIcon ? 1f : 0f);
                 if (usePlaceIcon) padMaterial.SetTexture("_PlaceIcon", definition.towerPlaceIcon);
@@ -552,12 +570,22 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
                 };
                 Color source = definition.editorColor;
                 source.a = 1f;
-                Color baseColor = Color.Lerp(new Color(0.16f, 0.25f, 0.32f, 1f), source, 0.58f);
-                Color panelColor = Color.Lerp(baseColor * 0.74f,
-                    new Color(0.09f, 0.16f, 0.22f, 1f), 0.42f);
+                Color baseColor = _commanderVisualTheme.UsesDefaultPalette
+                    ? Color.Lerp(new Color(0.16f, 0.25f, 0.32f, 1f),
+                        source, 0.58f)
+                    : Color.Lerp(_commanderVisualTheme.MapGroundBase,
+                        source, 0.34f);
+                Color panelColor = _commanderVisualTheme.UsesDefaultPalette
+                    ? Color.Lerp(baseColor * 0.74f,
+                        new Color(0.09f, 0.16f, 0.22f, 1f), 0.42f)
+                    : Color.Lerp(baseColor * 0.74f,
+                        _commanderVisualTheme.MapGroundPanel, 0.52f);
                 panelColor.a = 1f;
-                Color accentColor = Color.Lerp(baseColor,
-                    new Color(0.05f, 0.62f, 0.72f, 1f), 0.36f);
+                Color accentColor = _commanderVisualTheme.UsesDefaultPalette
+                    ? Color.Lerp(baseColor,
+                        new Color(0.05f, 0.62f, 0.72f, 1f), 0.36f)
+                    : Color.Lerp(baseColor,
+                        _commanderVisualTheme.MapGroundAccent, 0.48f);
                 accentColor.a = 1f;
                 groundMaterial.SetColor("_BaseColor", baseColor);
                 groundMaterial.SetColor("_PanelColor", panelColor);
@@ -575,7 +603,10 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         Material material = new Material(shader) { name = $"Runtime {definition.name}" };
         Color fallbackColor = definition.towerPlace
-            ? Color.Lerp(new Color(0.07f, 0.135f, 0.19f, 1f), definition.editorColor, 0.28f)
+            ? Color.Lerp(_commanderVisualTheme.UsesDefaultPalette
+                    ? new Color(0.07f, 0.135f, 0.19f, 1f)
+                    : _commanderVisualTheme.MapStandardPadBase,
+                definition.editorColor, 0.28f)
             : definition.editorColor;
         material.color = fallbackColor;
         if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", fallbackColor);
@@ -679,9 +710,11 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
         if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
         _towerPlaceGridMaterial = new Material(shader) { name = "Runtime Tower Place Grid" };
         if (_towerPlaceGridMaterial.HasProperty("_BaseColor"))
-            _towerPlaceGridMaterial.SetColor("_BaseColor", new Color(0.008f, 0.07f, 0.11f, 0.035f));
+            _towerPlaceGridMaterial.SetColor("_BaseColor",
+                _commanderVisualTheme.PlacementGridBase);
         if (_towerPlaceGridMaterial.HasProperty("_LineColor"))
-            _towerPlaceGridMaterial.SetColor("_LineColor", new Color(0.32f, 0.84f, 0.92f, 0.82f));
+            _towerPlaceGridMaterial.SetColor("_LineColor",
+                _commanderVisualTheme.PlacementGridLine);
         if (_towerPlaceGridMaterial.HasProperty("_CellSize"))
             _towerPlaceGridMaterial.SetFloat("_CellSize", map.CellSize);
         if (_towerPlaceGridMaterial.HasProperty("_LineWidth"))

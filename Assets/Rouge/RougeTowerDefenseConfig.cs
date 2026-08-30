@@ -41,9 +41,52 @@ public sealed class RougeTowerLevelConfig
 }
 
 [Serializable]
+public sealed class RougeTowerAiRoleProfile
+{
+    [Range(0f, 1f)] public float control;
+    [Range(0f, 1f)] public float directDamage = 0.5f;
+    [Range(0f, 1f)] public float singleTarget = 0.5f;
+    [Range(0f, 1f)] public float areaDamage;
+    [Range(0f, 1f)] public float armorBreaking;
+
+    public void EnsureDefaults()
+    {
+        control = Mathf.Clamp01(control);
+        directDamage = Mathf.Clamp01(directDamage);
+        singleTarget = Mathf.Clamp01(singleTarget);
+        areaDamage = Mathf.Clamp01(areaDamage);
+        armorBreaking = Mathf.Clamp01(armorBreaking);
+    }
+}
+
+[Serializable]
+public sealed class RougeTowerAiSpecializationProfile
+{
+    [Range(1, TowerDefenseVisuals.MaxTowerLevel - 1)] public int fromLevel = 1;
+    [Range(0, 2)] public int currentBranch;
+    [Range(0, 1)] public int choiceIndex;
+    public RougeTowerAiRoleProfile resultProfile = new RougeTowerAiRoleProfile();
+
+    public void EnsureDefaults()
+    {
+        fromLevel = Mathf.Clamp(fromLevel, 1,
+            TowerDefenseVisuals.MaxTowerLevel - 1);
+        currentBranch = Mathf.Clamp(currentBranch, 0, 2);
+        choiceIndex = Mathf.Clamp(choiceIndex, 0, 1);
+        resultProfile ??= new RougeTowerAiRoleProfile();
+        resultProfile.EnsureDefaults();
+    }
+}
+
+[Serializable]
 public sealed class RougeTowerTypeConfig
 {
     public RougeTowerType towerType;
+    [Tooltip("Normalized 0-1 capability vector used by commander AI. It describes mechanics, not a preferred character.")]
+    public RougeTowerAiRoleProfile aiRoleProfile;
+    [Tooltip("Resulting capability vectors for branch/augment choices, keyed by current level, branch (0/1/2), and choice (0/1).")]
+    public List<RougeTowerAiSpecializationProfile> aiSpecializations =
+        new List<RougeTowerAiSpecializationProfile>();
     [Min(0.1f)] public float placementRadius = 2f;
     [HideInInspector] public int footprintSize = 1;
     [HideInInspector] public int footprintWidth = 1;
@@ -56,6 +99,21 @@ public sealed class RougeTowerTypeConfig
     [Range(1, 8), Tooltip("Map-cell radius affected by a reinforcement tower. Overlapping areas stack.")]
     public int reinforcementAuraRangeCells = 1;
     public List<RougeTowerLevelConfig> levels = new List<RougeTowerLevelConfig>();
+
+    public RougeTowerAiRoleProfile FindAiSpecialization(int fromLevel,
+        int currentBranch, int choiceIndex)
+    {
+        if (aiSpecializations == null) return null;
+        for (int i = 0; i < aiSpecializations.Count; i++)
+        {
+            RougeTowerAiSpecializationProfile candidate = aiSpecializations[i];
+            if (candidate != null && candidate.fromLevel == fromLevel &&
+                candidate.currentBranch == currentBranch &&
+                candidate.choiceIndex == choiceIndex)
+                return candidate.resultProfile;
+        }
+        return null;
+    }
 }
 
 [Serializable]
@@ -409,6 +467,7 @@ public sealed class RougeTowerBalanceConfig
             config.reinforcementAuraRangeCells = Mathf.Clamp(
                 config.reinforcementAuraRangeCells <= 0 ? 1 : config.reinforcementAuraRangeCells,
                 1, 8);
+            config.levels ??= new List<RougeTowerLevelConfig>();
             while (config.levels.Count < TowerDefenseVisuals.MaxTowerLevel)
             {
                 config.levels.Add(CreateDefaultLevel(type, config.levels.Count));
@@ -420,7 +479,57 @@ public sealed class RougeTowerBalanceConfig
             }
             if (HasNoConfiguredLevelGoldCosts(config)) ApplyLegacyLevelGoldCosts(config);
             config.purchaseCost = Mathf.Max(0, config.levels[0].goldCost);
+            config.aiRoleProfile ??= InferAiRoleProfile(config);
+            config.aiRoleProfile.EnsureDefaults();
+            config.aiSpecializations ??=
+                new List<RougeTowerAiSpecializationProfile>();
+            for (int specializationIndex = config.aiSpecializations.Count - 1;
+                 specializationIndex >= 0; specializationIndex--)
+            {
+                RougeTowerAiSpecializationProfile specialization =
+                    config.aiSpecializations[specializationIndex];
+                if (specialization == null)
+                {
+                    config.aiSpecializations.RemoveAt(specializationIndex);
+                    continue;
+                }
+                specialization.EnsureDefaults();
+            }
         }
+    }
+
+    private static RougeTowerAiRoleProfile InferAiRoleProfile(
+        RougeTowerTypeConfig config)
+    {
+        float control = 0f;
+        float area = 0f;
+        bool dealsDamage = false;
+        if (config?.levels != null)
+        {
+            for (int i = 0; i < config.levels.Count; i++)
+            {
+                RougeTowerLevelConfig level = config.levels[i];
+                if (level == null) continue;
+                dealsDamage |= level.damage > 0.001f;
+                control = Mathf.Max(control,
+                    Mathf.Clamp01(level.effectPercent / 100f) *
+                    Mathf.Clamp01(level.effectDuration / 2f));
+                float multiTarget = Mathf.Clamp01((level.targetCount - 1) / 4f);
+                float multiProjectile = Mathf.Clamp01(
+                    (level.projectileCount - 1) / 5f);
+                float radius = Mathf.Clamp01(level.aoeRadius / 8f);
+                area = Mathf.Max(area,
+                    Mathf.Max(radius, Mathf.Max(multiTarget, multiProjectile)));
+            }
+        }
+        return new RougeTowerAiRoleProfile
+        {
+            control = control,
+            directDamage = dealsDamage ? 1f : 0f,
+            singleTarget = dealsDamage ? Mathf.Clamp01(1f - area * 0.75f) : 0f,
+            areaDamage = area,
+            armorBreaking = 0f
+        };
     }
 
     public void MigrateLegacyLevelGoldCosts()
@@ -907,7 +1016,7 @@ public sealed class RougeMainTowerBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 15;
+    public int version = 16;
     public RougeMainTowerBalanceConfig mainTowerBalance =
         new RougeMainTowerBalanceConfig();
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
@@ -1046,7 +1155,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
         mainTowerBalance.EnsureDefaults();
-        version = Mathf.Max(version, 15);
+        version = Mathf.Max(version, 16);
     }
 }
 
@@ -1093,7 +1202,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 15,
+            version = 16,
             mainTowerBalance = mainTowerBalance,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,

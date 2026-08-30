@@ -11,11 +11,11 @@ public static class RougeSettingsPrefabBuilder
     private const string HealthPrefabPath = UiFolder + "/RougeF2MainTowerHealth.prefab";
     private const string CameraToastPrefabPath = UiFolder + "/RougeCameraModeToast.prefab";
 
-    private static readonly Color ScreenDim = new Color(0.002f, 0.012f, 0.025f, 0.82f);
-    private static readonly Color WindowBlue = new Color(0.008f, 0.035f, 0.065f, 0.985f);
-    private static readonly Color PanelBlue = new Color(0.012f, 0.065f, 0.105f, 0.94f);
-    private static readonly Color RowBlue = new Color(0.015f, 0.085f, 0.135f, 0.88f);
-    private static readonly Color ButtonBlue = new Color(0.018f, 0.09f, 0.14f, 0.96f);
+    private static readonly Color ScreenDim = new Color(0.002f, 0.012f, 0.025f, 0.88f);
+    private static readonly Color WindowBlue = new Color(0.008f, 0.035f, 0.065f, 0.76f);
+    private static readonly Color PanelBlue = new Color(0.012f, 0.065f, 0.105f, 0.28f);
+    private static readonly Color RowBlue = new Color(0.015f, 0.085f, 0.135f, 0.28f);
+    private static readonly Color ButtonBlue = new Color(0.018f, 0.09f, 0.14f, 0.22f);
     private static readonly Color Cyan = new Color(0.08f, 0.82f, 1f, 1f);
     private static readonly Color CyanLine = new Color(0.08f, 0.72f, 0.92f, 0.72f);
     private static readonly Color TextPrimary = new Color(0.82f, 0.97f, 1f, 1f);
@@ -96,7 +96,7 @@ public static class RougeSettingsPrefabBuilder
 
     private static bool BuildSettingsPrefab()
     {
-        GameObject root = CreateCanvasRoot("Rouge Settings Menu", 500, true,
+        GameObject root = CreateCanvasRoot("Rouge Settings Menu", 32766, true,
             out CanvasGroup canvasGroup);
         try
         {
@@ -149,6 +149,11 @@ public static class RougeSettingsPrefabBuilder
                     62f + i * 82f, 14f, 64f);
             }
             view.tabButtons = tabButtons;
+
+            view.archiveButton = CreateButton("Archive Entry", tabRail.transform,
+                "资 料 库  //  ARCHIVE", 18);
+            TopStretch(view.archiveButton.GetComponent<RectTransform>(), 14f,
+                390f, 14f, 64f);
 
             Text escapeHint = CreateText("Escape Hint", tabRail.transform,
                 "ESC  返回游戏", 14, TextSecondary, TextAnchor.MiddleCenter, FontStyle.Normal);

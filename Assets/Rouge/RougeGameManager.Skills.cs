@@ -1426,7 +1426,10 @@ public partial class RougeGameManager
             if (_meteorWaveTimer <= 0f && _meteorWaveIndex < meteorWaveCount)
             {
                 _meteorWaveTimer = meteorWaveInterval;
-                uint hash = math.hash(new uint2((uint)_meteorWaveIndex + 1u, (uint)Time.frameCount));
+                uint hash = UsesTowerDefenseSpawners()
+                    ? _towerDefenseSkillRandom.NextUInt()
+                    : math.hash(new uint2((uint)_meteorWaveIndex + 1u,
+                        (uint)Time.frameCount));
                 float angle = ((hash & 0xFFFFu) / 65535f) * math.PI * 2f;
                 float distance = ((hash >> 16) & 0xFFFFu) / 65535f * meteorScatterRadius;
                 float2 impactPos = _meteorTargetPos + new float2(math.cos(angle), math.sin(angle)) * distance;
@@ -1643,7 +1646,11 @@ public partial class RougeGameManager
             }
 
             float2 impactPos = PlayerSkillMath.ToPlanar(_activePoisonBottles[i].Position);
-            ActivatePoisonZone(impactPos, poisonZoneRadius, poisonZoneDuration, (uint)(Time.frameCount * 131 + i + 1));
+            uint poisonSeed = UsesTowerDefenseSpawners()
+                ? _towerDefenseSkillRandom.NextUInt()
+                : (uint)(Time.frameCount * 131 + i + 1);
+            ActivatePoisonZone(impactPos, poisonZoneRadius, poisonZoneDuration,
+                poisonSeed);
             SpawnAOERing(new Vector3(impactPos.x, renderHeight + 0.1f, impactPos.y), poisonZoneRadius * 0.7f, 0.35f, new Color(0.35f, 1f, 0.45f, 1f));
 
             _activePoisonBottles[i].Active = false;

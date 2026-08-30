@@ -68,7 +68,8 @@ public static class RougeAutoplayCommanderConfigEditor
             "TakeoverReturn", "TakeoverHighPressure", "TakeoverLateTier1",
             "TakeoverLateTier2", "TakeoverLateTier3", "TakeoverLateTier4",
             "ReleaseFirst", "Calm", "Crowd", "Hard", "BossArrival", "Boss",
-            "BossHealthHalf", "BossHealthQuarter", "Urgent", "BaseLow",
+            "BossHealthHalf", "BossHealthQuarter", "BossHealthFinal", "Urgent",
+            "BaseLow",
             "BaseCritical", "BaseFirstDamage", "BaseDamaged",
             "BaseBurstDamage", "BuildTower", "UpgradeTower", "PressureRelieved",
             "EmotionToCalm", "EmotionToFocused", "EmotionToTense",
@@ -83,6 +84,8 @@ public static class RougeAutoplayCommanderConfigEditor
         for (int tierIndex = 0; tierIndex < tiers.Length; tierIndex++)
             dialogueCount += definition.GetDialogueLines(categories[categoryIndex],
                 tiers[tierIndex]).Length;
+        for (int tierIndex = 0; tierIndex < tiers.Length; tierIndex++)
+            dialogueCount += definition.GetVictoryLines(tiers[tierIndex]).Length;
         for (int tierIndex = 0; tierIndex < tiers.Length; tierIndex++)
             dialogueCount += definition.GetDefeatLines(tiers[tierIndex]).Length;
 
@@ -131,10 +134,6 @@ public static class RougeAutoplayCommanderConfigEditor
                 definition.Source.strategy.emergencyActionIntervalSeconds, 0.24f),
             "strategy.emergencyActionIntervalSeconds",
             "emergency action cadence authority");
-        probeCount += AssertCoreNormalized(MutateCore(validCoreJson, data =>
-                data.strategy.openingTowerCount = 0), validLocaleJson,
-            definition => definition.Source.strategy.openingTowerCount == 1,
-            "strategy.openingTowerCount", "opening tower count clamp");
         probeCount += AssertCoreNormalized(MutateCore(validCoreJson, data =>
                 data.strategy.modePriorities.economy =
                     data.strategy.modePriorities.opening), validLocaleJson,
@@ -297,6 +296,14 @@ public static class RougeAutoplayCommanderConfigEditor
             "identical Familiar and Close dialogue sets");
         probeCount += AssertRejected(validCoreJson,
             MutateLocale(validLocaleJson, data =>
+                data.outcomes.victory.close = Array.Empty<string>()),
+            "empty Close victory dialogue array");
+        probeCount += AssertRejected(validCoreJson,
+            MutateLocale(validLocaleJson, data =>
+                data.outcomes.victory.close = data.outcomes.victory.familiar),
+            "identical Familiar and Close victory dialogue sets");
+        probeCount += AssertRejected(validCoreJson,
+            MutateLocale(validLocaleJson, data =>
                 data.outcomes.defeat.close = Array.Empty<string>()),
             "empty Close defeat dialogue array");
         probeCount += AssertRejected(validCoreJson,
@@ -329,6 +336,14 @@ public static class RougeAutoplayCommanderConfigEditor
                 .bossHealthWarningRatio,
             "dialogue.triggers.bossHealthCriticalRatio",
             "boss critical-health ratio not below warning ratio");
+        probeCount += AssertCoreNormalized(MutateCore(validCoreJson, data =>
+                data.dialogue.triggers.bossHealthFinalRatio =
+                    data.dialogue.triggers.bossHealthCriticalRatio),
+            validLocaleJson, definition => definition.Source.dialogue.triggers
+                .bossHealthFinalRatio < definition.Source.dialogue.triggers
+                .bossHealthCriticalRatio,
+            "dialogue.triggers.bossHealthFinalRatio",
+            "boss final-health ratio not below critical ratio");
         probeCount += AssertCoreNormalized(MutateCore(validCoreJson, data =>
                 data.dialogue.emotions.tenseTensionThreshold =
                     data.dialogue.emotions.focusedTensionThreshold),

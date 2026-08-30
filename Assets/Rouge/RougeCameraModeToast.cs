@@ -17,6 +17,8 @@ public sealed class RougeCameraModeToast : MonoBehaviour
     public Text label;
 
     private float _remaining;
+    private Image _topAccent;
+    private Image _bottomAccent;
 
     public static void Prewarm(Font sharedFont)
     {
@@ -34,12 +36,21 @@ public sealed class RougeCameraModeToast : MonoBehaviour
         if (toast == null || toast.label == null || toast.panel == null ||
             toast.canvasGroup == null) return;
 
+        RougeCommanderVisualTheme theme =
+            RougeCommanderVisualThemes.ResolveActive();
+        Color themedAccent = theme.RemapInterfaceColor(accent);
         toast.label.text = value;
-        toast.label.color = Color.Lerp(accent, Color.white, 0.42f);
-        toast.panel.color = new Color(0.004f, 0.035f, 0.060f, 0.94f);
+        toast.label.color = Color.Lerp(themedAccent, Color.white, 0.42f);
+        toast.panel.color = theme.RemapInterfaceColor(
+            new Color(0.004f, 0.035f, 0.060f, 0.94f));
         Outline outline = toast.panel.GetComponent<Outline>();
         if (outline != null)
-            outline.effectColor = new Color(accent.r, accent.g, accent.b, 0.86f);
+            outline.effectColor = new Color(themedAccent.r,
+                themedAccent.g, themedAccent.b, 0.86f);
+        Color stripColor = new Color(themedAccent.r, themedAccent.g,
+            themedAccent.b, 0.72f);
+        if (toast._topAccent != null) toast._topAccent.color = stripColor;
+        if (toast._bottomAccent != null) toast._bottomAccent.color = stripColor;
         toast._remaining = HoldDuration + FadeDuration;
         toast.canvasGroup.alpha = 1f;
     }
@@ -128,6 +139,18 @@ public sealed class RougeCameraModeToast : MonoBehaviour
         {
             Transform labelTransform = transform.Find("Mode Panel/Mode Label");
             if (labelTransform != null) label = labelTransform.GetComponent<Text>();
+        }
+        if (_topAccent == null)
+        {
+            Transform accentTransform = transform.Find("Mode Panel/Top Accent");
+            if (accentTransform != null)
+                _topAccent = accentTransform.GetComponent<Image>();
+        }
+        if (_bottomAccent == null)
+        {
+            Transform accentTransform = transform.Find("Mode Panel/Bottom Accent");
+            if (accentTransform != null)
+                _bottomAccent = accentTransform.GetComponent<Image>();
         }
     }
 

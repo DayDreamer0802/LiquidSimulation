@@ -55,7 +55,7 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 - JSON 不支持注释、尾随逗号、`NaN` 或 `Infinity`。
 - 标准 JSONC 模板可以含 `//`，但它不是运行时文件。
 
-字符串禁止 `<` 和 `>`。所有创作文本禁止控制字符；只有 `locale.outcomes.defeat` 三档文本允许 CR/LF，正式 JSON 中仍要写成 `\n` 或 `\r\n` 转义。
+字符串禁止 `<` 和 `>`。所有创作文本禁止控制字符；只有 `locale.outcomes.victory` / `defeat` 三档文本允许 CR/LF，正式 JSON 中仍要写成 `\n` 或 `\r\n` 转义。
 
 ## 4. 数字：有限越界收敛与硬拒绝
 
@@ -92,7 +92,7 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 | `talent` | object | 引擎权威公平参数 |
 | `personality` | object | 有界关注和行为倾向 |
 | `strategy` | object | 决策数值 |
-| `dialogue` | object | 好感、触发、情绪和 42 条规则 |
+| `dialogue` | object | 好感、触发、情绪和 43 条规则 |
 
 ### 5.1 visuals
 
@@ -150,7 +150,6 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 | 字段 | 收敛/约束 | 岚值 | 含义 |
 | --- | --- | ---: | --- |
 | `buildOrder` | 至少 1 个合法、无重复塔 ID；不自动修复 | 8 塔完整序列 | 候选遍历顺序，不是强制出塔脚本 |
-| `openingTowerCount` | integer `[1,8]` | 3 | 开局结构基线塔数 |
 | `expansionIntervalSeconds` | `[5,180]` | 38 | 期望塔数随时间扩张间隔 |
 | `capitalActionIntervalSeconds` | 强制 `0.65` | 0.65 | 普通资本动作间隔 |
 | `emergencyActionIntervalSeconds` | 强制 `0.24` | 0.24 | 紧急资本动作间隔 |
@@ -279,6 +278,7 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 | `pressureReliefDialogueCooldownSeconds` | `[5,180]` | 30 |
 | `bossHealthWarningRatio` | `[0.05,0.95]` | 0.5 |
 | `bossHealthCriticalRatio` | `[0.01, warning-0.0001]` | 0.25 |
+| `bossHealthFinalRatio` | `[0.001, critical-0.0001]` | 0.1 |
 | `portraitClickDialogueCooldownSeconds` | `[0.1,30]` | 0.35 |
 | `portraitRapidClickCount` | integer `[3,12]` | 5 |
 | `portraitRapidClickWindowSeconds` | `[0.5,5]` | 2 |
@@ -292,7 +292,7 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 - 主塔：本局首次实际损血触发 `BaseFirstDamage`；后续普通损血按概率和冷却触发 `BaseDamaged`；滑动窗口累计损失达到百分比触发 `BaseBurstDamage`。
 - 建塔和升级：只在动作成功后分别抽取概率，并各用独立冷却。
 - 压力解除：先连续高压达到 minimum，再让隐藏张力连续回落达到 confirm，最后检查独立冷却。
-- 首领血线：每个首领首次越过 warning/critical 各一次；同帧跨两线只播更严重的 quarter。
+- 首领血线：每个首领首次越过 warning/critical/final 各一次；同帧跨多条线只播最严重的一档，final 默认对应剩余 10%。
 - 点击：普通/连点使用 `Time.unscaledTime`；手动点击以最高优先级抢占显示，仅保留短防刷。失败状态不能点击。
 
 ### 7.4 dialogue.emotions
@@ -311,7 +311,7 @@ Assets/Rouge/Resources/Commanders/<commanderId>/
 
 三个张力阈值最终严格递增，四个间隔倍率最终非递增。降压采用迟滞并逐级回落；情绪只改变情绪转换对白、点击类别和普通对白间隔，不直接改写战术动作。
 
-### 7.5 dialogue.sets：42 条规则
+### 7.5 dialogue.sets：43 条规则
 
 core 数组每项必须严格只有：
 
@@ -337,8 +337,8 @@ core 数组每项必须严格只有：
 | `talent` | 天赋显示名称和说明 |
 | `personality` | 思考风格和决策原则文本 |
 | `strategy` | 六个模式显示名 |
-| `dialogue` | 三档显示名和 42 个本地化文本集 |
-| `outcomes` | 三档失败对白 |
+| `dialogue` | 三档显示名和 43 个本地化文本集 |
+| `outcomes` | 三档胜利与失败对白 |
 
 ### 8.1 identity / talent / personality
 
@@ -372,7 +372,7 @@ locale 的 `dialogue.sets` 每项严格只有：
 - `familiar`
 - `close`
 
-当前协议没有单独的 `textSetId` 字段；`category` 就是 core 规则和 locale 文本集的一对一关联键。两边都必须各有完整 42 类。
+当前协议没有单独的 `textSetId` 字段；`category` 就是 core 规则和 locale 文本集的一对一关联键。两边都必须各有完整 43 类。
 
 每档必须有 1–64 条，每条最多 180 字符，不允许换行。三档不能是相同集合，即使只改顺序也会被视为相同并拒绝。重复台词只产生 warning，不会单独拒绝。
 
@@ -395,6 +395,7 @@ locale 的 `dialogue.sets` 每项严格只有：
 | `Boss` | 首领战持续状态 | true |
 | `BossHealthHalf` | 首领越过 warning 血线 | false |
 | `BossHealthQuarter` | 首领越过 critical 血线 | false |
+| `BossHealthFinal` | 首领越过 final 血线（岚默认剩余 10%） | false |
 | `Urgent` | 近端紧急压力 | true |
 | `BaseLow` | 主塔低血量 | true |
 | `BaseCritical` | 主塔濒危 | true |
@@ -423,9 +424,9 @@ locale 的 `dialogue.sets` 每项严格只有：
 
 `battleState` 在协议上可配置；表中是内置岚的取值，不是运行时隐藏常量。
 
-### 8.4 outcomes.defeat
+### 8.4 outcomes.victory / outcomes.defeat
 
-必须严格包含 `distant`、`familiar`、`close` 三个数组。每档 1–64 条，每条最多 180 字符，三组必须真正不同。只有这里允许 `\n`/`\r\n`。运行时按当前好感档取得整组候选文本；失败表现层选定并固定本次台词，且失败后不再允许点击立绘。
+胜利与失败配置都必须严格包含 `distant`、`familiar`、`close` 三个数组。每档 1–64 条，每条最多 180 字符，三组必须真正不同。只有这里允许 `\n`/`\r\n`。运行时按当前好感档取得整组候选文本：胜利使用干净传讯并在结算出现时淡出，不应用失败的乱码、抖动或断线材质；失败表现层选定并固定本次台词，且失败后不再允许点击立绘。
 
 ## 9. 六维雷达投影
 
@@ -446,7 +447,7 @@ SignedConcern(x) = clamp((x - 1) / (x >= 1 ? 0.35 : 0.25), -1, 1)
 
 ```text
 saving       = SignedBias(save)
-expansion    = average(SignedBias(build), SignedBias(upgrade))
+expansion    = SignedBias(build)
 utility      = SignedBias(controlTower)
 directDamage = average(SignedBias(focusedTower), SignedBias(areaTower))
 hunting      = average(SignedBias(focusedTower), SignedConcern(elite), SignedConcern(boss))
@@ -485,9 +486,9 @@ JSON、字符串、字典、立绘和角色背景都留在 managed C#。Burst �
 4. 检查协议版本、ID、默认语言和 locale 文件名。
 5. 确保所有数字有限；记录有限越界收敛 warning；三项权威字段强制标准值。
 6. 检查 buildOrder 合法、非空、无重复。
-7. 检查 core 与 locale 各自 42 个 category 完整、唯一，并按 category 对应。
-8. 检查文本长度、安全字符、三档差分和失败文本。
+7. 检查 core 与 locale 各自 43 个 category 完整、唯一，并按 category 对应。
+8. 检查文本长度、安全字符、三档差分和胜负结算文本。
 9. 解析 `base_calm`；自定义缺失则回退内置岚。
-10. 进入 Play Mode 检查加载页、角色选择、雷达、确认进入关卡、接管/放权、受伤、建造/升级反馈、情绪、点击和失败流程。
+10. 进入 Play Mode 检查加载页、角色选择、雷达、确认进入关卡、接管/放权、受伤、建造/升级反馈、情绪、点击和胜负流程。
 
-`CommanderConfig.schema.json` 负责静态结构和可直接表达的约束；运行时仍负责文件大小、跨文档对应、数值收敛、42 类完整唯一以及三档集合差异。
+`CommanderConfig.schema.json` 负责静态结构和可直接表达的约束；运行时仍负责文件大小、跨文档对应、数值收敛、43 类完整唯一以及三档集合差异。

@@ -57,7 +57,6 @@
         "OrbitSphere",
         "PiercingLaser"
       ],
-      "openingTowerCount": 3,
       "expansionIntervalSeconds": 38,
       // 以下两个动作间隔是引擎权威值，不是可塑造角色的参数。
       "capitalActionIntervalSeconds": 0.65,
@@ -165,6 +164,7 @@
         "pressureReliefDialogueCooldownSeconds": 30,
         "bossHealthWarningRatio": 0.5,
         "bossHealthCriticalRatio": 0.25,
+        "bossHealthFinalRatio": 0.1,
         "portraitClickDialogueCooldownSeconds": 0.35,
         "portraitRapidClickCount": 5,
         "portraitRapidClickWindowSeconds": 2,
@@ -183,7 +183,7 @@
         "tenseIntervalMultiplier": 0.94,
         "criticalIntervalMultiplier": 0.86
       },
-      // 42 条规则必须各出现一次。category 也是与 locale 文本集关联的键；
+      // 43 条规则必须各出现一次。category 也是与 locale 文本集关联的键；
       // 当前协议没有另一个 textSetId 字段。priority 只控制对白抢占。
       "sets": [
         { "category": "TakeoverFirst", "priority": 1, "battleState": false },
@@ -203,6 +203,7 @@
         { "category": "Boss", "priority": 8, "battleState": true },
         { "category": "BossHealthHalf", "priority": 8, "battleState": false },
         { "category": "BossHealthQuarter", "priority": 10, "battleState": false },
+        { "category": "BossHealthFinal", "priority": 12, "battleState": false },
         { "category": "Urgent", "priority": 7, "battleState": true },
         { "category": "BaseLow", "priority": 9, "battleState": true },
         { "category": "BaseCritical", "priority": 10, "battleState": true },
@@ -233,7 +234,7 @@
   },
 
   "Locales/zh-CN.json": {
-    // locale v1：可翻译的身份、说明、模式名、对白和失败文本。
+    // locale v1：可翻译的身份、说明、模式名、对白和胜负结算文本。
     "schemaVersion": 1,
     "protocol": "red-vs-blue.commander-locale/1",
     "commanderId": "example_commander",
@@ -275,7 +276,7 @@
       "distantLabel": "生疏",
       "familiarLabel": "熟悉",
       "closeLabel": "亲近",
-      // 42 个文本集必须与 core 的 category 一对一对应。
+      // 43 个文本集必须与 core 的 category 一对一对应。
       // 每档 1–64 条、每条 <=180 字符；三档不能只是同一批句子的重排。
       "sets": [
         { "category": "TakeoverFirst", "distant": ["收到，我先读取战场。"], "familiar": ["收到，我来接手防线。"], "close": ["交给我吧，你先喘口气。"] },
@@ -295,6 +296,7 @@
         { "category": "Boss", "distant": ["首领仍在推进，维持攻坚。"], "familiar": ["血条在掉，继续按这个节奏。"], "close": ["它很厚，不过我们有耐心。"] },
         { "category": "BossHealthHalf", "distant": ["首领生命已降至一半。"], "familiar": ["一半了，继续压住它。"], "close": ["看，它只剩一半啦。"] },
         { "category": "BossHealthQuarter", "distant": ["首领生命低于四分之一。"], "familiar": ["只剩四分之一，稳稳收掉。"], "close": ["最后一点了，准备看它倒下吧。"] },
+        { "category": "BossHealthFinal", "distant": ["首领生命低于一成。"], "familiar": ["最后10%，继续集火！"], "close": ["最后一点啦，陪我收掉它！"] },
         { "category": "Urgent", "distant": ["近端压力上升，立即补强。"], "familiar": ["有东西到家门口了，我先接住。"], "close": ["敢往家里跑？让我来。"] },
         { "category": "BaseLow", "distant": ["主塔血线偏低，优先防守。"], "familiar": ["血线不好看，我把防线收回来。"], "close": ["别只看血条，我们还能补回来。"] },
         { "category": "BaseCritical", "distant": ["主塔濒危，只处理最急目标。"], "familiar": ["不能再漏了，全部守近端。"], "close": ["先看我，我们还没有输。"] },
@@ -323,6 +325,12 @@
       ]
     },
     "outcomes": {
+      "victory": {
+        // 胜利对白使用干净的通关传讯，不应用失败时的断线与乱码效果。
+        "distant": ["任务完成。指挥官，合作愉快。"],
+        "familiar": ["漂亮收工，指挥官，合作愉快。"],
+        "close": ["又一起守住啦。合作愉快，指挥官。"]
+      },
       "defeat": {
         // 只有失败对白允许用 \n / \r\n；三档仍必须真正不同。
         "distant": ["主塔失去响应。链接正在断开。"],

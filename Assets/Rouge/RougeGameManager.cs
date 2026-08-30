@@ -748,7 +748,8 @@ public partial class RougeGameManager : MonoBehaviour
             _playerDamageCount[0] = 0;
         }
 
-        ApplyMainTowerContactDamage();
+        if (!_towerDefenseGameOver)
+            ApplyMainTowerContactDamage();
 
         if (_towerDefenseGameOver)
         {
@@ -1058,6 +1059,14 @@ public partial class RougeGameManager : MonoBehaviour
 
         UpdateAOERings(dt);
         UpdateTowerDefenseSimulation(dt);
+        // A victory can be raised from the tower-defense update above. Do not let
+        // that same frame advance projectiles or schedule one final enemy job after
+        // the result snapshot and cinematic freeze have already been committed.
+        if (_towerDefenseGameOver)
+        {
+            RenderEnemies();
+            return;
+        }
         UpdateBullets(dt);
         RenderBullets();
         RenderAOERings();
@@ -2616,7 +2625,7 @@ public partial class RougeGameManager : MonoBehaviour
 
     private void ScheduleSimulation(float dt)
     {
-        if (_bossDeathSequenceActive)
+        if (_towerDefenseGameOver || _bossDeathSequenceActive)
         {
             _simulationHandle = default;
             _simulationResultBackBufferReady = false;
@@ -2630,6 +2639,21 @@ public partial class RougeGameManager : MonoBehaviour
             _simulationResultBackBufferReady = false;
             _towerTargetScheduledCount = 0;
             return;
+        }
+
+        uint enemySimulationSeed;
+        uint crowdSimulationSeed;
+        if (UsesTowerDefenseSpawners())
+        {
+            NextTowerDefenseSimulationSeeds(out enemySimulationSeed,
+                out crowdSimulationSeed);
+        }
+        else
+        {
+            enemySimulationSeed =
+                (uint)(Time.frameCount * 1664525 + 1013904223);
+            crowdSimulationSeed =
+                (uint)((Time.frameCount >> 2) * 22695477 + 1);
         }
 
         float invCellSize = 1f / math.max(_flowFieldRuntimeCellSize, 0.001f);
@@ -2862,7 +2886,7 @@ public partial class RougeGameManager : MonoBehaviour
             DensityGradientClamp = densityGradientClamp,
             DensityResponseJitter = densityResponseJitter,
             CrowdReliefMaxDensityPressure = crowdReliefMaxDensityPressure,
-            FrameSeed = (uint)(Time.frameCount * 1664525 + 1013904223),
+            FrameSeed = enemySimulationSeed,
             SkillKillCounts = _skillKillCounts,
             BombDmgMult   = math.clamp(0.3f + _skillLevels[1] * 0.035f, 0.3f, 2.0f),
             LaserDmgMult  = math.clamp(0.3f + _skillLevels[2] * 0.035f, 0.3f, 2.0f),
@@ -2928,7 +2952,7 @@ public partial class RougeGameManager : MonoBehaviour
                 RadiusScale = math.max(0.1f, crowdPbdRadiusScale),
                 MaxCorrectionSpeed = math.max(0.5f, crowdPbdMaxCorrectionSpeed),
                 DeltaTime = dt,
-                FrameSeed = (uint)((Time.frameCount >> 2) * 22695477 + 1)
+                FrameSeed = crowdSimulationSeed
             }.ScheduleBatch(activeEnemyCount, simulationBatchSize, buildCrowdPbdGridHandle);
 
             handle = new CopyProjectedPositionsJob

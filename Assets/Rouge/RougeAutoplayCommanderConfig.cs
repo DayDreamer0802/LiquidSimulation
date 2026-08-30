@@ -88,7 +88,6 @@ public sealed class RougeAutoplayCommanderStrategyConfig
         "MachineGun", "Ice", "Cannon", "Flame", "Laser",
         "RocketBarrage", "OrbitSphere", "PiercingLaser"
     };
-    public int openingTowerCount = 3;
     public float expansionIntervalSeconds = 38f;
     public float capitalActionIntervalSeconds = 0.65f;
     public float emergencyActionIntervalSeconds = 0.24f;
@@ -234,6 +233,7 @@ public sealed class RougeAutoplayCommanderDialogueTriggerConfig
     public float pressureReliefDialogueCooldownSeconds = 30f;
     public float bossHealthWarningRatio = 0.5f;
     public float bossHealthCriticalRatio = 0.25f;
+    public float bossHealthFinalRatio = 0.1f;
     public float portraitClickDialogueCooldownSeconds = 0.35f;
     public int portraitRapidClickCount = 5;
     public float portraitRapidClickWindowSeconds = 2f;
@@ -274,6 +274,13 @@ public sealed class RougeAutoplayCommanderDialogueSetConfig
 [Serializable]
 public sealed class RougeAutoplayCommanderOutcomeConfig
 {
+    public RougeAutoplayCommanderAffinityLinesConfig victory =
+        new RougeAutoplayCommanderAffinityLinesConfig
+        {
+            distant = new[] { "任务完成。指挥官，合作愉快。" },
+            familiar = new[] { "漂亮地守住了。指挥官，合作愉快。" },
+            close = new[] { "我们又一起守住了。合作愉快，指挥官。" }
+        };
     public RougeAutoplayCommanderAffinityLinesConfig defeat =
         new RougeAutoplayCommanderAffinityLinesConfig
         {
@@ -526,15 +533,25 @@ public sealed class RougeAutoplayCommanderDefinition
 
     public string[] GetDefeatLines(string affinityTier)
     {
-        RougeAutoplayCommanderAffinityLinesConfig defeat = Locale.outcomes?.defeat;
-        if (defeat == null) return Array.Empty<string>();
+        return GetOutcomeLines(Locale.outcomes?.defeat, affinityTier);
+    }
+
+    public string[] GetVictoryLines(string affinityTier)
+    {
+        return GetOutcomeLines(Locale.outcomes?.victory, affinityTier);
+    }
+
+    private static string[] GetOutcomeLines(
+        RougeAutoplayCommanderAffinityLinesConfig outcome, string affinityTier)
+    {
+        if (outcome == null) return Array.Empty<string>();
         string[] selected = string.Equals(affinityTier, "Distant",
                 StringComparison.OrdinalIgnoreCase)
-            ? defeat.distant
+            ? outcome.distant
             : string.Equals(affinityTier, "Close",
                 StringComparison.OrdinalIgnoreCase)
-                ? defeat.close
-                : defeat.familiar;
+                ? outcome.close
+                : outcome.familiar;
         return selected ?? Array.Empty<string>();
     }
 }
@@ -568,7 +585,8 @@ public static class RougeAutoplayCommanderJson
         "TakeoverReturn", "TakeoverHighPressure", "TakeoverLateTier1",
         "TakeoverLateTier2", "TakeoverLateTier3", "TakeoverLateTier4",
         "ReleaseFirst", "Calm", "Crowd", "Hard", "BossArrival", "Boss",
-        "BossHealthHalf", "BossHealthQuarter", "Urgent", "BaseLow",
+        "BossHealthHalf", "BossHealthQuarter", "BossHealthFinal", "Urgent",
+        "BaseLow",
         "BaseCritical", "BaseFirstDamage", "BaseDamaged",
         "BaseBurstDamage", "BuildTower", "UpgradeTower", "PressureRelieved",
         "EmotionToCalm", "EmotionToFocused", "EmotionToTense",
@@ -979,7 +997,8 @@ public static class RougeAutoplayCommanderJson
         if (locale.identity == null || locale.talent == null ||
             locale.personality == null || locale.strategy == null ||
             locale.strategy.modeLabels == null || locale.dialogue == null ||
-            locale.outcomes == null || locale.outcomes.defeat == null)
+            locale.outcomes == null || locale.outcomes.victory == null ||
+            locale.outcomes.defeat == null)
             errors.Add("locale identity, talent, personality, strategy, dialogue and outcomes are required.");
         if (errors.Count > 0)
         {
@@ -1136,8 +1155,6 @@ public static class RougeAutoplayCommanderJson
     private static void NormalizeStrategyNumbers(
         RougeAutoplayCommanderStrategyConfig strategy, List<string> warnings)
     {
-        ClampInt(ref strategy.openingTowerCount, 1, 8,
-            "strategy.openingTowerCount", warnings);
         ClampFiniteFloat(ref strategy.expansionIntervalSeconds, 5f, 180f,
             "strategy.expansionIntervalSeconds", warnings);
         ForceAuthoritativeFloat(ref strategy.capitalActionIntervalSeconds, 0.65f,
@@ -1411,9 +1428,16 @@ public static class RougeAutoplayCommanderJson
             ref triggers.bossHealthWarningRatio, 0.05f, 0.95f,
             "dialogue.triggers.bossHealthWarningRatio", warnings);
         if (warningRatioFinite)
-            ClampFiniteFloat(ref triggers.bossHealthCriticalRatio, 0.01f,
+        {
+            bool criticalRatioFinite = ClampFiniteFloat(
+                ref triggers.bossHealthCriticalRatio, 0.01f,
                 triggers.bossHealthWarningRatio - StrictOrderingEpsilon,
                 "dialogue.triggers.bossHealthCriticalRatio", warnings);
+            if (criticalRatioFinite)
+                ClampFiniteFloat(ref triggers.bossHealthFinalRatio, 0.001f,
+                    triggers.bossHealthCriticalRatio - StrictOrderingEpsilon,
+                    "dialogue.triggers.bossHealthFinalRatio", warnings);
+        }
         ClampFiniteFloat(ref triggers.portraitClickDialogueCooldownSeconds, 0.1f,
             30f, "dialogue.triggers.portraitClickDialogueCooldownSeconds",
             warnings);
@@ -1567,8 +1591,6 @@ public static class RougeAutoplayCommanderJson
     {
         if (strategy.buildOrder == null || strategy.buildOrder.Length == 0)
             errors.Add("strategy.buildOrder must contain at least one standard tower ID.");
-        if (strategy.openingTowerCount < 1 || strategy.openingTowerCount > 8)
-            errors.Add("strategy.openingTowerCount must be within [1, 8].");
         ValidateRange(errors, "strategy.expansionIntervalSeconds",
             strategy.expansionIntervalSeconds, 5f, 180f);
         ValidateRange(errors, "strategy.capitalActionIntervalSeconds",
@@ -1807,9 +1829,15 @@ public static class RougeAutoplayCommanderJson
         ValidateRange(errors, "dialogue.triggers.bossHealthCriticalRatio",
             triggers.bossHealthCriticalRatio, 0.01f,
             triggers.bossHealthWarningRatio);
-        if (triggers.bossHealthCriticalRatio >=
-            triggers.bossHealthWarningRatio)
-            errors.Add("dialogue.triggers boss health ratios must satisfy 0 < critical < warning < 1.");
+        ValidateRange(errors, "dialogue.triggers.bossHealthFinalRatio",
+            triggers.bossHealthFinalRatio, 0.001f,
+            triggers.bossHealthCriticalRatio);
+        if (triggers.bossHealthFinalRatio >=
+                triggers.bossHealthCriticalRatio ||
+            triggers.bossHealthCriticalRatio >=
+                triggers.bossHealthWarningRatio)
+            errors.Add("dialogue.triggers boss health ratios must satisfy " +
+                       "0 < final < critical < warning < 1.");
         ValidateRange(errors,
             "dialogue.triggers.portraitClickDialogueCooldownSeconds",
             triggers.portraitClickDialogueCooldownSeconds, 0.1f, 30f);
@@ -1888,6 +1916,8 @@ public static class RougeAutoplayCommanderJson
             locale.dialogue.closeLabel, 24);
         if (locale.dialogue.sets == null)
             errors.Add("locale.dialogue.sets is required.");
+        ValidateAffinityLines(locale.outcomes.victory, "locale.outcomes.victory",
+            true, errors, warnings);
         ValidateAffinityLines(locale.outcomes.defeat, "locale.outcomes.defeat",
             true, errors, warnings);
     }

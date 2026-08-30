@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -6,6 +7,11 @@ using UnityEngine.UI;
 public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 {
     private const int DecorativeCanvasSortingOrder = 40;
+    private const string MusicVolumePreference = "Rouge.Audio.MusicVolume";
+    private const string SelectionMusicResourcePath =
+        "Music/commander_selection_pynchon";
+    private const float DefaultFadeOutDuration = 0.32f;
+    private const float DefaultFadeInDuration = 0.48f;
 
     private struct BarVisual
     {
@@ -71,10 +77,75 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     private float _visualRefreshTimer;
     private float _authoredVolume = 1f;
     private float _userVolume = 1f;
+    private float _transitionGain = 1f;
     private bool _authoredVolumeCaptured;
+    private bool _visualizerRequested;
+    private Coroutine _trackTransition;
 
     public AudioSource Source => _audioSource;
     public bool IsPlaying => _audioSource != null && _audioSource.isPlaying;
+    public bool IsVisualizerRequested => _visualizerRequested;
+
+    /// <summary>
+    /// Enters commander selection, switches to its loop, and explicitly enables
+    /// the decorative spectrum. Safe to call while gameplay is paused.
+    /// </summary>
+    public static void EnterSelectionMusic(
+        float fadeOutSeconds = DefaultFadeOutDuration,
+        float fadeInSeconds = DefaultFadeInDuration)
+    {
+        RougeAudioVisualizerPlayer player = ResolvePlayer();
+        if (player == null)
+        {
+            Debug.LogWarning("Commander selection music requested without a RougeAudioVisualizerPlayer.");
+            return;
+        }
+
+        player.SetUserVolume(Mathf.Clamp01(
+            PlayerPrefs.GetFloat(MusicVolumePreference, 1f)));
+        player.SetVisualizerRequested(true);
+
+        AudioClip selectionClip = Resources.Load<AudioClip>(SelectionMusicResourcePath);
+        if (selectionClip == null)
+        {
+            Debug.LogWarning(
+                $"Missing selection music at Resources/{SelectionMusicResourcePath}.",
+                player);
+            selectionClip = player._clip;
+        }
+
+        player.SwitchTrack(selectionClip, true, fadeOutSeconds, fadeInSeconds);
+    }
+
+    /// <summary>
+    /// Leaves commander selection, immediately removes its spectrum, and returns
+    /// to the serialized gameplay music without changing authored/user volume.
+    /// </summary>
+    public static void ExitSelectionMusic(
+        float fadeOutSeconds = DefaultFadeOutDuration,
+        float fadeInSeconds = DefaultFadeInDuration)
+    {
+        RougeAudioVisualizerPlayer player = ResolvePlayer();
+        if (player == null)
+        {
+            return;
+        }
+
+        player.SetVisualizerRequested(false);
+        player.SwitchTrack(player._clip, true, fadeOutSeconds, fadeInSeconds);
+    }
+
+    /// <summary>
+    /// Controls only the decorative bars. It never starts, stops, or changes music.
+    /// </summary>
+    public static void SetSelectionVisualizerVisible(bool visible)
+    {
+        RougeAudioVisualizerPlayer player = ResolvePlayer();
+        if (player != null)
+        {
+            player.SetVisualizerRequested(visible);
+        }
+    }
 
     private void Reset()
     {
@@ -85,13 +156,12 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     {
         EnsureAudioSource();
         CaptureAuthoredVolume();
+        _userVolume = Mathf.Clamp01(
+            PlayerPrefs.GetFloat(MusicVolumePreference, 1f));
+        _transitionGain = 1f;
+        ApplyEffectiveVolume();
         EnsureSpectrumBuffer();
         EnsureLevelBuffer();
-    }
-
-    private void Start()
-    {
-        EnsureVisualizerUi();
     }
 
     private void OnEnable()
@@ -106,8 +176,28 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         }
     }
 
+    private void OnDisable()
+    {
+        _visualizerRequested = false;
+        HideVisualizerImmediately();
+
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
+
+        SetTransitionGain(1f);
+    }
+
     private void Update()
     {
+        if (!_visualizerRequested)
+        {
+            HideVisualizerImmediately();
+            return;
+        }
+
         EnsureVisualizerUi();
 
         if (_levels == null || _levels.Length != _barsPerSide)
@@ -148,6 +238,12 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
+
         if (_root != null)
         {
             Destroy(_root.gameObject);
@@ -186,6 +282,16 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
     public void Play()
     {
         EnsureAudioSource();
+        if (_audioSource == null)
+        {
+            return;
+        }
+
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
 
         if (_clip != null)
         {
@@ -197,14 +303,27 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
             return;
         }
 
-        EnsureVisualizerUi();
+        _audioSource.loop = true;
+        _transitionGain = 1f;
+        ApplyEffectiveVolume();
         _audioSource.Play();
     }
 
     public void Play(AudioClip clip)
     {
-        _clip = clip;
-        Play();
+        EnsureAudioSource();
+        if (_audioSource == null || clip == null)
+        {
+            return;
+        }
+
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
+
+        ApplyTrackImmediately(clip, true);
     }
 
     public void Pause()
@@ -234,7 +353,73 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
             return;
         }
 
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
+
         _audioSource.Stop();
+        SetTransitionGain(1f);
+    }
+
+    /// <summary>
+    /// Switches music using unscaled time. The transition gain is independent of
+    /// the authored and saved user volumes, so neither setting is overwritten.
+    /// </summary>
+    public void SwitchTrack(AudioClip clip, bool loop = true,
+        float fadeOutSeconds = DefaultFadeOutDuration,
+        float fadeInSeconds = DefaultFadeInDuration)
+    {
+        EnsureAudioSource();
+        if (_audioSource == null || clip == null)
+        {
+            return;
+        }
+
+        if (_trackTransition != null)
+        {
+            StopCoroutine(_trackTransition);
+            _trackTransition = null;
+        }
+
+        fadeOutSeconds = Mathf.Max(0f, fadeOutSeconds);
+        fadeInSeconds = Mathf.Max(0f, fadeInSeconds);
+        if (!isActiveAndEnabled ||
+            (fadeOutSeconds <= 0f && fadeInSeconds <= 0f))
+        {
+            ApplyTrackImmediately(clip, loop);
+            return;
+        }
+
+        _trackTransition = StartCoroutine(
+            SwitchTrackRoutine(clip, loop, fadeOutSeconds, fadeInSeconds));
+    }
+
+    public void SetVisualizerRequested(bool requested)
+    {
+        if (_visualizerRequested == requested)
+        {
+            if (!requested)
+            {
+                HideVisualizerImmediately();
+            }
+            return;
+        }
+
+        _visualizerRequested = requested;
+        if (requested)
+        {
+            EnsureVisualizerUi();
+            if (_root != null)
+            {
+                _root.gameObject.SetActive(true);
+            }
+        }
+        else
+        {
+            HideVisualizerImmediately();
+        }
     }
 
     public void SetVolume(float volume)
@@ -243,7 +428,7 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         if (_audioSource == null) return;
         _authoredVolume = Mathf.Clamp01(volume);
         _authoredVolumeCaptured = true;
-        _audioSource.volume = _authoredVolume * _userVolume;
+        ApplyEffectiveVolume();
     }
 
     public void SetUserVolume(float volume)
@@ -252,7 +437,105 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         if (_audioSource == null) return;
         CaptureAuthoredVolume();
         _userVolume = Mathf.Clamp01(volume);
-        _audioSource.volume = _authoredVolume * _userVolume;
+        ApplyEffectiveVolume();
+    }
+
+    private static RougeAudioVisualizerPlayer ResolvePlayer()
+    {
+        RougeAudioVisualizerPlayer[] players =
+            FindObjectsByType<RougeAudioVisualizerPlayer>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            if (players[i] != null && players[i].isActiveAndEnabled)
+            {
+                return players[i];
+            }
+        }
+
+        return null;
+    }
+
+    private IEnumerator SwitchTrackRoutine(AudioClip clip, bool loop,
+        float fadeOutSeconds, float fadeInSeconds)
+    {
+        bool sameTrack = _audioSource.clip == clip;
+        if (!sameTrack && _audioSource.isPlaying && fadeOutSeconds > 0f)
+        {
+            yield return FadeTransitionGain(_transitionGain, 0f, fadeOutSeconds);
+        }
+        else if (!sameTrack)
+        {
+            SetTransitionGain(0f);
+        }
+
+        if (!sameTrack)
+        {
+            _audioSource.Stop();
+            _audioSource.clip = clip;
+        }
+
+        _audioSource.loop = loop;
+        if (!_audioSource.isPlaying)
+        {
+            _audioSource.Play();
+        }
+
+        if (fadeInSeconds > 0f)
+        {
+            yield return FadeTransitionGain(_transitionGain, 1f, fadeInSeconds);
+        }
+        else
+        {
+            SetTransitionGain(1f);
+        }
+
+        _trackTransition = null;
+    }
+
+    private IEnumerator FadeTransitionGain(float from, float to, float duration)
+    {
+        if (duration <= 0f)
+        {
+            SetTransitionGain(to);
+            yield break;
+        }
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            SetTransitionGain(Mathf.Lerp(from, to,
+                Mathf.Clamp01(elapsed / duration)));
+            yield return null;
+        }
+
+        SetTransitionGain(to);
+    }
+
+    private void ApplyTrackImmediately(AudioClip clip, bool loop)
+    {
+        _audioSource.Stop();
+        _audioSource.clip = clip;
+        _audioSource.loop = loop;
+        SetTransitionGain(1f);
+        _audioSource.Play();
+    }
+
+    private void SetTransitionGain(float gain)
+    {
+        _transitionGain = Mathf.Clamp01(gain);
+        ApplyEffectiveVolume();
+    }
+
+    private void ApplyEffectiveVolume()
+    {
+        if (_audioSource == null)
+        {
+            return;
+        }
+
+        _audioSource.volume = _authoredVolume * _userVolume * _transitionGain;
     }
 
     private void EnsureAudioSource()
@@ -283,6 +566,29 @@ public sealed class RougeAudioVisualizerPlayer : MonoBehaviour
         if (_levels == null || _levels.Length != _barsPerSide)
         {
             _levels = new float[_barsPerSide];
+        }
+    }
+
+    private void HideVisualizerImmediately()
+    {
+        if (_canvasGroup != null)
+        {
+            _canvasGroup.alpha = 0f;
+        }
+
+        if (_root != null && _root.gameObject.activeSelf)
+        {
+            _root.gameObject.SetActive(false);
+        }
+
+        if (_levels == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < _levels.Length; i++)
+        {
+            _levels[i] = 0f;
         }
     }
 

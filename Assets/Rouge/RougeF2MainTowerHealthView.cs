@@ -32,9 +32,14 @@ public sealed class RougeF2MainTowerHealthView : MonoBehaviour
         {
             RectTransform rect = healthFill.rectTransform;
             rect.anchorMax = new Vector2(normalized, 1f);
+            RougeCommanderVisualTheme theme =
+                RougeCommanderVisualThemes.ResolveActive();
+            Color healthyColor = theme.UsesDefaultPalette
+                ? new Color(0.08f, 0.82f, 1f, 1f)
+                : theme.Accent;
             healthFill.color = Color.Lerp(
                 new Color(1f, 0.18f, 0.12f, 1f),
-                new Color(0.08f, 0.82f, 1f, 1f), normalized);
+                healthyColor, normalized);
         }
         if (healthText != null)
             healthText.text = $"主塔核心  {Mathf.Max(0f, current):0} / {Mathf.Max(0f, maximum):0}";

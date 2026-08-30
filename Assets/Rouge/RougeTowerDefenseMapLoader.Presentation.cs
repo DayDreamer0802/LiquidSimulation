@@ -76,7 +76,7 @@ public sealed partial class RougeTowerDefenseMapLoader
     {
         material.SetColor("_BaseColor", arenaBackdropBaseColor);
         material.SetColor("_OuterColor", arenaBackdropOuterColor);
-        material.SetColor("_GridColor", new Color(0.075f, 0.42f, 0.58f, 1f));
+        material.SetColor("_GridColor", _commanderVisualTheme.MapGrid);
         material.SetColor("_AccentColor", arenaEnergyColor);
         material.SetVector("_ArenaCenter", new Vector4(center.x, center.y, 0f, 0f));
         material.SetFloat("_BackdropHalfSize", Mathf.Max(256f, backdropSize * 0.5f));

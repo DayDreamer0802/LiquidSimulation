@@ -1,5 +1,5 @@
 {
-    "version": 15,
+    "version": 16,
     "mainTowerBalance": {
         "maxHealth": 500.0
     },
@@ -71,16 +71,16 @@
             "refractionAttackDamageMultiplier": 5.0,
             "refractionAttackInterval": 1.0,
             "refractionAttackTargetMultiplier": 2,
-            "refractionAttackDamageFalloffPerTarget": 0.05,
+            "refractionAttackDamageFalloffPerTarget": 0.05000000074505806,
             "refractionAttackMaximumDamageFalloff": 0.5
         },
         "flameTowerSpecialization": {
             "flamethrowerDamage": 10.0,
-            "flamethrowerAttackInterval": 0.1,
+            "flamethrowerAttackInterval": 0.10000000149011612,
             "flamethrowerRange": 15.0,
             "flamethrowerAngle": 30.0,
             "rotatingDamage": 20.0,
-            "rotatingAttackInterval": 0.05,
+            "rotatingAttackInterval": 0.05000000074505806,
             "rotatingDegreesPerSecond": 360.0,
             "fanSpacingPaddingDegrees": 10.0,
             "focusedAnglePerProjectile": 15.0,
@@ -90,13 +90,22 @@
             "burnDamageMultiplier": 0.25,
             "attackSpeedBuffEffectiveness": 0.5,
             "maximumBurnStacks": 10,
-            "damageBonusPerStack": 0.1,
+            "damageBonusPerStack": 0.10000000149011612,
             "burnSpeedBonus": 0.25,
             "conflagrationDamageMultiplier": 5.0
         },
         "towers": [
             {
                 "towerType": 0,
+                "aiRoleProfile": { "control": 1.0, "directDamage": 0.2, "singleTarget": 0.0, "areaDamage": 0.3, "armorBreaking": 0.55 },
+                "aiSpecializations": [
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 1.0, "directDamage": 0.2, "singleTarget": 0.0, "areaDamage": 0.4, "armorBreaking": 0.0 } },
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.45, "directDamage": 0.25, "singleTarget": 0.0, "areaDamage": 0.25, "armorBreaking": 0.8 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 1.0, "directDamage": 0.35, "singleTarget": 0.0, "areaDamage": 0.55, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 1.0, "directDamage": 0.15, "singleTarget": 0.0, "areaDamage": 0.35, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.4, "directDamage": 0.45, "singleTarget": 0.0, "areaDamage": 0.25, "armorBreaking": 0.5 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.35, "directDamage": 0.35, "singleTarget": 0.0, "areaDamage": 0.2, "armorBreaking": 1.0 } }
+                ],
                 "placementRadius": 2.200000047683716,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -167,18 +176,27 @@
             },
             {
                 "towerType": 1,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.9, "areaDamage": 0.2, "armorBreaking": 0.45 },
+                "aiSpecializations": [
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 0.55 } },
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.35, "areaDamage": 0.9, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 0.35 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 1.0 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.25, "areaDamage": 1.0, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.4, "areaDamage": 0.9, "armorBreaking": 0.0 } }
+                ],
                 "placementRadius": 2.0,
                 "footprintSize": 1,
                 "footprintWidth": 1,
                 "footprintHeight": 1,
-                "purchaseCost": 500,
+                "purchaseCost": 750,
                 "specialTowerCountCostMultiplier": 0.0,
                 "reinforcementAuraBuffLevel": 1,
                 "reinforcementAuraRangeCells": 1,
                 "levels": [
                     {
-                        "goldCost": 500,
-                        "damage": 20.0,
+                        "goldCost": 750,
+                        "damage": 25.0,
                         "attackInterval": 0.20000000298023225,
                         "attackRange": 20.0,
                         "targetCount": 1,
@@ -196,8 +214,8 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "goldCost": 1500,
-                        "damage": 40.0,
+                        "goldCost": 2000,
+                        "damage": 50.0,
                         "attackInterval": 0.20000000298023225,
                         "attackRange": 25.0,
                         "targetCount": 3,
@@ -215,8 +233,8 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "goldCost": 4500,
-                        "damage": 80.0,
+                        "goldCost": 6000,
+                        "damage": 90.0,
                         "attackInterval": 0.20000000298023225,
                         "attackRange": 30.0,
                         "targetCount": 5,
@@ -237,6 +255,8 @@
             },
             {
                 "towerType": 2,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.0, "areaDamage": 1.0, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.700000047683716,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -307,6 +327,8 @@
             },
             {
                 "towerType": 3,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.0, "areaDamage": 0.85, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.4000000953674318,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -377,6 +399,15 @@
             },
             {
                 "towerType": 4,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.95, "areaDamage": 0.25, "armorBreaking": 1.0 },
+                "aiSpecializations": [
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 1.0 } },
+                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.4, "areaDamage": 0.9, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 1.0 } },
+                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 0.85 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.3, "areaDamage": 1.0, "armorBreaking": 0.0 } },
+                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.5, "areaDamage": 0.9, "armorBreaking": 0.0 } }
+                ],
                 "placementRadius": 2.299999952316284,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -447,6 +478,8 @@
             },
             {
                 "towerType": 5,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.0, "areaDamage": 0.65, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -517,6 +550,8 @@
             },
             {
                 "towerType": 6,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.0, "areaDamage": 0.95, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.5,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -587,6 +622,8 @@
             },
             {
                 "towerType": 7,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.0, "areaDamage": 1.0, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -657,6 +694,8 @@
             },
             {
                 "towerType": 8,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 0.0, "singleTarget": 0.0, "areaDamage": 0.0, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -727,6 +766,8 @@
             },
             {
                 "towerType": 9,
+                "aiRoleProfile": { "control": 0.0, "directDamage": 0.0, "singleTarget": 0.0, "areaDamage": 0.0, "armorBreaking": 0.0 },
+                "aiSpecializations": [],
                 "placementRadius": 3.0999999046325685,
                 "footprintSize": 1,
                 "footprintWidth": 1,

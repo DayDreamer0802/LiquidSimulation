@@ -39,7 +39,6 @@
       "OrbitSphere",
       "PiercingLaser"
     ],
-    "openingTowerCount": 3,
     "expansionIntervalSeconds": 38,
     "capitalActionIntervalSeconds": 0.65,
     "emergencyActionIntervalSeconds": 0.24,
@@ -143,6 +142,7 @@
       "pressureReliefDialogueCooldownSeconds": 30,
       "bossHealthWarningRatio": 0.5,
       "bossHealthCriticalRatio": 0.25,
+      "bossHealthFinalRatio": 0.1,
       "portraitClickDialogueCooldownSeconds": 0.35,
       "portraitRapidClickCount": 5,
       "portraitRapidClickWindowSeconds": 2,
@@ -243,6 +243,11 @@
       {
         "category": "BossHealthQuarter",
         "priority": 10,
+        "battleState": false
+      },
+      {
+        "category": "BossHealthFinal",
+        "priority": 12,
         "battleState": false
       },
       {

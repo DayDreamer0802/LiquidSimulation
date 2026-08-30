@@ -546,6 +546,8 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.Space(5f);
         EditorGUILayout.LabelField("关卡经济 / 倍率", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("startingGold"), new GUIContent("初始金币"));
+        EditorGUILayout.PropertyField(_serializedMap.FindProperty("gameplaySeed"),
+            new GUIContent("固定战斗种子", "同一关卡使用相同种子时，所有影响战果的随机结果保持一致；视觉与对话仍可随机变化。"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyHealthMultiplier"), new GUIContent("敌人生命倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("enemyMoveSpeedMultiplier"), new GUIContent("敌人移速倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("eliteSpawnDelaySeconds"),
@@ -553,6 +555,41 @@ public sealed class RougeTowerDefenseMapEditor : EditorWindow
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerGoldCostMultiplier"), new GUIContent("塔楼金币消耗倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerDamageMultiplier"), new GUIContent("塔楼伤害倍率"));
         EditorGUILayout.PropertyField(_serializedMap.FindProperty("towerAttackSpeedMultiplier"), new GUIContent("塔楼攻速倍率"));
+
+        EditorGUILayout.Space(5f);
+        EditorGUILayout.LabelField("通关评分", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "总分只由主塔完整度、剩余金币、击杀、总伤害和首领击破组成。" +
+            "评级阈值按 S → A → B → C 依次判断，低于 C 为 D。",
+            MessageType.Info);
+        SerializedProperty scoreRules = _serializedMap.FindProperty("scoreRules");
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("mainTowerFullHealthPoints"),
+            new GUIContent("主塔满血分数"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("remainingGoldPointsPerGold"),
+            new GUIContent("每金币分数"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("killPointsPerEnemy"),
+            new GUIContent("每击杀分数"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("bossDefeatPoints"),
+            new GUIContent("击破 Boss 分数"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("damagePerPoint"),
+            new GUIContent("获得 1 分所需伤害"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("gradeSThreshold"),
+            new GUIContent("S 评级最低分"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("gradeAThreshold"),
+            new GUIContent("A 评级最低分"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("gradeBThreshold"),
+            new GUIContent("B 评级最低分"));
+        EditorGUILayout.PropertyField(
+            scoreRules.FindPropertyRelative("gradeCThreshold"),
+            new GUIContent("C 评级最低分"));
 
         EditorGUILayout.Space(5f);
         EditorGUILayout.LabelField("随机战场事件", EditorStyles.boldLabel);

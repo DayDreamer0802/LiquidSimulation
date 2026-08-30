@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -5,13 +6,29 @@ using UnityEngine.UI;
 
 public partial class RougeGameManager
 {
-    private const int TowerDefenseAutoplayVisibleThoughtLines = 1;
+    private const int TowerDefenseAutoplayVisibleThoughtLines = 2;
     private const int TowerDefenseAutoplayHeartbeatSegmentCount = 72;
-    private const float TowerDefenseAutoplayHeartbeatWidth = 374f;
+    private const float TowerDefenseAutoplayHeartbeatWidth = 330f;
     private const float TowerDefenseAutoplayHeartbeatHeight = 24f;
     private const float TowerDefenseAutoplayHeartbeatWindowSeconds = 1.8f;
+    private const float TowerDefenseAutoplayHudFadeInSeconds = 0.28f;
+    private const float TowerDefenseAutoplayReleaseHoldSeconds = 0.50f;
+    private const float TowerDefenseAutoplayHudFadeOutSeconds = 1.00f;
+
+    private enum TowerDefenseAutoplayHudPhase : byte
+    {
+        Hidden,
+        FadingIn,
+        Visible,
+        HoldingRelease,
+        FadingOut
+    }
 
     private Canvas _towerDefenseAutoplayCanvas;
+    private CanvasGroup _towerDefenseAutoplayCanvasGroup;
+    private CanvasGroup _towerDefenseAutoplayInterfaceGroup;
+    private Coroutine _towerDefenseAutoplayHudTransitionRoutine;
+    private TowerDefenseAutoplayHudPhase _towerDefenseAutoplayHudPhase;
     private GameObject _towerDefenseAutoplayHudRoot;
     private Image _towerDefenseAutoplayPortrait;
     private Image _towerDefenseAutoplayPortraitPulse;
@@ -26,6 +43,8 @@ public partial class RougeGameManager
     private Text _towerDefenseAutoplayBossHealthText;
     private Image _towerDefenseAutoplayMainHealthFill;
     private Image _towerDefenseAutoplayBossHealthFill;
+    private Texture2D _towerDefenseAutoplayBackdropGradientTexture;
+    private Sprite _towerDefenseAutoplayBackdropGradientSprite;
     private RectTransform _towerDefenseAutoplayHeartbeatRoot;
     private Image[] _towerDefenseAutoplayHeartbeatSegments;
     private float[] _towerDefenseAutoplayHeartbeatTrace;
@@ -59,14 +78,19 @@ public partial class RougeGameManager
     {
         if (_towerDefenseAutoplayCanvas == null) return;
 
-        bool visible = _towerDefenseAutoplayEnabled &&
-                       !_towerDefenseAutoplayCleanView &&
-                       !_towerDefenseStartupActive &&
-                       !_towerDefenseGameOver &&
-                       !IsPlayerSettingsOpen;
-        if (_towerDefenseAutoplayCanvas.gameObject.activeSelf != visible)
-            _towerDefenseAutoplayCanvas.gameObject.SetActive(visible);
-        if (!visible) return;
+        bool gameplayVisible = _towerDefenseAutoplayEnabled &&
+                               !_towerDefenseAutoplayCleanView &&
+                               !_towerDefenseStartupActive &&
+                               !_towerDefenseGameOver &&
+                               !IsPlayerSettingsOpen;
+        bool releaseVisible = IsTowerDefenseAutoplayReleasePresentationActive;
+        if (gameplayVisible)
+            EnsureTowerDefenseAutoplayHudVisible();
+        else if (!releaseVisible)
+            HideTowerDefenseAutoplayHudImmediately(!_towerDefenseAutoplayEnabled);
+
+        if ((!gameplayVisible && !releaseVisible) ||
+            !_towerDefenseAutoplayCanvas.gameObject.activeSelf) return;
 
         if (!_towerDefenseAutoplayIdentityRendered)
         {
@@ -77,9 +101,12 @@ public partial class RougeGameManager
                 string talentLabel = discountPercent > 0
                     ? $"{TowerDefenseAutoplayTalentName} -{discountPercent}%"
                     : TowerDefenseAutoplayTalentName;
+                string affinityColor = CommanderInterfaceColorHex(
+                    new Color32(0xDD, 0xF8, 0xFF, 0xFF));
                 _towerDefenseAutoplayRoleText.text =
                     $"<b>{TowerDefenseAutoplayCharacterName}</b>" +
-                    $"  <size=18><color=#DDF8FF>默契{CurrentAutoplayAffinityLabel} · " +
+                    $"  <size=18><color=#{affinityColor}>" +
+                    $"默契{CurrentAutoplayAffinityLabel} · " +
                     $"{talentLabel}</color></size>";
             }
             if (_towerDefenseAutoplayThoughtTitle != null)
@@ -94,19 +121,22 @@ public partial class RougeGameManager
                 $"金币 {_towerDefenseGold}   敌人 {_towerDefenseAliveEstimate}   " +
                 $"策略 {CurrentAutoplayStrategyLabel} · 并行推演";
         if (_towerDefenseAutoplayHintText != null)
-            _towerDefenseAutoplayHintText.text =
-                $"[立绘] 互动   [F2] 隐藏   [F6] 结束   " +
-                $"[F10] ×{(_towerDefenseDoubleSpeed ? 2 : 1)}";
+            _towerDefenseAutoplayHintText.text = releaseVisible
+                ? "AI 接管已解除   //   指挥权交还中"
+                : $"[立绘] 互动   [F2] 隐藏   [F6] 结束   " +
+                  $"[F10] ×{(_towerDefenseDoubleSpeed ? 2 : 1)}";
 
         RefreshTowerDefenseAutoplayHealthLines();
         UpdateTowerDefenseAutoplayHeartbeat();
         RefreshTowerDefenseAutoplayPortraitSprite();
         UpdateTowerDefenseAutoplayPortraitInteractionFeedback();
 
-        bool speechVisible = _towerDefenseAutoplayEntrancePending &&
-                             _survivalTime <=
-                             _towerDefenseAutoplaySpeechVisibleUntil;
-        if (_towerDefenseAutoplayEntrancePending && !speechVisible)
+        bool speechVisible = releaseVisible ||
+                             (_towerDefenseAutoplayEntrancePending &&
+                              _survivalTime <=
+                              _towerDefenseAutoplaySpeechVisibleUntil);
+        if (_towerDefenseAutoplayEntrancePending && !speechVisible &&
+            !releaseVisible)
             _towerDefenseAutoplayEntrancePending = false;
         if (_towerDefenseAutoplayEntranceText != null &&
             _towerDefenseAutoplayEntranceText.gameObject.activeSelf != speechVisible)
@@ -129,6 +159,211 @@ public partial class RougeGameManager
         }
     }
 
+    private bool IsTowerDefenseAutoplayReleasePresentationActive =>
+        _towerDefenseAutoplayHudPhase ==
+            TowerDefenseAutoplayHudPhase.HoldingRelease ||
+        _towerDefenseAutoplayHudPhase ==
+            TowerDefenseAutoplayHudPhase.FadingOut;
+
+    private void EnsureTowerDefenseAutoplayHudVisible()
+    {
+        if (_towerDefenseAutoplayCanvas == null) return;
+        // The regular gameplay HUD stays fully hidden while command is handed to
+        // the companion. Reapplying this before the phase early-out also clears
+        // any partial alpha left when F6 interrupts the release crossfade.
+        PrepareGameplayHudForAutoplayReleaseCrossfade();
+        if (_towerDefenseAutoplayHudPhase ==
+                TowerDefenseAutoplayHudPhase.Visible ||
+            _towerDefenseAutoplayHudPhase ==
+                TowerDefenseAutoplayHudPhase.FadingIn) return;
+
+        StopTowerDefenseAutoplayHudTransition();
+        GameObject canvasObject = _towerDefenseAutoplayCanvas.gameObject;
+        if (!canvasObject.activeSelf) canvasObject.SetActive(true);
+        // The character is present immediately; only the tactical graphics resolve
+        // in. This avoids turning a foreground portrait into a translucent panel.
+        if (_towerDefenseAutoplayCanvasGroup != null)
+            _towerDefenseAutoplayCanvasGroup.alpha = 1f;
+        float startAlpha = _towerDefenseAutoplayInterfaceGroup != null
+            ? Mathf.Clamp01(_towerDefenseAutoplayInterfaceGroup.alpha)
+            : 1f;
+        SetTowerDefenseAutoplayHudInteraction(false);
+        if (_towerDefenseAutoplayInterfaceGroup == null || startAlpha >= 0.999f)
+        {
+            if (_towerDefenseAutoplayInterfaceGroup != null)
+                _towerDefenseAutoplayInterfaceGroup.alpha = 1f;
+            _towerDefenseAutoplayHudPhase =
+                TowerDefenseAutoplayHudPhase.Visible;
+            SetTowerDefenseAutoplayHudInteraction(true);
+            return;
+        }
+
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.FadingIn;
+        _towerDefenseAutoplayHudTransitionRoutine = StartCoroutine(
+            FadeInTowerDefenseAutoplayHud(startAlpha));
+    }
+
+    private IEnumerator FadeInTowerDefenseAutoplayHud(float startAlpha)
+    {
+        float elapsed = 0f;
+        while (elapsed < TowerDefenseAutoplayHudFadeInSeconds &&
+               _towerDefenseAutoplayHudPhase ==
+                   TowerDefenseAutoplayHudPhase.FadingIn)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = Mathf.Clamp01(elapsed /
+                TowerDefenseAutoplayHudFadeInSeconds);
+            if (_towerDefenseAutoplayInterfaceGroup != null)
+                _towerDefenseAutoplayInterfaceGroup.alpha = Mathf.Lerp(startAlpha,
+                    1f, Mathf.SmoothStep(0f, 1f, progress));
+            yield return null;
+        }
+
+        if (_towerDefenseAutoplayHudPhase !=
+            TowerDefenseAutoplayHudPhase.FadingIn) yield break;
+        if (_towerDefenseAutoplayInterfaceGroup != null)
+            _towerDefenseAutoplayInterfaceGroup.alpha = 1f;
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.Visible;
+        _towerDefenseAutoplayHudTransitionRoutine = null;
+        SetTowerDefenseAutoplayHudInteraction(true);
+    }
+
+    private void BeginTowerDefenseAutoplayReleasePresentation(string line)
+    {
+        string releaseLine = string.IsNullOrWhiteSpace(line)
+            ? "指挥权已交还，战术记录转入后台。"
+            : line.Trim();
+        StopTowerDefenseAutoplayHudTransition();
+        _towerDefenseAutoplayHudPhase =
+            TowerDefenseAutoplayHudPhase.HoldingRelease;
+
+        if (_towerDefenseAutoplayCanvas != null)
+        {
+            GameObject canvasObject = _towerDefenseAutoplayCanvas.gameObject;
+            if (!canvasObject.activeSelf) canvasObject.SetActive(true);
+        }
+        if (_towerDefenseAutoplayCanvasGroup != null)
+            _towerDefenseAutoplayCanvasGroup.alpha = 1f;
+        if (_towerDefenseAutoplayInterfaceGroup != null)
+            _towerDefenseAutoplayInterfaceGroup.alpha = 1f;
+        PrepareGameplayHudForAutoplayReleaseCrossfade();
+        SetTowerDefenseAutoplayHudInteraction(false);
+
+        // The release line uses the existing speech field/revision so it is rendered
+        // in the commander's panel, but its lifetime below is wall-clock based. Camera
+        // handoff pauses game time, so a scaled timer would either swallow or stall it.
+        PresentTowerDefenseAutoplaySpeech(releaseLine);
+        _towerDefenseAutoplayHudTransitionRoutine = StartCoroutine(
+            HoldAndFadeOutTowerDefenseAutoplayHud(
+                TowerDefenseAutoplayReleaseHoldSeconds));
+    }
+
+    private IEnumerator HoldAndFadeOutTowerDefenseAutoplayHud(
+        float readingSeconds)
+    {
+        float elapsed = 0f;
+        while (elapsed < readingSeconds &&
+               _towerDefenseAutoplayHudPhase ==
+                   TowerDefenseAutoplayHudPhase.HoldingRelease)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        if (_towerDefenseAutoplayHudPhase !=
+            TowerDefenseAutoplayHudPhase.HoldingRelease) yield break;
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.FadingOut;
+        float startAlpha = _towerDefenseAutoplayCanvasGroup != null
+            ? Mathf.Clamp01(_towerDefenseAutoplayCanvasGroup.alpha)
+            : 1f;
+        elapsed = 0f;
+        while (elapsed < TowerDefenseAutoplayHudFadeOutSeconds &&
+               _towerDefenseAutoplayHudPhase ==
+                   TowerDefenseAutoplayHudPhase.FadingOut)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float progress = Mathf.Clamp01(elapsed /
+                TowerDefenseAutoplayHudFadeOutSeconds);
+            float eased = Mathf.SmoothStep(0f, 1f, progress);
+            if (_towerDefenseAutoplayCanvasGroup != null)
+                _towerDefenseAutoplayCanvasGroup.alpha = Mathf.Lerp(startAlpha,
+                    0f, eased);
+            SetGameplayHudCrossfadeProgress(eased);
+            yield return null;
+        }
+
+        if (_towerDefenseAutoplayHudPhase !=
+            TowerDefenseAutoplayHudPhase.FadingOut) yield break;
+        _towerDefenseAutoplayEntrancePending = false;
+        if (_towerDefenseAutoplayEntranceText != null)
+            _towerDefenseAutoplayEntranceText.gameObject.SetActive(false);
+        if (_towerDefenseAutoplayCanvasGroup != null)
+            _towerDefenseAutoplayCanvasGroup.alpha = 0f;
+        CompleteGameplayHudAfterAutoplayCrossfade();
+        if (_towerDefenseAutoplayCanvas != null)
+            _towerDefenseAutoplayCanvas.gameObject.SetActive(false);
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.Hidden;
+        _towerDefenseAutoplayHudTransitionRoutine = null;
+    }
+
+    private void HideTowerDefenseAutoplayHudImmediately(bool clearSpeech)
+    {
+        StopTowerDefenseAutoplayHudTransition();
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.Hidden;
+        SetTowerDefenseAutoplayHudInteraction(false);
+        if (_towerDefenseAutoplayCanvasGroup != null)
+            _towerDefenseAutoplayCanvasGroup.alpha = 0f;
+        if (_towerDefenseAutoplayInterfaceGroup != null)
+            _towerDefenseAutoplayInterfaceGroup.alpha = 0f;
+        if (_towerDefenseAutoplayCanvas != null &&
+            _towerDefenseAutoplayCanvas.gameObject.activeSelf)
+            _towerDefenseAutoplayCanvas.gameObject.SetActive(false);
+        if (!_towerDefenseAutoplayEnabled && !_towerDefenseStartupActive)
+            CompleteGameplayHudAfterAutoplayCrossfade();
+        if (!clearSpeech) return;
+        _towerDefenseAutoplayEntrancePending = false;
+        if (_towerDefenseAutoplayEntranceText != null)
+            _towerDefenseAutoplayEntranceText.gameObject.SetActive(false);
+    }
+
+    private void StopTowerDefenseAutoplayHudTransition()
+    {
+        if (_towerDefenseAutoplayHudTransitionRoutine == null) return;
+        StopCoroutine(_towerDefenseAutoplayHudTransitionRoutine);
+        _towerDefenseAutoplayHudTransitionRoutine = null;
+    }
+
+    private void SetTowerDefenseAutoplayHudInteraction(bool interactive)
+    {
+        if (_towerDefenseAutoplayCanvasGroup == null) return;
+        _towerDefenseAutoplayCanvasGroup.interactable = interactive;
+        _towerDefenseAutoplayCanvasGroup.blocksRaycasts = interactive;
+    }
+
+    private void PrepareGameplayHudForAutoplayReleaseCrossfade()
+    {
+        if (_towerDefenseHudGroup == null) return;
+        _towerDefenseHudGroup.alpha = 0f;
+        _towerDefenseHudGroup.interactable = false;
+        _towerDefenseHudGroup.blocksRaycasts = false;
+    }
+
+    private void SetGameplayHudCrossfadeProgress(float progress)
+    {
+        if (_towerDefenseHudGroup == null) return;
+        _towerDefenseHudGroup.alpha = Mathf.Clamp01(progress);
+        _towerDefenseHudGroup.interactable = false;
+        _towerDefenseHudGroup.blocksRaycasts = false;
+    }
+
+    private void CompleteGameplayHudAfterAutoplayCrossfade()
+    {
+        if (_towerDefenseHudGroup == null) return;
+        _towerDefenseHudGroup.alpha = 1f;
+        _towerDefenseHudGroup.interactable = true;
+        _towerDefenseHudGroup.blocksRaycasts = true;
+    }
+
     private void BuildTowerDefenseAutoplayUi()
     {
         DisposeTowerDefenseAutoplayUi();
@@ -138,6 +373,10 @@ public partial class RougeGameManager
         _towerDefenseAutoplayCanvas = canvasObject.AddComponent<Canvas>();
         _towerDefenseAutoplayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
         _towerDefenseAutoplayCanvas.sortingOrder = 60;
+        _towerDefenseAutoplayCanvasGroup = canvasObject.AddComponent<CanvasGroup>();
+        _towerDefenseAutoplayCanvasGroup.alpha = 0f;
+        _towerDefenseAutoplayCanvasGroup.interactable = false;
+        _towerDefenseAutoplayCanvasGroup.blocksRaycasts = false;
         CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
         RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
         canvasObject.AddComponent<GraphicRaycaster>();
@@ -148,11 +387,29 @@ public partial class RougeGameManager
         StretchRect(_towerDefenseAutoplayHudRoot.GetComponent<RectTransform>(),
             0f, 0f, 0f, 0f);
 
-        BuildTowerDefenseAutoplayBasePanel(_towerDefenseAutoplayHudRoot.transform);
+        GameObject interfaceLayer = new GameObject(
+            "Autoplay Tactical Interface", typeof(RectTransform),
+            typeof(CanvasGroup));
+        interfaceLayer.transform.SetParent(_towerDefenseAutoplayHudRoot.transform, false);
+        StretchRect(interfaceLayer.GetComponent<RectTransform>(), 0f, 0f, 0f, 0f);
+        _towerDefenseAutoplayInterfaceGroup =
+            interfaceLayer.GetComponent<CanvasGroup>();
+        _towerDefenseAutoplayInterfaceGroup.alpha = 0f;
+        _towerDefenseAutoplayInterfaceGroup.interactable = false;
+        _towerDefenseAutoplayInterfaceGroup.blocksRaycasts = false;
+
+        BuildTowerDefenseAutoplayBasePanel(interfaceLayer.transform);
+        BuildTowerDefenseAutoplayThoughtPanel(interfaceLayer.transform);
         BuildTowerDefenseAutoplayPortrait(_towerDefenseAutoplayHudRoot.transform);
-        BuildTowerDefenseAutoplayThoughtPanel(_towerDefenseAutoplayHudRoot.transform);
+        // The companion is a foreground character, not another translucent HUD
+        // layer. Keep all decorative panels and rails behind the portrait.
+        if (_towerDefenseAutoplayPortrait != null)
+            _towerDefenseAutoplayPortrait.transform.SetAsLastSibling();
+        if (_towerDefenseAutoplayPortraitPulse != null)
+            _towerDefenseAutoplayPortraitPulse.transform.SetAsLastSibling();
 
         _towerDefenseAutoplayCanvas.gameObject.SetActive(false);
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.Hidden;
         _towerDefenseAutoplayRenderedEntranceRevision = -1;
         _towerDefenseAutoplayRenderedThoughtRevision = -1;
         _towerDefenseAutoplayIdentityRendered = false;
@@ -160,17 +417,23 @@ public partial class RougeGameManager
 
     private void BuildTowerDefenseAutoplayBasePanel(Transform parent)
     {
+        Sprite backdropGradient =
+            CreateTowerDefenseAutoplayBackdropGradientSprite();
         Image body = CreateUiImage("Autoplay Companion Backdrop", parent,
             new Color(0.005f, 0.30f, 0.42f, 0.56f));
+        body.sprite = backdropGradient;
+        body.type = Image.Type.Simple;
         RectTransform bodyRect = body.rectTransform;
         bodyRect.anchorMin = new Vector2(0f, 0f);
         bodyRect.anchorMax = new Vector2(0f, 0f);
         bodyRect.pivot = new Vector2(0f, 0f);
-        bodyRect.anchoredPosition = new Vector2(178f, 12f);
-        bodyRect.sizeDelta = new Vector2(584f, 266f);
+        bodyRect.anchoredPosition = new Vector2(154f, 12f);
+        bodyRect.sizeDelta = new Vector2(640f, 294f);
 
         Image topLine = CreateUiImage("Autoplay Companion Top Line", body.transform,
             new Color(0.12f, 0.84f, 1f, 0.62f));
+        topLine.sprite = backdropGradient;
+        topLine.type = Image.Type.Simple;
         RectTransform topLineRect = topLine.rectTransform;
         topLineRect.anchorMin = new Vector2(0f, 1f);
         topLineRect.anchorMax = new Vector2(1f, 1f);
@@ -186,6 +449,42 @@ public partial class RougeGameManager
         leftLineRect.pivot = new Vector2(0f, 0.5f);
         leftLineRect.anchoredPosition = Vector2.zero;
         leftLineRect.sizeDelta = new Vector2(2f, 0f);
+    }
+
+    private Sprite CreateTowerDefenseAutoplayBackdropGradientSprite()
+    {
+        if (_towerDefenseAutoplayBackdropGradientSprite != null)
+            return _towerDefenseAutoplayBackdropGradientSprite;
+
+        const int textureWidth = 64;
+        const float fadeStart = 0.85f;
+        Texture2D texture = new Texture2D(textureWidth, 1,
+            TextureFormat.RGBA32, false, true)
+        {
+            name = "Autoplay Backdrop Right Fade",
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp
+        };
+        Color32[] pixels = new Color32[textureWidth];
+        for (int x = 0; x < textureWidth; x++)
+        {
+            float normalized = x / (float)(textureWidth - 1);
+            float fade = Mathf.InverseLerp(fadeStart, 1f, normalized);
+            byte alpha = (byte)Mathf.RoundToInt(
+                (1f - Mathf.SmoothStep(0f, 1f, fade)) * 255f);
+            pixels[x] = new Color32(255, 255, 255, alpha);
+        }
+        texture.SetPixels32(pixels);
+        texture.Apply(false, true);
+
+        Sprite sprite = Sprite.Create(texture,
+            new Rect(0f, 0f, textureWidth, 1f),
+            new Vector2(0.5f, 0.5f), 100f, 0,
+            SpriteMeshType.FullRect);
+        sprite.name = "Autoplay Backdrop Right Fade";
+        _towerDefenseAutoplayBackdropGradientTexture = texture;
+        _towerDefenseAutoplayBackdropGradientSprite = sprite;
+        return sprite;
     }
 
     private void BuildTowerDefenseAutoplayPortrait(Transform parent)
@@ -322,7 +621,8 @@ public partial class RougeGameManager
                 emotionColor = new Color(1f, 0.18f, 0.52f, 1f);
                 break;
             default:
-                emotionColor = new Color(0.12f, 0.88f, 1f, 1f);
+                emotionColor = RemapCommanderInterfaceColor(
+                    new Color(0.12f, 0.88f, 1f, 1f));
                 break;
         }
         _towerDefenseAutoplayPortraitPulseColor = rapid
@@ -334,6 +634,8 @@ public partial class RougeGameManager
     private void RefreshTowerDefenseAutoplayPortraitSprite(bool force = false)
     {
         if (_towerDefenseAutoplayPortrait == null) return;
+        _towerDefenseAutoplayPortrait.color = Color.white;
+        _towerDefenseAutoplayPortrait.canvasRenderer.SetAlpha(1f);
         RougeAutoplayCommanderPortraitEmotion emotion =
             GetTowerDefenseAutoplayPortraitEmotion();
         float elapsed = Time.unscaledTime -
@@ -431,6 +733,8 @@ public partial class RougeGameManager
         if (_towerDefenseAutoplayPortrait != null)
         {
             _towerDefenseAutoplayPortrait.raycastTarget = true;
+            _towerDefenseAutoplayPortrait.color = Color.white;
+            _towerDefenseAutoplayPortrait.canvasRenderer.SetAlpha(1f);
             _towerDefenseAutoplayPortrait.rectTransform.localScale = Vector3.one;
         }
         if (_towerDefenseAutoplayPortraitButton != null)
@@ -446,6 +750,16 @@ public partial class RougeGameManager
 
     private void BuildTowerDefenseAutoplayThoughtPanel(Transform parent)
     {
+        GameObject summary = new GameObject(
+            "Autoplay Top Left Summary", typeof(RectTransform));
+        summary.transform.SetParent(parent, false);
+        RectTransform summaryRect = summary.GetComponent<RectTransform>();
+        summaryRect.anchorMin = new Vector2(0f, 1f);
+        summaryRect.anchorMax = new Vector2(0f, 1f);
+        summaryRect.pivot = new Vector2(0f, 1f);
+        summaryRect.anchoredPosition = new Vector2(24f, -24f);
+        summaryRect.sizeDelta = new Vector2(480f, 88f);
+
         GameObject panel = new GameObject(
             "Autoplay Thought Log", typeof(RectTransform));
         panel.transform.SetParent(parent, false);
@@ -453,10 +767,10 @@ public partial class RougeGameManager
         panelRect.anchorMin = new Vector2(0f, 0f);
         panelRect.anchorMax = new Vector2(0f, 0f);
         panelRect.pivot = new Vector2(0f, 0f);
-        panelRect.anchoredPosition = new Vector2(292f, 16f);
-        panelRect.sizeDelta = new Vector2(460f, 258f);
+        panelRect.anchoredPosition = new Vector2(270f, 16f);
+        panelRect.sizeDelta = new Vector2(500f, 286f);
 
-        Image headingLine = CreateUiImage("Autoplay Heading Line", panel.transform,
+        Image headingLine = CreateUiImage("Autoplay Heading Line", summary.transform,
             new Color(0.12f, 0.83f, 1f, 0.88f));
         RectTransform headingLineRect = headingLine.rectTransform;
         headingLineRect.anchorMin = new Vector2(0f, 1f);
@@ -465,7 +779,7 @@ public partial class RougeGameManager
         headingLineRect.anchoredPosition = Vector2.zero;
         headingLineRect.sizeDelta = new Vector2(188f, 2f);
 
-        Image headingTick = CreateUiImage("Autoplay Heading Tick", panel.transform,
+        Image headingTick = CreateUiImage("Autoplay Heading Tick", summary.transform,
             new Color(0.12f, 0.83f, 1f, 0.72f));
         RectTransform headingTickRect = headingTick.rectTransform;
         headingTickRect.anchorMin = new Vector2(0f, 1f);
@@ -475,7 +789,7 @@ public partial class RougeGameManager
         headingTickRect.sizeDelta = new Vector2(2f, 20f);
 
         _towerDefenseAutoplayRoleText = CreateUiText(
-            "Autoplay Character Identity", panel.transform,
+            "Autoplay Character Identity", summary.transform,
             27, TextAnchor.MiddleLeft);
         _towerDefenseAutoplayRoleText.supportRichText = true;
         StrengthenTowerDefenseAutoplayText(_towerDefenseAutoplayRoleText);
@@ -483,11 +797,18 @@ public partial class RougeGameManager
         roleRect.anchorMin = new Vector2(0f, 1f);
         roleRect.anchorMax = new Vector2(1f, 1f);
         roleRect.pivot = new Vector2(0.5f, 1f);
-        roleRect.anchoredPosition = new Vector2(12f, -3f);
-        roleRect.sizeDelta = new Vector2(-16f, 34f);
+        roleRect.offsetMin = new Vector2(12f, -37f);
+        roleRect.offsetMax = new Vector2(-8f, -3f);
+        _towerDefenseAutoplayRoleText.resizeTextForBestFit = true;
+        _towerDefenseAutoplayRoleText.resizeTextMinSize = 17;
+        _towerDefenseAutoplayRoleText.resizeTextMaxSize = 27;
+        _towerDefenseAutoplayRoleText.horizontalOverflow =
+            HorizontalWrapMode.Wrap;
+        _towerDefenseAutoplayRoleText.verticalOverflow =
+            VerticalWrapMode.Truncate;
 
         _towerDefenseAutoplayStatusText = CreateUiText(
-            "Autoplay Time Status", panel.transform,
+            "Autoplay Time Status", summary.transform,
             19, TextAnchor.MiddleLeft);
         _towerDefenseAutoplayStatusText.supportRichText = true;
         _towerDefenseAutoplayStatusText.color =
@@ -497,15 +818,22 @@ public partial class RougeGameManager
         statusRect.anchorMin = new Vector2(0f, 1f);
         statusRect.anchorMax = new Vector2(1f, 1f);
         statusRect.pivot = new Vector2(0.5f, 1f);
-        statusRect.anchoredPosition = new Vector2(12f, -34f);
-        statusRect.sizeDelta = new Vector2(-16f, 25f);
+        statusRect.offsetMin = new Vector2(12f, -86f);
+        statusRect.offsetMax = new Vector2(-8f, -34f);
+        _towerDefenseAutoplayStatusText.resizeTextForBestFit = true;
+        _towerDefenseAutoplayStatusText.resizeTextMinSize = 13;
+        _towerDefenseAutoplayStatusText.resizeTextMaxSize = 19;
+        _towerDefenseAutoplayStatusText.horizontalOverflow =
+            HorizontalWrapMode.Wrap;
+        _towerDefenseAutoplayStatusText.verticalOverflow =
+            VerticalWrapMode.Truncate;
 
         BuildTowerDefenseAutoplayHealthLine(panel.transform,
-            "Main Tower", -61f, new Color(0.16f, 0.90f, 1f, 1f),
+            "Main Tower", -4f, new Color(0.16f, 0.90f, 1f, 1f),
             out _towerDefenseAutoplayMainHealthText,
             out _towerDefenseAutoplayMainHealthFill);
         BuildTowerDefenseAutoplayHealthLine(panel.transform,
-            "Boss", -88f, new Color(1f, 0.24f, 0.72f, 1f),
+            "Boss", -32f, new Color(1f, 0.24f, 0.72f, 1f),
             out _towerDefenseAutoplayBossHealthText,
             out _towerDefenseAutoplayBossHealthFill);
 
@@ -519,10 +847,10 @@ public partial class RougeGameManager
         StrengthenTowerDefenseAutoplayText(_towerDefenseAutoplayThoughtTitle);
         RectTransform titleRect = _towerDefenseAutoplayThoughtTitle.rectTransform;
         titleRect.anchorMin = new Vector2(0f, 1f);
-        titleRect.anchorMax = new Vector2(1f, 1f);
-        titleRect.pivot = new Vector2(0.5f, 1f);
-        titleRect.anchoredPosition = new Vector2(12f, -164f);
-        titleRect.sizeDelta = new Vector2(-16f, 22f);
+        titleRect.anchorMax = new Vector2(0f, 1f);
+        titleRect.pivot = new Vector2(0f, 1f);
+        titleRect.anchoredPosition = new Vector2(12f, -144f);
+        titleRect.sizeDelta = new Vector2(48f, 24f);
 
         BuildTowerDefenseAutoplayHeartbeat(panel.transform);
 
@@ -535,12 +863,17 @@ public partial class RougeGameManager
         StrengthenTowerDefenseAutoplayText(_towerDefenseAutoplayEntranceText);
         _towerDefenseAutoplayEntranceText.horizontalOverflow =
             HorizontalWrapMode.Wrap;
+        _towerDefenseAutoplayEntranceText.verticalOverflow =
+            VerticalWrapMode.Truncate;
+        _towerDefenseAutoplayEntranceText.resizeTextForBestFit = true;
+        _towerDefenseAutoplayEntranceText.resizeTextMinSize = 16;
+        _towerDefenseAutoplayEntranceText.resizeTextMaxSize = 22;
         RectTransform entranceRect = _towerDefenseAutoplayEntranceText.rectTransform;
         entranceRect.anchorMin = new Vector2(0f, 1f);
         entranceRect.anchorMax = new Vector2(1f, 1f);
         entranceRect.pivot = new Vector2(0.5f, 1f);
-        entranceRect.anchoredPosition = new Vector2(12f, -116f);
-        entranceRect.sizeDelta = new Vector2(-16f, 38f);
+        entranceRect.offsetMin = new Vector2(12f, -132f);
+        entranceRect.offsetMax = new Vector2(-8f, -62f);
         _towerDefenseAutoplayEntranceText.gameObject.SetActive(false);
 
         Image logLine = CreateUiImage("Autoplay Log Divider", panel.transform,
@@ -549,7 +882,7 @@ public partial class RougeGameManager
         logLineRect.anchorMin = new Vector2(0f, 1f);
         logLineRect.anchorMax = new Vector2(1f, 1f);
         logLineRect.pivot = new Vector2(0.5f, 1f);
-        logLineRect.anchoredPosition = new Vector2(0f, -158f);
+        logLineRect.anchoredPosition = new Vector2(0f, -138f);
         logLineRect.sizeDelta = new Vector2(0f, 1f);
 
         GameObject scrollObject = new GameObject(
@@ -559,7 +892,7 @@ public partial class RougeGameManager
         scrollRect.anchorMin = Vector2.zero;
         scrollRect.anchorMax = Vector2.one;
         scrollRect.offsetMin = new Vector2(12f, 31f);
-        scrollRect.offsetMax = new Vector2(-8f, -188f);
+        scrollRect.offsetMax = new Vector2(-8f, -174f);
 
         GameObject viewportObject = new GameObject(
             "Viewport", typeof(RectTransform), typeof(RectMask2D));
@@ -604,12 +937,15 @@ public partial class RougeGameManager
         _towerDefenseAutoplayHintText.color =
             new Color(0.72f, 0.92f, 0.98f, 1f);
         StrengthenTowerDefenseAutoplayText(_towerDefenseAutoplayHintText);
+        _towerDefenseAutoplayHintText.resizeTextForBestFit = true;
+        _towerDefenseAutoplayHintText.resizeTextMinSize = 12;
+        _towerDefenseAutoplayHintText.resizeTextMaxSize = 16;
         RectTransform hintRect = _towerDefenseAutoplayHintText.rectTransform;
         hintRect.anchorMin = new Vector2(0f, 0f);
         hintRect.anchorMax = new Vector2(1f, 0f);
         hintRect.pivot = new Vector2(0.5f, 0f);
-        hintRect.anchoredPosition = new Vector2(12f, 1f);
-        hintRect.sizeDelta = new Vector2(-16f, 26f);
+        hintRect.offsetMin = new Vector2(12f, 1f);
+        hintRect.offsetMax = new Vector2(-8f, 27f);
     }
 
     private void BuildTowerDefenseAutoplayHeartbeat(Transform parent)
@@ -622,7 +958,7 @@ public partial class RougeGameManager
         _towerDefenseAutoplayHeartbeatRoot.anchorMax = new Vector2(0f, 1f);
         _towerDefenseAutoplayHeartbeatRoot.pivot = new Vector2(0f, 0.5f);
         _towerDefenseAutoplayHeartbeatRoot.anchoredPosition =
-            new Vector2(70f, -175f);
+            new Vector2(70f, -156f);
         _towerDefenseAutoplayHeartbeatRoot.sizeDelta = new Vector2(
             TowerDefenseAutoplayHeartbeatWidth,
             TowerDefenseAutoplayHeartbeatHeight);
@@ -734,7 +1070,8 @@ public partial class RougeGameManager
             Mathf.Max(0.0001f, sampleInterval));
         float amplitude = Mathf.Lerp(6.2f, 7.8f, tension);
         float stroke = Mathf.Lerp(1.35f, 1.8f, tension);
-        Color calm = new Color(0.2f, 0.86f, 1f, 0.76f);
+        Color calm = RemapCommanderInterfaceColor(
+            new Color(0.2f, 0.86f, 1f, 0.76f));
         Color urgent = new Color(1f, 0.3f, 0.08f, 0.95f);
         float colorHeat = Mathf.SmoothStep(0f, 1f,
             Mathf.InverseLerp(70f, 150f, beatsPerMinute));
@@ -796,13 +1133,18 @@ public partial class RougeGameManager
         rowRect.anchorMin = new Vector2(0f, 1f);
         rowRect.anchorMax = new Vector2(1f, 1f);
         rowRect.pivot = new Vector2(0.5f, 1f);
-        rowRect.anchoredPosition = new Vector2(12f, topOffset);
-        rowRect.sizeDelta = new Vector2(-16f, 27f);
+        rowRect.anchoredPosition = new Vector2(2f, topOffset);
+        rowRect.sizeDelta = new Vector2(-20f, 27f);
 
         valueText = CreateUiText("Value", row.transform, 18,
             TextAnchor.UpperLeft);
         valueText.color = Color.Lerp(accent, Color.white, 0.68f);
         StrengthenTowerDefenseAutoplayText(valueText);
+        valueText.resizeTextForBestFit = true;
+        valueText.resizeTextMinSize = 13;
+        valueText.resizeTextMaxSize = 18;
+        valueText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        valueText.verticalOverflow = VerticalWrapMode.Truncate;
         RectTransform valueRect = valueText.rectTransform;
         valueRect.anchorMin = new Vector2(0f, 1f);
         valueRect.anchorMax = new Vector2(1f, 1f);
@@ -911,17 +1253,23 @@ public partial class RougeGameManager
         int count = _towerDefenseAutoplayThoughtLog.Count;
         int first = Mathf.Max(0, count - TowerDefenseAutoplayVisibleThoughtLines);
         StringBuilder builder = new StringBuilder(768);
+        string latestColor = CommanderInterfaceColorHex(
+            new Color32(0x91, 0xF3, 0xFF, 0xFF));
+        string previousColor = CommanderInterfaceColorHex(
+            new Color32(0xD4, 0xE8, 0xF0, 0xFF));
         for (int i = first; i < count; i++)
         {
             if (builder.Length > 0) builder.Append('\n');
             bool latest = i == count - 1;
-            if (latest) builder.Append("<color=#91F3FF>› ");
-            else builder.Append("<color=#D4E8F0>· ");
+            builder.Append("<color=#")
+                .Append(latest ? latestColor : previousColor)
+                .Append(latest ? ">› " : ">· ");
             builder.Append(_towerDefenseAutoplayThoughtLog[i]);
             builder.Append("</color>");
         }
         if (builder.Length == 0)
-            builder.Append("<color=#D4E8F0>· 正在读取地图与塔位……</color>");
+            builder.Append("<color=#").Append(previousColor)
+                .Append(">· 正在读取地图与塔位……</color>");
 
         _towerDefenseAutoplayThoughtText.text = builder.ToString();
         _towerDefenseAutoplayRenderedThoughtRevision =
@@ -955,6 +1303,12 @@ public partial class RougeGameManager
         SetTowerDefenseAutoplayEnabled(true);
         if (!_tiltShiftObservationActive)
             SetCameraViewMode(CameraViewMode.TiltShift);
+        // F6 is a command handoff, not a camera-mode shortcut. This intentionally
+        // replaces the generic tilt-shift toast emitted by SetCameraViewMode in the
+        // same frame, so the top banner describes the player-facing action.
+        RougeCameraModeToast.Show(
+            TowerDefenseAutoplayCharacterName + " // AI 接管 · 战术托管已连接",
+            ActiveCommanderVisualTheme.Accent);
         return true;
     }
 
@@ -972,7 +1326,7 @@ public partial class RougeGameManager
         {
             RougeCameraModeToast.Show(
                 TowerDefenseAutoplayCharacterName + " // 战术 HUD 已恢复",
-                new Color(0.18f, 0.88f, 1f, 1f));
+                ActiveCommanderVisualTheme.Accent);
         }
         return true;
     }
@@ -996,6 +1350,7 @@ public partial class RougeGameManager
 
     private void ResetTowerDefenseAutoplaySession()
     {
+        HideTowerDefenseAutoplayHudImmediately(true);
         LoadTowerDefenseAutoplayProgression();
         _towerDefenseAutoplayEnabled = false;
         _towerDefenseAutoplayCleanView = false;
@@ -1027,15 +1382,25 @@ public partial class RougeGameManager
         }
         else
             SetAutoplayCleanView(false);
+        HideTowerDefenseAutoplayHudImmediately(true);
     }
 
     private void DisposeTowerDefenseAutoplayUi()
     {
+        StopTowerDefenseAutoplayHudTransition();
         if (_towerDefenseAutoplayPortraitButton != null)
             _towerDefenseAutoplayPortraitButton.onClick.RemoveAllListeners();
         if (_towerDefenseAutoplayCanvas != null)
             Destroy(_towerDefenseAutoplayCanvas.gameObject);
+        if (_towerDefenseAutoplayBackdropGradientSprite != null)
+            Destroy(_towerDefenseAutoplayBackdropGradientSprite);
+        if (_towerDefenseAutoplayBackdropGradientTexture != null)
+            Destroy(_towerDefenseAutoplayBackdropGradientTexture);
         _towerDefenseAutoplayCanvas = null;
+        _towerDefenseAutoplayCanvasGroup = null;
+        _towerDefenseAutoplayInterfaceGroup = null;
+        _towerDefenseAutoplayHudTransitionRoutine = null;
+        _towerDefenseAutoplayHudPhase = TowerDefenseAutoplayHudPhase.Hidden;
         _towerDefenseAutoplayHudRoot = null;
         _towerDefenseAutoplayPortrait = null;
         _towerDefenseAutoplayPortraitPulse = null;
@@ -1050,6 +1415,8 @@ public partial class RougeGameManager
         _towerDefenseAutoplayBossHealthText = null;
         _towerDefenseAutoplayMainHealthFill = null;
         _towerDefenseAutoplayBossHealthFill = null;
+        _towerDefenseAutoplayBackdropGradientSprite = null;
+        _towerDefenseAutoplayBackdropGradientTexture = null;
         _towerDefenseAutoplayHeartbeatRoot = null;
         _towerDefenseAutoplayHeartbeatSegments = null;
         _towerDefenseAutoplayHeartbeatTrace = null;

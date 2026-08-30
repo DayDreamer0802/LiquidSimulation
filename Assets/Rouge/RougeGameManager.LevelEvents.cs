@@ -15,7 +15,7 @@ public partial class RougeGameManager
         new List<RougeLevelEventTrigger>();
     private readonly List<ActiveTowerDefenseLevelEvent> _towerDefenseActiveLevelEvents =
         new List<ActiveTowerDefenseLevelEvent>();
-    private System.Random _towerDefenseLevelEventRandom;
+    private TowerDefenseRandomStream _towerDefenseLevelEventRandom;
     private int _towerDefenseNextLevelEventIndex;
     private bool _towerDefenseHasPreviousLevelEventTone;
     private RougeLevelEventTone _towerDefensePreviousLevelEventTone;
@@ -37,11 +37,14 @@ public partial class RougeGameManager
     private Image _towerDefenseLevelEventBannerAccent;
     private Text _towerDefenseLevelEventBannerTitle;
     private Text _towerDefenseLevelEventBannerDescription;
+    private RectTransform _towerDefenseLevelEventBannerRect;
     private float _towerDefenseLevelEventBannerRemaining;
+    private float _towerDefenseLevelEventBannerElapsed;
     private CanvasGroup _towerDefenseBossWarningGroup;
     private Text _towerDefenseBossWarningTitle;
     private Text _towerDefenseBossWarningDetail;
     private float _towerDefenseBossWarningRemaining;
+    private float _towerDefenseBossWarningElapsed;
 
     private void InitializeTowerDefenseLevelEvents()
     {
@@ -50,9 +53,8 @@ public partial class RougeGameManager
         _towerDefenseNextLevelEventIndex = 0;
         _towerDefenseHasPreviousLevelEventTone = false;
         _towerDefenseLevelEventGoldFraction = 0f;
-        _towerDefenseLevelEventRandom = new System.Random(
-            unchecked(TowerDefenseFixedRandomSeed ^ 0x51E7A11 ^
-                      Environment.TickCount ^ GetInstanceID() * 7919));
+        _towerDefenseLevelEventRandom =
+            CreateTowerDefenseRandomStream(0x51E7A11u);
 
         IReadOnlyList<RougeLevelEventTrigger> configuredTimeline =
             _towerDefenseLevel != null ? _towerDefenseLevel.LevelEventTimeline : null;
@@ -87,7 +89,7 @@ public partial class RougeGameManager
     {
         _towerDefenseLevelEventTimeline.Clear();
         _towerDefenseActiveLevelEvents.Clear();
-        _towerDefenseLevelEventRandom = null;
+        _towerDefenseLevelEventRandom = default;
         if (_towerDefenseLevelEventCanvas != null)
             Destroy(_towerDefenseLevelEventCanvas.gameObject);
         _towerDefenseLevelEventCanvas = null;
@@ -95,16 +97,18 @@ public partial class RougeGameManager
         _towerDefenseLevelEventBannerAccent = null;
         _towerDefenseLevelEventBannerTitle = null;
         _towerDefenseLevelEventBannerDescription = null;
+        _towerDefenseLevelEventBannerRect = null;
         _towerDefenseBossWarningGroup = null;
         _towerDefenseBossWarningTitle = null;
         _towerDefenseBossWarningDetail = null;
         _towerDefenseLevelEventBannerRemaining = 0f;
+        _towerDefenseLevelEventBannerElapsed = 0f;
         _towerDefenseBossWarningRemaining = 0f;
+        _towerDefenseBossWarningElapsed = 0f;
     }
 
     private void UpdateTowerDefenseLevelEvents()
     {
-        UpdateTowerDefenseLevelEventUi(Time.unscaledDeltaTime);
         bool modifiersChanged = false;
         for (int i = _towerDefenseActiveLevelEvents.Count - 1; i >= 0; i--)
         {
@@ -141,9 +145,8 @@ public partial class RougeGameManager
     {
         if (trigger?.candidateEventIds == null ||
             trigger.candidateEventIds.Count == 0) return null;
-        int start = _towerDefenseLevelEventRandom != null
-            ? _towerDefenseLevelEventRandom.Next(trigger.candidateEventIds.Count)
-            : 0;
+        int start = _towerDefenseLevelEventRandom.Range(
+            0, trigger.candidateEventIds.Count);
         RougeLevelEventDefinition fallback = null;
         for (int offset = 0; offset < trigger.candidateEventIds.Count; offset++)
         {
@@ -363,13 +366,16 @@ public partial class RougeGameManager
         RougeTowerDefenseUiLayout.ConfigureCanvasScaler(scaler);
 
         Image banner = CreateUiImage("Level Event Banner", canvasObject.transform,
-            new Color(0.006f, 0.035f, 0.06f, 0.94f));
+            new Color(0.006f, 0.035f, 0.06f, 0.56f));
         RectTransform bannerRect = banner.rectTransform;
+        _towerDefenseLevelEventBannerRect = bannerRect;
         bannerRect.anchorMin = new Vector2(0.5f, 1f);
         bannerRect.anchorMax = new Vector2(0.5f, 1f);
         bannerRect.pivot = new Vector2(0.5f, 1f);
         bannerRect.anchoredPosition = new Vector2(0f, -148f);
-        bannerRect.sizeDelta = new Vector2(650f, 92f);
+        bannerRect.sizeDelta = new Vector2(720f, 98f);
+        AddHudPanelChrome(banner.gameObject,
+            RemapCommanderInterfaceColor(new Color(0.1f, 0.82f, 1f, 1f)));
         _towerDefenseLevelEventBannerGroup = banner.gameObject.AddComponent<CanvasGroup>();
         _towerDefenseLevelEventBannerGroup.alpha = 0f;
         _towerDefenseLevelEventBannerGroup.blocksRaycasts = false;
@@ -379,7 +385,7 @@ public partial class RougeGameManager
         accentRect.anchorMin = new Vector2(0f, 0f);
         accentRect.anchorMax = new Vector2(0f, 1f);
         accentRect.pivot = new Vector2(0f, 0.5f);
-        accentRect.sizeDelta = new Vector2(6f, 0f);
+        accentRect.sizeDelta = new Vector2(3f, 0f);
         _towerDefenseLevelEventBannerTitle = CreateUiText("Title", banner.transform,
             25, TextAnchor.MiddleLeft);
         _towerDefenseLevelEventBannerTitle.fontStyle = FontStyle.Bold;
@@ -395,13 +401,15 @@ public partial class RougeGameManager
             22f, 43f, 16f, 8f);
 
         Image warning = CreateUiImage("Boss Warning", canvasObject.transform,
-            new Color(0.24f, 0f, 0.015f, 0.38f));
+            new Color(0.24f, 0f, 0.015f, 0.035f));
         StretchRect(warning.rectTransform, 0f, 0f, 0f, 0f);
+        CreateBossWarningRail(warning.transform, 0.60f);
+        CreateBossWarningRail(warning.transform, 0.40f);
         _towerDefenseBossWarningGroup = warning.gameObject.AddComponent<CanvasGroup>();
         _towerDefenseBossWarningGroup.alpha = 0f;
         _towerDefenseBossWarningGroup.blocksRaycasts = false;
         _towerDefenseBossWarningTitle = CreateUiText("Warning", warning.transform,
-            68, TextAnchor.MiddleCenter);
+            54, TextAnchor.MiddleCenter);
         _towerDefenseBossWarningTitle.text = "WARNING";
         _towerDefenseBossWarningTitle.fontStyle = FontStyle.Bold;
         _towerDefenseBossWarningTitle.color = new Color(1f, 0.12f, 0.08f, 1f);
@@ -412,7 +420,7 @@ public partial class RougeGameManager
         warningTitleRect.anchoredPosition = new Vector2(0f, 26f);
         warningTitleRect.sizeDelta = new Vector2(-80f, 92f);
         _towerDefenseBossWarningDetail = CreateUiText("Warning Detail",
-            warning.transform, 25, TextAnchor.MiddleCenter);
+            warning.transform, 21, TextAnchor.MiddleCenter);
         RectTransform detailRect = _towerDefenseBossWarningDetail.rectTransform;
         detailRect.anchorMin = new Vector2(0f, 0.5f);
         detailRect.anchorMax = new Vector2(1f, 0.5f);
@@ -451,10 +459,11 @@ public partial class RougeGameManager
                 definition.description + duration;
         }
         _towerDefenseLevelEventBannerRemaining = 4.2f;
-        _towerDefenseLevelEventBannerGroup.alpha = 1f;
+        _towerDefenseLevelEventBannerElapsed = 0f;
+        _towerDefenseLevelEventBannerGroup.alpha = 0f;
     }
 
-    private static Color GetTowerDefenseLevelEventToneColor(
+    private Color GetTowerDefenseLevelEventToneColor(
         RougeLevelEventTone tone)
     {
         switch (tone)
@@ -466,7 +475,8 @@ public partial class RougeGameManager
             case RougeLevelEventTone.Mixed:
                 return new Color(1f, 0.68f, 0.12f, 1f);
             default:
-                return new Color(0.1f, 0.82f, 1f, 1f);
+                return RemapCommanderInterfaceColor(
+                    new Color(0.1f, 0.82f, 1f, 1f));
         }
     }
 
@@ -474,7 +484,8 @@ public partial class RougeGameManager
     {
         if (_towerDefenseBossWarningGroup == null) return;
         _towerDefenseBossWarningRemaining = 1.35f;
-        _towerDefenseBossWarningGroup.alpha = 1f;
+        _towerDefenseBossWarningElapsed = 0f;
+        _towerDefenseBossWarningGroup.alpha = 0f;
         if (_towerDefenseBossWarningDetail != null)
             _towerDefenseBossWarningDetail.text =
                 $"检测到 {bossName} 高速接近 · 冲击区域即将形成";
@@ -484,23 +495,48 @@ public partial class RougeGameManager
     {
         if (_towerDefenseLevelEventBannerGroup != null)
         {
+            _towerDefenseLevelEventBannerElapsed += Mathf.Max(0f, unscaledDt);
             _towerDefenseLevelEventBannerRemaining = Mathf.Max(0f,
                 _towerDefenseLevelEventBannerRemaining - Mathf.Max(0f, unscaledDt));
-            float alpha = Mathf.Clamp01(
+            float fadeIn = Mathf.Clamp01(
+                _towerDefenseLevelEventBannerElapsed / 0.20f);
+            fadeIn = 1f - (1f - fadeIn) * (1f - fadeIn);
+            float fadeOut = Mathf.Clamp01(
                 _towerDefenseLevelEventBannerRemaining / 0.45f);
+            float alpha = Mathf.Min(fadeIn, fadeOut);
             _towerDefenseLevelEventBannerGroup.alpha = alpha;
+            if (_towerDefenseLevelEventBannerRect != null)
+            {
+                Vector2 position = _towerDefenseLevelEventBannerRect.anchoredPosition;
+                position.y = Mathf.Lerp(-128f, -148f, fadeIn);
+                _towerDefenseLevelEventBannerRect.anchoredPosition = position;
+            }
         }
         if (_towerDefenseBossWarningGroup != null)
         {
+            _towerDefenseBossWarningElapsed += Mathf.Max(0f, unscaledDt);
             _towerDefenseBossWarningRemaining = Mathf.Max(0f,
                 _towerDefenseBossWarningRemaining - Mathf.Max(0f, unscaledDt));
+            float fadeIn = Mathf.Clamp01(_towerDefenseBossWarningElapsed / 0.12f);
             float fade = Mathf.Clamp01(_towerDefenseBossWarningRemaining / 0.22f);
             float pulse = 0.62f +
                 Mathf.Sin(Time.unscaledTime * 16f) * 0.18f;
-            _towerDefenseBossWarningGroup.alpha = fade * pulse;
+            _towerDefenseBossWarningGroup.alpha = fadeIn * fade * pulse;
             if (_towerDefenseBossWarningTitle != null)
                 _towerDefenseBossWarningTitle.rectTransform.localScale =
                     Vector3.one * (1f + Mathf.Sin(Time.unscaledTime * 14f) * 0.025f);
         }
+    }
+
+    private static void CreateBossWarningRail(Transform parent, float anchorY)
+    {
+        Image rail = CreateUiImage("Warning Rail", parent,
+            new Color(1f, 0.12f, 0.08f, 0.72f));
+        RectTransform rect = rail.rectTransform;
+        rect.anchorMin = new Vector2(0.14f, anchorY);
+        rect.anchorMax = new Vector2(0.86f, anchorY);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(0f, 1.5f);
     }
 }

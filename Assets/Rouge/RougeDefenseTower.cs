@@ -289,6 +289,38 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         (towerType == RougeTowerType.Ice || towerType == RougeTowerType.MachineGun ||
          towerType == RougeTowerType.Cannon || towerType == RougeTowerType.Flame ||
          towerType == RougeTowerType.Laser);
+    public int SpecializationBranchIndex
+    {
+        get
+        {
+            switch (towerType)
+            {
+                case RougeTowerType.Ice: return (int)iceBranch;
+                case RougeTowerType.MachineGun: return (int)machineGunBranch;
+                case RougeTowerType.Cannon: return (int)cannonBranch;
+                case RougeTowerType.Flame: return (int)flameBranch;
+                case RougeTowerType.Laser: return (int)laserBranch;
+                default: return 0;
+            }
+        }
+    }
+    public int SpecializationAugmentChoiceIndex
+    {
+        get
+        {
+            int raw;
+            switch (towerType)
+            {
+                case RougeTowerType.Ice: raw = (int)iceAugment; break;
+                case RougeTowerType.MachineGun: raw = (int)machineGunAugment; break;
+                case RougeTowerType.Cannon: raw = (int)cannonAugment; break;
+                case RougeTowerType.Flame: raw = (int)flameAugment; break;
+                case RougeTowerType.Laser: raw = (int)laserAugment; break;
+                default: return -1;
+            }
+            return raw > 0 ? (raw - 1) % 2 : -1;
+        }
+    }
     public bool NeedsMachineGunBranchChoice => towerType == RougeTowerType.MachineGun &&
                                                machineGunBranch == RougeMachineGunBranch.None;
     public bool UsesMachineGunCritical => towerType == RougeTowerType.MachineGun &&
@@ -394,8 +426,10 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public RougeTowerPlaceEffect TowerPlaceEffect =>
         RougeTowerPlaceEffectRules.NormalizeLegacy(towerPlaceEffect);
     public bool IsOnFrostTile => TowerPlaceEffect == RougeTowerPlaceEffect.Frost;
+    public bool DoublesContinuousFlameFromEcho => UsesFlamethrower &&
+        towerPlaceEffect == RougeTowerPlaceEffect.Echo;
     public bool RepeatsAttackFromEcho => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
-        !UsesEchoBarrageMultiplier;
+        !UsesEchoBarrageMultiplier && !DoublesContinuousFlameFromEcho;
     public bool AllowsSellRefund => RougeTowerPlaceEffectRules.AllowsSellRefund(towerPlaceEffect);
     public int KillGoldPercentBonus =>
         RougeTowerPlaceEffectRules.GetKillGoldPercentBonus(towerPlaceEffect);
@@ -1144,12 +1178,20 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
             flamethrowerPresentationTimer - Mathf.Max(0f, dt));
         if (!UsesRotatingFlamethrower) return;
         float speed = TowerDefenseVisuals.GetFlameSpecializationConfig()
-            .rotatingDegreesPerSecond;
+            .rotatingDegreesPerSecond * AttackSpeedMultiplier;
         flamethrowerRotationDegrees = Mathf.Repeat(
             flamethrowerRotationDegrees + Mathf.Max(0f, dt) * speed, 360f);
-        float radians = flamethrowerRotationDegrees * Mathf.Deg2Rad;
-        AimAt(transform.position + new Vector3(Mathf.Sin(radians), 0f,
-            Mathf.Cos(radians)));
+        AimAt(transform.position + GetRotatingFlamethrowerDirection());
+    }
+
+    internal Vector3 GetRotatingFlamethrowerDirection(
+        float additionalDegrees = 0f)
+    {
+        float radians = (flamethrowerRotationDegrees + additionalDegrees) *
+            Mathf.Deg2Rad;
+        // Keep the authored +Z starting pose while matching the crystal tower's
+        // positive-angle rotation handedness.
+        return new Vector3(-Mathf.Sin(radians), 0f, Mathf.Cos(radians));
     }
 
     internal Vector3 GetCrystalLaserOrigin()

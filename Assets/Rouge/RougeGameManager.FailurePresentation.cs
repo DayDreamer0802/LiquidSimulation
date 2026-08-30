@@ -243,6 +243,8 @@ public partial class RougeGameManager
         scoreRect.pivot = new Vector2(0.5f, 0.5f);
         scoreRect.anchoredPosition = new Vector2(0f, -42f);
         scoreRect.sizeDelta = new Vector2(940f, 390f);
+
+        ApplyActiveCommanderUiTheme(canvasObject);
     }
 
     private IEnumerator PlayTowerDefenseFailureSequence()
@@ -337,7 +339,8 @@ public partial class RougeGameManager
         _towerDefenseFailureDialogueText.text = BuildCorruptedFailureDialogue(
             TowerDefenseFailureDialogue, corruption, seed);
         _towerDefenseFailureDialogueText.color = Color.Lerp(
-            new Color(0.82f, 0.97f, 1f, 1f),
+            RemapCommanderInterfaceColor(
+                new Color(0.82f, 0.97f, 1f, 1f)),
             new Color(1f, 0.18f, 0.07f, Mathf.Clamp01(1.35f - corruption)),
             corruption);
         RectTransform rect = _towerDefenseFailureDialogueText.rectTransform;
@@ -524,26 +527,25 @@ public partial class RougeGameManager
             ? Mathf.Max(0f, _towerDefenseScoreBossMaximumHealth -
                          _towerDefenseScoreBossLowestHealth)
             : 0f;
-        int killPoints = Mathf.Max(0, totalKills) * 10;
-        int damagePoints = Mathf.Max(0,
-            Mathf.FloorToInt((float)(totalDamage / 100d)));
-        int goldPoints = Mathf.Max(0, _towerDefenseGold / 5);
-        int spendingPoints = Mathf.Max(0, _towerDefenseGoldSpentTotal / 10);
-        int survivalPoints = Mathf.Max(0, Mathf.FloorToInt(_survivalTime * 5f));
-        int bossPoints = Mathf.Max(0, Mathf.FloorToInt(bossDamage / 50f));
-        long score = (long)killPoints + damagePoints + goldPoints +
-                     spendingPoints + survivalPoints + bossPoints;
+        float healthRatio = mainTower != null ? mainTower.HealthNormalized : 0f;
+        RougeTowerDefenseMap.ScoringRules scoreRules =
+            GetActiveTowerDefenseScoringRules();
+        long killPoints = scoreRules.GetKillPoints(totalKills);
+        long damagePoints = scoreRules.GetDamagePoints(totalDamage);
+        long healthPoints = scoreRules.GetMainTowerHealthPoints(healthRatio);
+        long goldPoints = scoreRules.GetRemainingGoldPoints(_towerDefenseGold);
+        long score = killPoints + damagePoints + healthPoints + goldPoints;
 
         string bossLine = _towerDefenseScoreBossEngaged
-            ? $"首领伤害  {bossDamage:0} / {_towerDefenseScoreBossMaximumHealth:0}  +{bossPoints:N0}"
-            : "首领交战  尚未接触  +0";
+            ? $"首领伤害  {bossDamage:0} / {_towerDefenseScoreBossMaximumHealth:0}（已计入总伤害）"
+            : "首领交战  尚未接触";
         _towerDefenseFailureScoreText =
             $"<b>作战评分  {score:N0}</b>\n\n" +
             $"击杀  {totalKills:N0}  +{killPoints:N0}\n" +
             $"总伤害  {totalDamage:N0}  +{damagePoints:N0}\n" +
+            $"主塔完整度  {healthRatio * 100f:0.0}%  +{healthPoints:N0}\n" +
             $"剩余金币  {_towerDefenseGold:N0}  +{goldPoints:N0}\n" +
-            $"累计消耗  {_towerDefenseGoldSpentTotal:N0}  +{spendingPoints:N0}\n" +
-            $"存活时间  {FormatGameTime(_survivalTime)}  +{survivalPoints:N0}\n" +
+            $"作战用时  {FormatGameTime(_survivalTime)}\n" +
             $"{bossLine}\n\n" +
             "<color=#9AC9D8>按 R 重新开始</color>";
     }
