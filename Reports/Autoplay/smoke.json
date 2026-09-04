@@ -1,0 +1,317 @@
+{
+    "unityVersion": "6000.0.54f1",
+    "platform": "WindowsEditor",
+    "processor": "AMD Ryzen 7 5700X 8-Core Processor ",
+    "graphics": "Intel(R) Arc(TM) A770 Graphics",
+    "scene": "Assets/Rouge/New Scene.unity",
+    "timingMode": "Silent fast benchmark: minimum quality, 320x180, camera culling disabled, uncapped FPS, startup reveal disabled; fixed 0.05 s simulation step and next-frame plan completion. CPU p95 includes completion stalls; latency includes worker time. Objective uses lan strategy/talent with final personality ranking disabled. Frame timing excludes normal scene rendering and is not standalone player frame timing.",
+    "stepSeconds": 0.05000000074505806,
+    "acceptableWinRateDrop": 0.05000000074505806,
+    "minimumStyleDistance": 0.05000000074505806,
+    "runsPerMode": 1,
+    "firstSeed": 1337,
+    "sufficientSample": false,
+    "accepted": false,
+    "commanderStyleDistance": 0.1101837083697319,
+    "summaries": [
+        {
+            "mode": "Objective",
+            "runs": 1,
+            "wins": 0,
+            "timeouts": 0,
+            "shieldInterventions": 0,
+            "gateViolations": 0,
+            "winRate": 0.0,
+            "avgCoreHP": 50.0,
+            "goldWaste": 4263.0,
+            "styleDivergence": 0.0,
+            "meanDecisionP95Ms": 24.7547,
+            "meanAnalysisLatencyP95Ms": 37.5115,
+            "meanFrameP95Ms": 20.02650000000017,
+            "actions": [
+                0,
+                1031,
+                76,
+                53,
+                0,
+                0
+            ],
+            "buildTypes": [
+                1,
+                29,
+                42,
+                1,
+                1,
+                1,
+                0,
+                1
+            ],
+            "upgradeTypes": [
+                0,
+                17,
+                33,
+                1,
+                1,
+                0,
+                0,
+                1
+            ],
+            "expansionBands": [
+                20,
+                45,
+                11
+            ]
+        },
+        {
+            "mode": "lan",
+            "runs": 1,
+            "wins": 0,
+            "timeouts": 0,
+            "shieldInterventions": 33,
+            "gateViolations": 0,
+            "winRate": 0.0,
+            "avgCoreHP": 0.0,
+            "goldWaste": 7271.0,
+            "styleDivergence": 0.017948717948717949,
+            "meanDecisionP95Ms": 22.6802,
+            "meanAnalysisLatencyP95Ms": 33.4563,
+            "meanFrameP95Ms": 18.317899999999559,
+            "actions": [
+                0,
+                1065,
+                56,
+                48,
+                1,
+                0
+            ],
+            "buildTypes": [
+                0,
+                17,
+                36,
+                2,
+                1,
+                0,
+                0,
+                0
+            ],
+            "upgradeTypes": [
+                0,
+                15,
+                30,
+                2,
+                1,
+                0,
+                0,
+                0
+            ],
+            "expansionBands": [
+                20,
+                33,
+                3
+            ]
+        },
+        {
+            "mode": "taotao",
+            "runs": 1,
+            "wins": 0,
+            "timeouts": 0,
+            "shieldInterventions": 18,
+            "gateViolations": 0,
+            "winRate": 0.0,
+            "avgCoreHP": 32.0,
+            "goldWaste": 2442.0,
+            "styleDivergence": 0.0137221269296741,
+            "meanDecisionP95Ms": 23.390800000000004,
+            "meanAnalysisLatencyP95Ms": 34.8691,
+            "meanFrameP95Ms": 18.92869999994673,
+            "actions": [
+                0,
+                1047,
+                66,
+                53,
+                0,
+                0
+            ],
+            "buildTypes": [
+                1,
+                31,
+                30,
+                2,
+                0,
+                0,
+                0,
+                2
+            ],
+            "upgradeTypes": [
+                1,
+                17,
+                32,
+                1,
+                0,
+                0,
+                0,
+                2
+            ],
+            "expansionBands": [
+                20,
+                40,
+                6
+            ]
+        }
+    ],
+    "results": [
+        {
+            "mode": "Objective",
+            "seed": 1337,
+            "win": false,
+            "timedOut": false,
+            "coreHP": 50.0,
+            "goldWaste": 4263.0,
+            "gameSeconds": 1065.433837890625,
+            "decisions": 1160,
+            "styleDivergences": 0,
+            "shieldInterventions": 0,
+            "gateViolations": 0,
+            "fullAnalyses": 2123,
+            "maxSpatialCandidates": 296,
+            "decisionP95Ms": 24.7547,
+            "analysisLatencyP95Ms": 37.5115,
+            "frameP95Ms": 20.02650000000017,
+            "actions": [
+                0,
+                1031,
+                76,
+                53,
+                0,
+                0
+            ],
+            "buildTypes": [
+                1,
+                29,
+                42,
+                1,
+                1,
+                1,
+                0,
+                1
+            ],
+            "upgradeTypes": [
+                0,
+                17,
+                33,
+                1,
+                1,
+                0,
+                0,
+                1
+            ],
+            "expansionBands": [
+                20,
+                45,
+                11
+            ]
+        },
+        {
+            "mode": "lan",
+            "seed": 1337,
+            "win": false,
+            "timedOut": false,
+            "coreHP": 0.0,
+            "goldWaste": 7271.0,
+            "gameSeconds": 1053.3720703125,
+            "decisions": 1170,
+            "styleDivergences": 21,
+            "shieldInterventions": 33,
+            "gateViolations": 0,
+            "fullAnalyses": 2066,
+            "maxSpatialCandidates": 302,
+            "decisionP95Ms": 22.6802,
+            "analysisLatencyP95Ms": 33.4563,
+            "frameP95Ms": 18.317899999999559,
+            "actions": [
+                0,
+                1065,
+                56,
+                48,
+                1,
+                0
+            ],
+            "buildTypes": [
+                0,
+                17,
+                36,
+                2,
+                1,
+                0,
+                0,
+                0
+            ],
+            "upgradeTypes": [
+                0,
+                15,
+                30,
+                2,
+                1,
+                0,
+                0,
+                0
+            ],
+            "expansionBands": [
+                20,
+                33,
+                3
+            ]
+        },
+        {
+            "mode": "taotao",
+            "seed": 1337,
+            "win": false,
+            "timedOut": false,
+            "coreHP": 32.0,
+            "goldWaste": 2442.0,
+            "gameSeconds": 1071.739990234375,
+            "decisions": 1166,
+            "styleDivergences": 16,
+            "shieldInterventions": 18,
+            "gateViolations": 0,
+            "fullAnalyses": 2058,
+            "maxSpatialCandidates": 300,
+            "decisionP95Ms": 23.390800000000004,
+            "analysisLatencyP95Ms": 34.8691,
+            "frameP95Ms": 18.92869999994673,
+            "actions": [
+                0,
+                1047,
+                66,
+                53,
+                0,
+                0
+            ],
+            "buildTypes": [
+                1,
+                31,
+                30,
+                2,
+                0,
+                0,
+                0,
+                2
+            ],
+            "upgradeTypes": [
+                1,
+                17,
+                32,
+                1,
+                0,
+                0,
+                0,
+                2
+            ],
+            "expansionBands": [
+                20,
+                40,
+                6
+            ]
+        }
+    ]
+}

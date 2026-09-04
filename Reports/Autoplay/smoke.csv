@@ -1,0 +1,4 @@
+Mode,Seed,Win,CoreHP,GoldWaste,GameSeconds,TimedOut,StyleDivergence,ShieldInterventions,GateViolations,DecisionP95Ms,AnalysisLatencyP95Ms,FrameP95Ms,FullAnalyses,MaxSpatialCandidates
+Objective,1337,False,50,4263,1065.434,False,0,0,0,24.7547,37.5115,20.0265000000002,2123,296
+lan,1337,False,0,7271,1053.372,False,0.0179487179487179,33,0,22.6802,33.4563,18.3178999999996,2066,302
+taotao,1337,False,32,2442,1071.74,False,0.0137221269296741,18,0,23.3908,34.8691,18.9286999999467,2058,300
