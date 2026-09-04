@@ -82,6 +82,22 @@ public enum RougeLaserTowerAugment
     [InspectorName("B2 - 折射攻击")] RefractionAttack = 4
 }
 
+public enum RougePiercingLaserBranch
+{
+    None = 0,
+    [InspectorName("A - 推进扫掠")] Sweep = 1,
+    [InspectorName("B - 持续激光")] Continuous = 2
+}
+
+public enum RougePiercingLaserAugment
+{
+    None = 0,
+    [InspectorName("A1 - 散射扫掠")] ScatterSweep = 1,
+    [InspectorName("A2 - 连续扫掠")] RapidSweep = 2,
+    [InspectorName("B1 - 超载持续激光")] LargeContinuous = 3,
+    [InspectorName("B2 - 十字激光")] CrossContinuous = 4
+}
+
 public enum RougeCannonBranch
 {
     None = 0,
@@ -352,6 +368,21 @@ internal static class TowerDefenseVisuals
         {
             config = new RougeLaserTowerSpecializationConfig();
             if (s_runtimeBalance != null) s_runtimeBalance.laserTowerSpecialization = config;
+        }
+        config.EnsureDefaults();
+        return config;
+    }
+
+    public static RougePiercingLaserSpecializationConfig
+        GetPiercingLaserSpecializationConfig()
+    {
+        RougePiercingLaserSpecializationConfig config =
+            s_runtimeBalance?.piercingLaserSpecialization;
+        if (config == null)
+        {
+            config = new RougePiercingLaserSpecializationConfig();
+            if (s_runtimeBalance != null)
+                s_runtimeBalance.piercingLaserSpecialization = config;
         }
         config.EnsureDefaults();
         return config;

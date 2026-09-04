@@ -121,6 +121,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     [SerializeField] private RougeFlameTowerAugment flameAugment;
     [SerializeField] private RougeLaserTowerBranch laserBranch;
     [SerializeField] private RougeLaserTowerAugment laserAugment;
+    [SerializeField] private RougePiercingLaserBranch piercingLaserBranch;
+    [SerializeField] private RougePiercingLaserAugment piercingLaserAugment;
     [SerializeField] private RougeTowerPlaceEffect towerPlaceEffect;
     [SerializeField] private bool hasChargeTargetCell;
     [SerializeField] private Vector2Int chargeTargetCell;
@@ -202,6 +204,20 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
             if (UsesLaserRefractionAttack)
                 damage *= TowerDefenseVisuals.GetLaserSpecializationConfig()
                     .refractionAttackDamageMultiplier;
+            if (towerType == RougeTowerType.PiercingLaser &&
+                piercingLaserBranch != RougePiercingLaserBranch.None)
+            {
+                RougePiercingLaserSpecializationConfig piercing =
+                    TowerDefenseVisuals.GetPiercingLaserSpecializationConfig();
+                float damageOverride = UsesPiercingLaserScatterSweep
+                    ? piercing.scatterSweepDamageOverride
+                    : UsesPiercingLaserLargeContinuous
+                        ? piercing.largeContinuousDamageOverride
+                        : UsesPiercingLaserContinuous
+                            ? piercing.continuousDamageOverride
+                            : piercing.sweepDamageOverride;
+                damage = TowerDefenseVisuals.ApplyRuntimeTowerDamage(damageOverride);
+            }
             return damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
         }
     }
@@ -220,13 +236,17 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         : Stats.AttackRadius) * GetBuffMultiplier(RougeTowerBuffStat.Range);
     public Vector2Int FootprintCells => Vector2Int.one;
     public int TargetCount => Stats.TargetCount;
-    public int ProjectileCount => Stats.ProjectileCount;
+    public int ProjectileCount => UsesPiercingLaserScatterSweep
+        ? TowerDefenseVisuals.GetPiercingLaserSpecializationConfig()
+            .scatterSweepBeamCount
+        : Stats.ProjectileCount;
     public int AttackTargetCount => UsesEchoBarrageMultiplier &&
         (towerType == RougeTowerType.MachineGun || towerType == RougeTowerType.Laser)
             ? Mathf.CeilToInt(TargetCount * 1.5f)
             : TargetCount;
     public int AttackProjectileCount => UsesEchoBarrageMultiplier &&
-        towerType == RougeTowerType.RocketBarrage
+        (towerType == RougeTowerType.RocketBarrage ||
+         towerType == RougeTowerType.PiercingLaser)
             ? Mathf.CeilToInt(ProjectileCount * 1.5f)
             : ProjectileCount;
     public float AoeRadius => Stats.AoeRadius;
@@ -288,7 +308,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public bool RequiresUpgradeChoice => CanUpgrade &&
         (towerType == RougeTowerType.Ice || towerType == RougeTowerType.MachineGun ||
          towerType == RougeTowerType.Cannon || towerType == RougeTowerType.Flame ||
-         towerType == RougeTowerType.Laser);
+         towerType == RougeTowerType.Laser ||
+         towerType == RougeTowerType.PiercingLaser);
     public int SpecializationBranchIndex
     {
         get
@@ -300,6 +321,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 case RougeTowerType.Cannon: return (int)cannonBranch;
                 case RougeTowerType.Flame: return (int)flameBranch;
                 case RougeTowerType.Laser: return (int)laserBranch;
+                case RougeTowerType.PiercingLaser: return (int)piercingLaserBranch;
                 default: return 0;
             }
         }
@@ -316,6 +338,9 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 case RougeTowerType.Cannon: raw = (int)cannonAugment; break;
                 case RougeTowerType.Flame: raw = (int)flameAugment; break;
                 case RougeTowerType.Laser: raw = (int)laserAugment; break;
+                case RougeTowerType.PiercingLaser:
+                    raw = (int)piercingLaserAugment;
+                    break;
                 default: return -1;
             }
             return raw > 0 ? (raw - 1) % 2 : -1;
@@ -401,6 +426,41 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int LaserRefractionAttackCount => Mathf.Clamp(AttackTargetCount *
         TowerDefenseVisuals.GetLaserSpecializationConfig().refractionAttackTargetMultiplier,
         1, FindTowerTargetsJob.MaxTargetsPerTower * 2);
+    public RougePiercingLaserBranch PiercingLaserBranch =>
+        towerType == RougeTowerType.PiercingLaser
+            ? piercingLaserBranch
+            : RougePiercingLaserBranch.None;
+    public RougePiercingLaserAugment PiercingLaserAugment =>
+        towerType == RougeTowerType.PiercingLaser
+            ? piercingLaserAugment
+            : RougePiercingLaserAugment.None;
+    public bool NeedsPiercingLaserBranchChoice =>
+        towerType == RougeTowerType.PiercingLaser &&
+        piercingLaserBranch == RougePiercingLaserBranch.None;
+    public bool UsesPiercingLaserSweep =>
+        towerType == RougeTowerType.PiercingLaser &&
+        piercingLaserBranch == RougePiercingLaserBranch.Sweep;
+    public bool UsesPiercingLaserScatterSweep => UsesPiercingLaserSweep &&
+        piercingLaserAugment == RougePiercingLaserAugment.ScatterSweep;
+    public bool UsesPiercingLaserRapidSweep => UsesPiercingLaserSweep &&
+        piercingLaserAugment == RougePiercingLaserAugment.RapidSweep;
+    public bool UsesPiercingLaserContinuous =>
+        towerType == RougeTowerType.PiercingLaser &&
+        piercingLaserBranch == RougePiercingLaserBranch.Continuous;
+    public bool UsesPiercingLaserLargeContinuous => UsesPiercingLaserContinuous &&
+        piercingLaserAugment == RougePiercingLaserAugment.LargeContinuous;
+    public bool UsesPiercingLaserCrossContinuous => UsesPiercingLaserContinuous &&
+        piercingLaserAugment == RougePiercingLaserAugment.CrossContinuous;
+    public float PiercingLaserRapidSweepDamage
+    {
+        get
+        {
+            float damage = TowerDefenseVisuals.ApplyRuntimeTowerDamage(
+                TowerDefenseVisuals.GetPiercingLaserSpecializationConfig()
+                    .rapidSweepDamageOverride);
+            return damage * GetBuffMultiplier(RougeTowerBuffStat.Damage);
+        }
+    }
     public float AttackSpeedMultiplier
     {
         get
@@ -439,7 +499,7 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
     public int UpgradeCost => CanUpgrade
         ? level >= 2 && (NeedsIceBranchChoice || NeedsMachineGunBranchChoice ||
                          NeedsCannonBranchChoice || NeedsFlameBranchChoice ||
-                         NeedsLaserBranchChoice)
+                         NeedsLaserBranchChoice || NeedsPiercingLaserBranchChoice)
             ? 0
             : ScaleUpgradeGoldCost(TowerDefenseVisuals.GetLevelGoldCost(towerType, level + 1))
         : 0;
@@ -453,15 +513,29 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                     ? "扇形喷火器"
                     : towerType == RougeTowerType.Flame && UsesFlamethrower
                         ? "喷火器"
-                        : towerType == RougeTowerType.Flame && UsesConflagration
+                    : towerType == RougeTowerType.Flame && UsesConflagration
                             ? "爆燃火塔"
                             : towerType == RougeTowerType.Flame && UsesStackingBurn
                                 ? "叠燃火塔"
+                                : UsesPiercingLaserScatterSweep
+                                    ? "散射扫掠激光塔"
+                                    : UsesPiercingLaserRapidSweep
+                                        ? "连发扫掠激光塔"
+                                        : UsesPiercingLaserSweep
+                                            ? "扫掠激光塔"
+                                            : UsesPiercingLaserLargeContinuous
+                                                ? "巨型持续激光塔"
+                                                : UsesPiercingLaserCrossContinuous
+                                                    ? "十字持续激光塔"
+                                                    : UsesPiercingLaserContinuous
+                                                        ? "持续激光塔"
             : TowerDefenseVisuals.GetTowerName(towerType);
 
     private bool UsesEchoBarrageMultiplier => towerPlaceEffect == RougeTowerPlaceEffect.Echo &&
         (towerType == RougeTowerType.MachineGun || towerType == RougeTowerType.Laser ||
-         towerType == RougeTowerType.RocketBarrage);
+         towerType == RougeTowerType.RocketBarrage ||
+         (towerType == RougeTowerType.PiercingLaser &&
+          UsesPiercingLaserScatterSweep));
 
     internal bool EchoAttackCycleActive => echoAttackCycleActive;
     internal bool EchoAttackRepeatPending => echoAttackCycleActive &&
@@ -494,12 +568,12 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         return true;
     }
 
-    internal void FinishEchoAttackCycle()
+    internal void FinishEchoAttackCycle(float cooldownOverride = -1f)
     {
         echoAttackCycleActive = false;
         echoAttackRepeatsRemaining = 0;
         echoAttackRepeatDelayRemaining = -1f;
-        attackTimer = AttackInterval;
+        attackTimer = cooldownOverride > 0f ? cooldownOverride : AttackInterval;
         targetIndex = -1;
     }
 
@@ -533,6 +607,8 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
         flameAugment = RougeFlameTowerAugment.None;
         laserBranch = RougeLaserTowerBranch.None;
         laserAugment = RougeLaserTowerAugment.None;
+        piercingLaserBranch = RougePiercingLaserBranch.None;
+        piercingLaserAugment = RougePiercingLaserAugment.None;
         iceSpikeTimer = 0f;
         flamethrowerRotationDegrees = 0f;
         flamethrowerPresentationTimer = 0f;
@@ -769,6 +845,28 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                     : choiceIndex == 0
                         ? RougeLaserTowerAugment.ContinuousRefraction
                         : RougeLaserTowerAugment.RefractionAttack;
+                level++;
+            }
+        }
+        else if (towerType == RougeTowerType.PiercingLaser)
+        {
+            if (NeedsPiercingLaserBranchChoice)
+            {
+                piercingLaserBranch = choiceIndex == 0
+                    ? RougePiercingLaserBranch.Sweep
+                    : RougePiercingLaserBranch.Continuous;
+                if (level < 2) level++;
+            }
+            else
+            {
+                piercingLaserAugment =
+                    piercingLaserBranch == RougePiercingLaserBranch.Sweep
+                        ? choiceIndex == 0
+                            ? RougePiercingLaserAugment.ScatterSweep
+                            : RougePiercingLaserAugment.RapidSweep
+                        : choiceIndex == 0
+                            ? RougePiercingLaserAugment.LargeContinuous
+                            : RougePiercingLaserAugment.CrossContinuous;
                 level++;
             }
         }
@@ -1440,6 +1538,28 @@ public sealed partial class RougeDefenseTower : MonoBehaviour
                 laserAugment != RougeLaserTowerAugment.None &&
                 laserAugment < RougeLaserTowerAugment.ContinuousRefraction)
                 laserAugment = RougeLaserTowerAugment.None;
+        }
+
+        if (towerType != RougeTowerType.PiercingLaser)
+        {
+            piercingLaserBranch = RougePiercingLaserBranch.None;
+            piercingLaserAugment = RougePiercingLaserAugment.None;
+        }
+        else
+        {
+            if (piercingLaserBranch == RougePiercingLaserBranch.None && level >= 3)
+                level = 2;
+            if (level < 2)
+                piercingLaserBranch = RougePiercingLaserBranch.None;
+            if (level < 3)
+                piercingLaserAugment = RougePiercingLaserAugment.None;
+            if (piercingLaserBranch == RougePiercingLaserBranch.Sweep &&
+                piercingLaserAugment > RougePiercingLaserAugment.RapidSweep)
+                piercingLaserAugment = RougePiercingLaserAugment.None;
+            if (piercingLaserBranch == RougePiercingLaserBranch.Continuous &&
+                piercingLaserAugment != RougePiercingLaserAugment.None &&
+                piercingLaserAugment < RougePiercingLaserAugment.LargeContinuous)
+                piercingLaserAugment = RougePiercingLaserAugment.None;
         }
     }
 

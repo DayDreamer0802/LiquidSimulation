@@ -1,5 +1,5 @@
 {
-    "version": 16,
+    "version": 17,
     "mainTowerBalance": {
         "maxHealth": 500.0
     },
@@ -74,6 +74,36 @@
             "refractionAttackDamageFalloffPerTarget": 0.05000000074505806,
             "refractionAttackMaximumDamageFalloff": 0.5
         },
+        "piercingLaserSpecialization": {
+            "sweepChargeDuration": 1.0,
+            "sweepRangeMultiplier": 3.0,
+            "sweepSpeed": 20.0,
+            "sweepHitInterval": 0.10000000149011612,
+            "sweepDamageOverride": 750.0,
+            "scatterSweepBeamCount": 3,
+            "scatterSweepSpacingDegrees": 15.0,
+            "scatterSweepChargeDuration": 1.5,
+            "scatterSweepRangeMultiplier": 2.5,
+            "scatterSweepDamageOverride": 562.5,
+            "rapidSweepFollowupCount": 5,
+            "rapidSweepInterval": 0.5,
+            "rapidSweepRangeMultiplier": 1.5,
+            "rapidSweepDamageOverride": 375.0,
+            "rapidSweepCooldownOverride": 5.0,
+            "continuousChargeDuration": 1.5,
+            "continuousRangeMultiplier": 2.0,
+            "continuousDuration": 5.0,
+            "continuousTickInterval": 0.10000000149011612,
+            "continuousDamageOverride": 1500.0,
+            "continuousEndSizeMultiplier": 0.5,
+            "continuousEndDamageMultiplier": 0.5,
+            "largeContinuousChargeDuration": 2.5,
+            "largeContinuousDuration": 7.0,
+            "largeContinuousWidthMultiplier": 2.0,
+            "largeContinuousDamageOverride": 2250.0,
+            "largeContinuousCooldownOverride": 5.0,
+            "crossBeamLengthMultiplier": 0.5
+        },
         "flameTowerSpecialization": {
             "flamethrowerDamage": 10.0,
             "flamethrowerAttackInterval": 0.10000000149011612,
@@ -97,14 +127,94 @@
         "towers": [
             {
                 "towerType": 0,
-                "aiRoleProfile": { "control": 1.0, "directDamage": 0.2, "singleTarget": 0.0, "areaDamage": 0.3, "armorBreaking": 0.55 },
+                "aiRoleProfile": {
+                    "control": 1.0,
+                    "directDamage": 0.20000000298023225,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.30000001192092898,
+                    "armorBreaking": 0.550000011920929
+                },
+                "aiBuffAffinity": {
+                    "damage": 0.4000000059604645,
+                    "attackSpeed": 1.5,
+                    "range": 1.75,
+                    "control": 0.25,
+                    "armorPierce": 0.25,
+                    "economy": 0.25
+                },
                 "aiSpecializations": [
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 1.0, "directDamage": 0.2, "singleTarget": 0.0, "areaDamage": 0.4, "armorBreaking": 0.0 } },
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.45, "directDamage": 0.25, "singleTarget": 0.0, "areaDamage": 0.25, "armorBreaking": 0.8 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 1.0, "directDamage": 0.35, "singleTarget": 0.0, "areaDamage": 0.55, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 1.0, "directDamage": 0.15, "singleTarget": 0.0, "areaDamage": 0.35, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.4, "directDamage": 0.45, "singleTarget": 0.0, "areaDamage": 0.25, "armorBreaking": 0.5 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.35, "directDamage": 0.35, "singleTarget": 0.0, "areaDamage": 0.2, "armorBreaking": 1.0 } }
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 1.0,
+                            "directDamage": 0.20000000298023225,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.4000000059604645,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.44999998807907107,
+                            "directDamage": 0.25,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.25,
+                            "armorBreaking": 0.800000011920929
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 1.0,
+                            "directDamage": 0.3499999940395355,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.550000011920929,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 1.0,
+                            "directDamage": 0.15000000596046449,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.3499999940395355,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.4000000059604645,
+                            "directDamage": 0.44999998807907107,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.25,
+                            "armorBreaking": 0.5
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.3499999940395355,
+                            "directDamage": 0.3499999940395355,
+                            "singleTarget": 0.0,
+                            "areaDamage": 0.20000000298023225,
+                            "armorBreaking": 1.0
+                        }
+                    }
                 ],
                 "placementRadius": 2.200000047683716,
                 "footprintSize": 1,
@@ -176,28 +286,108 @@
             },
             {
                 "towerType": 1,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.9, "areaDamage": 0.2, "armorBreaking": 0.45 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 1.0,
+                    "singleTarget": 0.8999999761581421,
+                    "areaDamage": 0.20000000298023225,
+                    "armorBreaking": 0.44999998807907107
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.25,
+                    "attackSpeed": 0.20000000298023225,
+                    "range": 0.1,
+                    "control": 1.25,
+                    "armorPierce": 1.2999999523162842,
+                    "economy": 1.0499999523162842
+                },
                 "aiSpecializations": [
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 0.55 } },
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.35, "areaDamage": 0.9, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 0.35 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.0, "armorBreaking": 1.0 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.25, "areaDamage": 1.0, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.4, "areaDamage": 0.9, "armorBreaking": 0.0 } }
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.0,
+                            "armorBreaking": 0.550000011920929
+                        }
+                    },
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 0.8999999761581421,
+                            "singleTarget": 0.3499999940395355,
+                            "areaDamage": 0.8999999761581421,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.0,
+                            "armorBreaking": 0.3499999940395355
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.0,
+                            "armorBreaking": 1.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 0.949999988079071,
+                            "singleTarget": 0.25,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 0.949999988079071,
+                            "singleTarget": 0.4000000059604645,
+                            "areaDamage": 0.8999999761581421,
+                            "armorBreaking": 0.0
+                        }
+                    }
                 ],
                 "placementRadius": 2.0,
                 "footprintSize": 1,
                 "footprintWidth": 1,
                 "footprintHeight": 1,
-                "purchaseCost": 750,
+                "purchaseCost": 600,
                 "specialTowerCountCostMultiplier": 0.0,
                 "reinforcementAuraBuffLevel": 1,
                 "reinforcementAuraRangeCells": 1,
                 "levels": [
                     {
-                        "goldCost": 750,
-                        "damage": 25.0,
-                        "attackInterval": 0.20000000298023225,
+                        "goldCost": 600,
+                        "damage": 15.0,
+                        "attackInterval": 0.10000000149011612,
                         "attackRange": 20.0,
                         "targetCount": 1,
                         "projectileCount": 1,
@@ -214,9 +404,9 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "goldCost": 2000,
-                        "damage": 50.0,
-                        "attackInterval": 0.20000000298023225,
+                        "goldCost": 1800,
+                        "damage": 30.0,
+                        "attackInterval": 0.10000000149011612,
                         "attackRange": 25.0,
                         "targetCount": 3,
                         "projectileCount": 1,
@@ -233,9 +423,9 @@
                         "brownianStrength": 3.0
                     },
                     {
-                        "goldCost": 6000,
-                        "damage": 90.0,
-                        "attackInterval": 0.20000000298023225,
+                        "goldCost": 6400,
+                        "damage": 60.0,
+                        "attackInterval": 0.10000000149011612,
                         "attackRange": 30.0,
                         "targetCount": 5,
                         "projectileCount": 1,
@@ -255,7 +445,21 @@
             },
             {
                 "towerType": 2,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.0, "areaDamage": 1.0, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 0.8999999761581421,
+                    "singleTarget": 0.0,
+                    "areaDamage": 1.0,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.100000023841858,
+                    "attackSpeed": 1.350000023841858,
+                    "range": 0.44999998807907107,
+                    "control": 0.6000000238418579,
+                    "armorPierce": 1.25,
+                    "economy": 0.75
+                },
                 "aiSpecializations": [],
                 "placementRadius": 2.700000047683716,
                 "footprintSize": 1,
@@ -327,7 +531,21 @@
             },
             {
                 "towerType": 3,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 0.95, "singleTarget": 0.0, "areaDamage": 0.85, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 0.949999988079071,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.8500000238418579,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.25,
+                    "attackSpeed": 1.5,
+                    "range": 0.8500000238418579,
+                    "control": 1.25,
+                    "armorPierce": 1.0,
+                    "economy": 0.800000011920929
+                },
                 "aiSpecializations": [],
                 "placementRadius": 2.4000000953674318,
                 "footprintSize": 1,
@@ -399,14 +617,94 @@
             },
             {
                 "towerType": 4,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.95, "areaDamage": 0.25, "armorBreaking": 1.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 1.0,
+                    "singleTarget": 0.949999988079071,
+                    "areaDamage": 0.25,
+                    "armorBreaking": 1.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.5,
+                    "attackSpeed": 0.05000000074505806,
+                    "range": 0.30000001192092898,
+                    "control": 1.25,
+                    "armorPierce": 1.5,
+                    "economy": 1.0499999523162842
+                },
                 "aiSpecializations": [
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 1.0 } },
-                    { "fromLevel": 1, "currentBranch": 0, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.4, "areaDamage": 0.9, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 1.0 } },
-                    { "fromLevel": 2, "currentBranch": 1, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 1.0, "areaDamage": 0.1, "armorBreaking": 0.85 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 0, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.3, "areaDamage": 1.0, "armorBreaking": 0.0 } },
-                    { "fromLevel": 2, "currentBranch": 2, "choiceIndex": 1, "resultProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.5, "areaDamage": 0.9, "armorBreaking": 0.0 } }
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.10000000149011612,
+                            "armorBreaking": 1.0
+                        }
+                    },
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.4000000059604645,
+                            "areaDamage": 0.8999999761581421,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.10000000149011612,
+                            "armorBreaking": 1.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 1.0,
+                            "areaDamage": 0.10000000149011612,
+                            "armorBreaking": 0.8500000238418579
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.30000001192092898,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.5,
+                            "areaDamage": 0.8999999761581421,
+                            "armorBreaking": 0.0
+                        }
+                    }
                 ],
                 "placementRadius": 2.299999952316284,
                 "footprintSize": 1,
@@ -478,8 +776,95 @@
             },
             {
                 "towerType": 5,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.0, "areaDamage": 0.65, "armorBreaking": 0.0 },
-                "aiSpecializations": [],
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 1.0,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.6499999761581421,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 0.8500000238418579,
+                    "attackSpeed": 1.5,
+                    "range": 0.8500000238418579,
+                    "control": 0.8500000238418579,
+                    "armorPierce": 1.0,
+                    "economy": 0.800000011920929
+                },
+                "aiSpecializations": [
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.35,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 1,
+                        "currentBranch": 0,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.5,
+                            "areaDamage": 0.9,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.25,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 1,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.55,
+                            "areaDamage": 0.9,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 0,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.6,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    },
+                    {
+                        "fromLevel": 2,
+                        "currentBranch": 2,
+                        "choiceIndex": 1,
+                        "resultProfile": {
+                            "control": 0.0,
+                            "directDamage": 1.0,
+                            "singleTarget": 0.45,
+                            "areaDamage": 1.0,
+                            "armorBreaking": 0.0
+                        }
+                    }
+                ],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
                 "footprintWidth": 1,
@@ -550,7 +935,21 @@
             },
             {
                 "towerType": 6,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 0.9, "singleTarget": 0.0, "areaDamage": 0.95, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 0.8999999761581421,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.949999988079071,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.25,
+                    "attackSpeed": 0.25,
+                    "range": 1.5,
+                    "control": 1.100000023841858,
+                    "armorPierce": 1.0,
+                    "economy": 0.75
+                },
                 "aiSpecializations": [],
                 "placementRadius": 2.5,
                 "footprintSize": 1,
@@ -622,7 +1021,21 @@
             },
             {
                 "towerType": 7,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 1.0, "singleTarget": 0.0, "areaDamage": 1.0, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 1.0,
+                    "singleTarget": 0.0,
+                    "areaDamage": 1.0,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 0.8999999761581421,
+                    "attackSpeed": 1.25,
+                    "range": 0.10000000149011612,
+                    "control": 1.0,
+                    "armorPierce": 1.0,
+                    "economy": 0.75
+                },
                 "aiSpecializations": [],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
@@ -694,7 +1107,21 @@
             },
             {
                 "towerType": 8,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 0.0, "singleTarget": 0.0, "areaDamage": 0.0, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 0.0,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.0,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.0,
+                    "attackSpeed": 1.0,
+                    "range": 1.0,
+                    "control": 1.0,
+                    "armorPierce": 1.0,
+                    "economy": 1.0
+                },
                 "aiSpecializations": [],
                 "placementRadius": 2.799999952316284,
                 "footprintSize": 1,
@@ -766,7 +1193,21 @@
             },
             {
                 "towerType": 9,
-                "aiRoleProfile": { "control": 0.0, "directDamage": 0.0, "singleTarget": 0.0, "areaDamage": 0.0, "armorBreaking": 0.0 },
+                "aiRoleProfile": {
+                    "control": 0.0,
+                    "directDamage": 0.0,
+                    "singleTarget": 0.0,
+                    "areaDamage": 0.0,
+                    "armorBreaking": 0.0
+                },
+                "aiBuffAffinity": {
+                    "damage": 1.0,
+                    "attackSpeed": 1.0,
+                    "range": 1.0,
+                    "control": 1.0,
+                    "armorPierce": 1.0,
+                    "economy": 1.0
+                },
                 "aiSpecializations": [],
                 "placementRadius": 3.0999999046325685,
                 "footprintSize": 1,

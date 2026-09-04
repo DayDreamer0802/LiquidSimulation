@@ -418,9 +418,11 @@ public sealed class RougeTowerUpgradeEffect : MonoBehaviour
         primary.a = 1f;
 
         bool routeA = tower.UsesIceFreeze || tower.UsesMachineGunCritical ||
-                      tower.UsesCannonInnerBlast || tower.UsesLaserArmorBreak;
+                      tower.UsesCannonInnerBlast || tower.UsesLaserArmorBreak ||
+                      tower.UsesPiercingLaserSweep;
         bool routeB = tower.UsesIceVulnerability || tower.UsesMachineGunFragments ||
-                      tower.UsesPersistentCannonShell || tower.UsesLaserRefraction;
+                      tower.UsesPersistentCannonShell || tower.UsesLaserRefraction ||
+                      tower.UsesPiercingLaserContinuous;
         Color gold = new Color(1.36f, 0.74f, 0.13f, 1f);
         Color purple = new Color(0.96f, 0.30f, 1.38f, 1f);
         if (routeB)

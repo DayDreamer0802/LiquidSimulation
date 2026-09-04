@@ -124,7 +124,7 @@ public partial class RougeGameManager
             _towerDefenseAutoplayHintText.text = releaseVisible
                 ? "AI 接管已解除   //   指挥权交还中"
                 : $"[立绘] 互动   [F2] 隐藏   [F6] 结束   " +
-                  $"[F10] ×{(_towerDefenseDoubleSpeed ? 2 : 1)}";
+                  $"[F10] ×{Mathf.RoundToInt(GetTowerDefensePlayTimeScale())}";
 
         RefreshTowerDefenseAutoplayHealthLines();
         UpdateTowerDefenseAutoplayHeartbeat();
@@ -1336,7 +1336,7 @@ public partial class RougeGameManager
         if (!_towerDefenseAutoplayEnabled || keyboard == null ||
             !keyboard.f10Key.wasPressedThisFrame) return false;
 
-        _towerDefenseDoubleSpeed = !_towerDefenseDoubleSpeed;
+        CycleTowerDefensePlaySpeed();
         ApplyTowerDefenseTimeScale();
         RefreshTowerDefenseUi(true);
         RefreshTowerDefenseAutoplayPresentation();

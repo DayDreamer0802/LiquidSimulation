@@ -293,7 +293,7 @@
       "id": 5,
       "enumName": "PiercingLaser",
       "displayName": "穿透激光",
-      "role": "超高单发直线穿透",
+      "role": "扫掠或持续直线区域输出",
       "upgradeable": true,
       "placementRadius": 2.8,
       "footprintCells": [1, 1],
@@ -302,9 +302,23 @@
         { "level": 2, "goldCost": 4500, "damage": 1500, "attackInterval": 3.5, "attackRange": 30, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 },
         { "level": 3, "goldCost": 13500, "damage": 3000, "attackInterval": 3, "attackRange": 35, "targetCount": 1, "projectileCount": 1, "aoeRadius": 0 }
       ],
-      "upgradePath": "线性升级，无分支。",
-      "baseMechanic": "发射直线激光，伤害路径上的所有敌人。",
-      "importantSynergies": ["长直线路径", "Boss 与其身后敌群共线", "霜寒格对直线伤害只施加一半减速"]
+      "upgradePath": "Lv.2 选择 A 扫掠激光或 B 持续激光；Lv.3 在所选路线内选择一项强化。分支攻击全部使用独立面板覆盖伤害，不读取等级表中的固定伤害。",
+      "baseMechanic": "Lv.1 保留旧版直线贯穿激光。",
+      "level2Branches": [
+        { "id": "sweep", "description": "A：蓄力 1 秒，激光从塔脚以 20/秒向前扫到攻击范围 3 倍处；每 0.1 秒按新走过距离生成一次矩形判定，默认覆盖伤害 750。" },
+        { "id": "continuous", "description": "B：蓄力 1.5 秒后固定方向存在 5 秒，每 0.1 秒一跳；长度、宽度与每跳伤害线性降至一半，默认每跳覆盖伤害 1500。" }
+      ],
+      "level3Augments": {
+        "sweep": [
+          { "id": "scatter_sweep", "description": "A1：蓄力 1.5 秒，默认 3 束、相邻 15°，吃弹幕数；距离为攻击范围 2.5 倍，默认每束覆盖伤害 562.5。" },
+          { "id": "rapid_sweep", "description": "A2：首次 A 扫掠后，以 0.5 秒发射间隔追加 5 次无蓄力扫掠；追加距离为攻击范围 1.5 倍、默认覆盖伤害 375，结束后覆盖冷却 5 秒。" }
+        ],
+        "continuous": [
+          { "id": "large_continuous", "description": "B1：蓄力 2.5 秒、持续 7 秒、宽度翻倍、尺寸和伤害不衰减；默认每跳覆盖伤害 2250，覆盖冷却 5 秒。" },
+          { "id": "cross_continuous", "description": "B2：继承 B；主激光中心增加垂直相交、总长度为主激光一半的副激光，两束独立判定。" }
+        ]
+      },
+      "importantSynergies": ["长直线路径", "交叉路口适合十字激光", "回响格提高 A1 弹幕数，其他分支重复完整攻击", "霜寒格对直线伤害只施加一半减速"]
     },
     {
       "id": 6,

@@ -498,7 +498,14 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
                 {
                     instance = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     instance.transform.SetParent(visualRoot, false);
-                    float visualHeight = Mathf.Max(0.02f, definition.fallbackHeight);
+                    // Navigation blockers keep their authored height in the merged,
+                    // invisible collider surface. Their fallback visual is a thin
+                    // no-build pad so it communicates placement rules without
+                    // becoming an opaque wall that hides towers and route art.
+                    float visualHeight = definition.blocksNavigation &&
+                                         !definition.towerPlace
+                        ? Mathf.Clamp(map.CellSize * 0.016f, 0.06f, 0.14f)
+                        : Mathf.Max(0.02f, definition.fallbackHeight);
                     instance.transform.position = map.CellCenter(cell, definition.yOffset + visualHeight * 0.5f);
                     instance.transform.localScale = new Vector3(map.CellSize, visualHeight, map.CellSize);
                     if (!fallbackMaterials.TryGetValue(tileIndex, out Material material))
@@ -556,6 +563,33 @@ public sealed partial class RougeTowerDefenseMapLoader : MonoBehaviour
                 padMaterial.SetFloat("_PulseSpeed", 0.35f);
                 padMaterial.enableInstancing = true;
                 return padMaterial;
+            }
+        }
+
+        if (definition.blocksNavigation && !definition.towerPlace)
+        {
+            Shader noBuildShader = Shader.Find("Rouge/No-Build Pad");
+            if (noBuildShader != null)
+            {
+                Material noBuildMaterial = new Material(noBuildShader)
+                {
+                    name = $"Runtime No-Build Pad - {definition.name}"
+                };
+                float paletteGray = Mathf.Clamp(definition.editorColor.grayscale,
+                    0.22f, 0.46f);
+                Color baseColor = new Color(paletteGray * 0.82f,
+                    paletteGray * 0.85f, paletteGray * 0.88f, 1f);
+                noBuildMaterial.SetColor("_BaseColor", baseColor);
+                noBuildMaterial.SetColor("_PanelColor", baseColor * 0.52f);
+                noBuildMaterial.SetColor("_MarkColor", Color.Lerp(baseColor,
+                    new Color(0.72f, 0.74f, 0.76f, 1f), 0.58f));
+                noBuildMaterial.SetFloat("_CellSize", map.CellSize);
+                noBuildMaterial.SetVector("_GridOrigin",
+                    new Vector4(map.Origin.x, map.Origin.y, 0f, 0f));
+                noBuildMaterial.SetFloat("_FrameWidth", 0.026f);
+                noBuildMaterial.SetFloat("_MarkStrength", 0.72f);
+                noBuildMaterial.enableInstancing = true;
+                return noBuildMaterial;
             }
         }
 

@@ -1499,7 +1499,8 @@ public unsafe struct BuildSkillAreaGridJob : IJob
     private static void ComputeSkillBounds(RougeSkillArea skill, out float2 min, out float2 max)
     {
         float radius = math.max(skill.Radius, 0f);
-        if (skill.Type == 3 || skill.Type == 15 || skill.Type == 16 || skill.Type == 19)
+        if (skill.Type == 3 || skill.Type == 15 || skill.Type == 16 ||
+            skill.Type == 19 || skill.Type == 23)
         {
             float2 end = skill.Position + skill.Direction * math.max(skill.Length, 0f);
             float2 extent = new float2(radius, radius);
@@ -2048,6 +2049,10 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
                             ProcessTowerCone(ref health, ref flashTimer, ref vel,
                                 ref tornadoMark, ref effects, pos, skill,
                                 isBoss ? math.max(0f, radius) : 0f);
+                            break;
+                        case 23:
+                            ProcessTowerRectangle(ref health, ref flashTimer,
+                                ref effects, pos, skill);
                             break;
                     }
                     int sourceTowerType = skill.SourceTowerTypePlusOne - 1;
@@ -3159,6 +3164,32 @@ public unsafe struct SimulateEnemiesFlowFieldJob : IJobParallelForBatch
             ApplyFreezeStatus(ref effects, skill.EffectFreezeDuration,
                 skill.EffectBossFreezeImmunityDuration);
         flashTimer = math.max(flashTimer, skill.Type == 16 ? 0.2f : 0.9f);
+    }
+
+    private void ProcessTowerRectangle(ref float health, ref float flashTimer,
+        ref RougeEnemyEffectState effects, float3 pos, RougeSkillArea skill)
+    {
+        if (math.abs(pos.y - RenderHeight) > 5f) return;
+        float2 direction = math.normalizesafe(skill.Direction, new float2(0f, 1f));
+        float2 fromStart = pos.xz - skill.Position;
+        float along = math.dot(fromStart, direction);
+        if (along < 0f || along > skill.Length) return;
+        float perpendicular = math.abs(direction.x * fromStart.y -
+            direction.y * fromStart.x);
+        if (perpendicular > skill.Radius) return;
+        health -= ApplyArmor(math.max(0f, skill.Damage), effects);
+        if (((SkillHitEffectTag)skill.EffectFlags & SkillHitEffectTag.Slow) != 0)
+        {
+            effects.SlowStacks = 1f;
+            effects.SlowPercent = math.max(effects.SlowPercent,
+                math.max(0f, skill.EffectSlowPercent));
+            effects.SlowTimer = math.max(effects.SlowTimer,
+                skill.EffectSlowDuration > 0f ? skill.EffectSlowDuration : 2f);
+        }
+        if (((SkillHitEffectTag)skill.EffectFlags & SkillHitEffectTag.Freeze) != 0)
+            ApplyFreezeStatus(ref effects, skill.EffectFreezeDuration,
+                skill.EffectBossFreezeImmunityDuration);
+        flashTimer = math.max(flashTimer, 0.9f);
     }
 
     private static void ProcessVulnerabilityLandingBlast(ref float health,

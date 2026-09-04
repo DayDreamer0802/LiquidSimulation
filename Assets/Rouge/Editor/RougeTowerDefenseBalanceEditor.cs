@@ -369,6 +369,9 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
             }
         }
 
+        if (!IsSpecialTowerType(type))
+            DrawTowerAiBenefitConfiguration(tower);
+
         if (type == RougeTowerType.Ice)
         {
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox, GUILayout.MinWidth(700f)))
@@ -418,6 +421,16 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                     balance.FindPropertyRelative("laserTowerSpecialization"), true);
             }
         }
+        else if (type == RougeTowerType.PiercingLaser)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                       GUILayout.MinWidth(700f)))
+            {
+                EditorGUILayout.LabelField("穿透激光扫掠与持续分支配置", EditorStyles.boldLabel);
+                EditorGUILayout.PropertyField(
+                    balance.FindPropertyRelative("piercingLaserSpecialization"), true);
+            }
+        }
 
         EditorGUILayout.Space(5f);
         EditorGUILayout.LabelField("Level Parameters", EditorStyles.boldLabel);
@@ -431,6 +444,36 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
         DrawLevelTableHeader(levels.arraySize);
         DrawTowerLevelRows(levels, type);
         EditorGUILayout.Space(10f);
+    }
+
+    private static void DrawTowerAiBenefitConfiguration(
+        SerializedProperty tower)
+    {
+        SerializedProperty affinity = tower.FindPropertyRelative("aiBuffAffinity");
+        if (affinity == null) return;
+        using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox,
+                   GUILayout.MinWidth(700f)))
+        {
+            EditorGUILayout.LabelField("AI 地块边际收益", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "在这里配置托管 AI 如何折算该塔从不同建造格属性获得的边际收益。" +
+                "1 为标准收益，低于 1 表示边际收益递减，高于 1 表示更适配。" +
+                "这些值只影响 AI 选格和威胁评估，不修改玩家看到的塔楼属性。",
+                MessageType.Info);
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("damage"),
+                new GUIContent("伤害强化格收益"));
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("attackSpeed"),
+                new GUIContent("攻速 / 回响格收益"));
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("range"),
+                new GUIContent("范围强化格收益"));
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("control"),
+                new GUIContent("控制 / 霜寒 / 爆炸格收益"));
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("economy"),
+                new GUIContent("赏金 / 财富格收益"));
+            EditorGUILayout.PropertyField(affinity.FindPropertyRelative("armorPierce"),
+                new GUIContent("对护甲威胁收益",
+                    "用于护甲压力评估，不属于地块属性。"));
+        }
     }
 
     private static void DrawLevelTableHeader(int levelCount)
@@ -475,6 +518,12 @@ public sealed class RougeTowerDefenseBalanceEditor : EditorWindow
                 DrawLevelRow(levels, "targetCount", "Target Count");
                 EditorGUILayout.HelpBox(
                     "激光塔的破甲时间、折射范围、伤害与攻击间隔统一在上方分支配置中调整。",
+                    MessageType.Info);
+                break;
+            case RougeTowerType.PiercingLaser:
+                DrawLevelRow(levels, "projectileCount", "Base Barrage Count");
+                EditorGUILayout.HelpBox(
+                    "穿透激光塔选择分支后，伤害、蓄力、持续/扫掠距离、判定间隔与覆盖冷却均以上方分支配置为准；等级表伤害不参与分支伤害计算。",
                     MessageType.Info);
                 break;
             case RougeTowerType.Cannon:

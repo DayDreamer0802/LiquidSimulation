@@ -198,7 +198,8 @@ public partial class RougeGameManager
     private Coroutine _towerDefenseStartupRoutine;
     private bool _towerPlacementMode;
     private bool _showAllTowerAttackRanges;
-    private bool _towerDefenseDoubleSpeed;
+    private const int TowerDefenseMaximumSpeedMultiplier = 3;
+    private int _towerDefenseSpeedMultiplier = 1;
     private bool _towerBuildSelectionActive = true;
     private bool _chargeTowerBuildSelectionActive;
     private bool _reinforcementTowerBuildSelectionActive;
@@ -445,31 +446,61 @@ public partial class RougeGameManager
         public int TileEffect;
     }
 
-    private struct TowerBeamVisual
+    private enum PiercingLaserAttackMode
     {
-        public RougeDefenseTower SourceTower;
+        Legacy,
+        Sweep,
+        Continuous
+    }
+
+    private sealed class PiercingLaserRayVisual
+    {
         public GameObject Visual;
         public GameObject GlowVisual;
         public GameObject RootCapVisual;
         public GameObject RootGlowCapVisual;
-        public GameObject ChargeVisual;
         public MeshRenderer Renderer;
         public MeshRenderer GlowRenderer;
         public MeshRenderer RootCapRenderer;
         public MeshRenderer RootGlowCapRenderer;
-        public MeshRenderer ChargeRenderer;
         public MaterialPropertyBlock Properties;
         public MaterialPropertyBlock GlowProperties;
+        public Vector3 Start;
+        public Vector3 Direction;
+        public float AngleOffsetDegrees;
+        public float MaximumLength;
+        public float MaximumWidth;
+        public float LaunchDelay;
+        public float Damage;
+        public float NextDamageSample;
+        public float DamagedDistance;
+        public bool ShowDuringCharge;
+        public bool IsCrossBeam;
+        public bool Completed;
+    }
+
+    private sealed class TowerBeamVisual
+    {
+        public RougeDefenseTower SourceTower;
+        public GameObject ChargeVisual;
+        public MeshRenderer ChargeRenderer;
         public MaterialPropertyBlock ChargeProperties;
+        public readonly List<PiercingLaserRayVisual> Rays =
+            new List<PiercingLaserRayVisual>();
+        public PiercingLaserAttackMode Mode;
         public Vector3 Start;
         public Vector3 Direction;
         public Vector3 TurnStartDirection;
-        public float Length;
-        public float MaxWidth;
         public float ChargeElapsed;
         public float FireElapsed;
         public float TurnElapsed;
-        public float Damage;
+        public float ChargeDuration;
+        public float FireDuration;
+        public float HitInterval;
+        public float SweepSpeed;
+        public float ContinuousEndSizeMultiplier;
+        public float ContinuousEndDamageMultiplier;
+        public float CooldownOverride = -1f;
         public int KillGoldBonus;
         public int WealthCellIndexPlusOne;
         public int TileEffect;
@@ -478,6 +509,8 @@ public partial class RougeGameManager
         public bool TargetLost;
         public bool DamageApplied;
         public bool FiringAnimationPlayed;
+        public bool UsesCrossBeam;
+        public bool KeepsContinuousSizeAndDamage;
     }
 
     private struct IceSpikeVisual
@@ -601,7 +634,7 @@ public partial class RougeGameManager
         _towerDefenseGameOver = false;
         _towerDefenseGameOverReason = string.Empty;
         _towerPlacementMode = false;
-        _towerDefenseDoubleSpeed = false;
+        _towerDefenseSpeedMultiplier = 1;
         TowerDefenseBuildModeActive = false;
         _towerBuildSelectionActive = false;
         _chargeTowerBuildSelectionActive = false;
@@ -824,7 +857,7 @@ public partial class RougeGameManager
         Time.timeScale = 1f;
         TowerDefenseBuildModeActive = false;
         _towerPlacementMode = false;
-        _towerDefenseDoubleSpeed = false;
+        _towerDefenseSpeedMultiplier = 1;
         SetTowerPlacementHoveredTower(null);
         if (_pendingChargeTower != null) Destroy(_pendingChargeTower.gameObject);
         _pendingChargeTower = null;
@@ -1704,7 +1737,7 @@ public partial class RougeGameManager
 
         if (keyboard != null && keyboard.f10Key.wasPressedThisFrame && !_towerPlacementMode)
         {
-            _towerDefenseDoubleSpeed = !_towerDefenseDoubleSpeed;
+            CycleTowerDefensePlaySpeed();
             ApplyTowerDefenseTimeScale();
             RefreshTowerDefenseUi(true);
         }
@@ -1852,7 +1885,16 @@ public partial class RougeGameManager
 
     private float GetTowerDefensePlayTimeScale()
     {
-        return _towerDefenseDoubleSpeed ? 2f : 1f;
+        return Mathf.Clamp(_towerDefenseSpeedMultiplier, 1,
+            TowerDefenseMaximumSpeedMultiplier);
+    }
+
+    private void CycleTowerDefensePlaySpeed()
+    {
+        _towerDefenseSpeedMultiplier = _towerDefenseSpeedMultiplier >=
+                                       TowerDefenseMaximumSpeedMultiplier
+            ? 1
+            : _towerDefenseSpeedMultiplier + 1;
     }
 
     private void ApplyTowerDefenseTimeScale()
@@ -3920,8 +3962,8 @@ public partial class RougeGameManager
             if (tower.TowerType == RougeTowerType.OrbitSphere && IsOrbitSphereAttackActive(tower))
                 continue;
 
-            // The piercing laser owns its complete charge/fire sequence. Its normal attack
-            // cooldown begins only after the fixed 0.75 second beam has fully collapsed.
+            // The piercing laser owns its complete charge/fire sequence. Its normal or
+            // branch-specific cooldown begins only after every beam has finished.
             if (tower.TowerType == RougeTowerType.PiercingLaser &&
                 IsPiercingLaserAttackActive(tower))
                 continue;
@@ -5170,12 +5212,13 @@ public partial class RougeGameManager
             alpha * 0.42f);
     }
 
-    private bool CompleteEchoAttackStep(RougeDefenseTower tower)
+    private bool CompleteEchoAttackStep(RougeDefenseTower tower,
+        float cooldownOverride = -1f)
     {
         if (tower == null || !tower.EchoAttackCycleActive) return false;
         if (tower.TryScheduleEchoAttackRepeat(EchoAttackRepeatDelay)) return true;
 
-        tower.FinishEchoAttackCycle();
+        tower.FinishEchoAttackCycle(cooldownOverride);
         return true;
     }
 
@@ -5318,6 +5361,16 @@ public partial class RougeGameManager
     private static Vector3 GetTowerMuzzlePosition(RougeDefenseTower tower)
     {
         return tower.GetShootPosition();
+    }
+
+    private Vector3 GetPiercingLaserStartPosition(RougeDefenseTower tower)
+    {
+        if (tower == null) return default;
+        if (tower.PiercingLaserBranch == RougePiercingLaserBranch.None)
+            return GetTowerMuzzlePosition(tower);
+        Vector3 start = tower.transform.position;
+        start.y = renderHeight + 0.16f;
+        return start;
     }
 
     private void SpawnTowerProjectile(RougeTowerType type, Vector3 start, Vector3 end, float damage, float radius,
@@ -6009,67 +6062,179 @@ public partial class RougeGameManager
     {
         if (tower == null || IsPiercingLaserAttackActive(tower)) return;
 
-        Vector3 start = GetTowerMuzzlePosition(tower);
+        Vector3 start = GetPiercingLaserStartPosition(tower);
         Vector3 direction = target - start;
         direction.y = 0f;
         if (direction.sqrMagnitude <= 0.0001f) return;
         direction.Normalize();
         Vector3 currentAimDirection = tower.GetCurrentAimDirection();
-
+        RougePiercingLaserSpecializationConfig config =
+            TowerDefenseVisuals.GetPiercingLaserSpecializationConfig();
         TowerBeamVisual beam = new TowerBeamVisual
         {
             SourceTower = tower,
             Start = start,
             Direction = currentAimDirection,
             TurnStartDirection = currentAimDirection,
-            Length = tower.AttackRange * 2f,
-            // The hit radius stays unchanged; this multiplier affects only the peak visual.
-            MaxWidth = PiercingLaserBeamRadius * PiercingLaserMaxVisualWidthMultiplier,
-            Damage = tower.Damage,
             KillGoldBonus = tower.KillGoldPercentBonus,
             WealthCellIndexPlusOne = GetTowerWealthCellIndexPlusOne(tower),
             TileEffect = (int)tower.TowerPlaceEffect,
             TargetIndex = tower.targetIndex,
-            Properties = new MaterialPropertyBlock(),
-            GlowProperties = new MaterialPropertyBlock(),
             ChargeProperties = new MaterialPropertyBlock()
         };
 
-        beam.Visual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
-            "Piercing Laser Core", out beam.Renderer);
-        beam.GlowVisual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
-            "Piercing Laser Outer Glow", out beam.GlowRenderer);
-        beam.RootCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
-            "Piercing Laser Hemispherical Root", out beam.RootCapRenderer);
-        beam.RootGlowCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
-            "Piercing Laser Hemispherical Root Glow", out beam.RootGlowCapRenderer);
+        if (tower.UsesPiercingLaserSweep)
+        {
+            beam.Mode = PiercingLaserAttackMode.Sweep;
+            beam.ChargeDuration = tower.UsesPiercingLaserScatterSweep
+                ? config.scatterSweepChargeDuration
+                : config.sweepChargeDuration;
+            beam.HitInterval = config.sweepHitInterval;
+            beam.SweepSpeed = config.sweepSpeed;
+            float baseWidth = PiercingLaserBeamRadius;
+            if (tower.UsesPiercingLaserScatterSweep)
+            {
+                int beamCount = Mathf.Max(1, tower.AttackProjectileCount);
+                float middle = (beamCount - 1) * 0.5f;
+                for (int i = 0; i < beamCount; i++)
+                {
+                    beam.Rays.Add(CreatePiercingLaserRay(start,
+                        currentAimDirection,
+                        tower.AttackRange * config.scatterSweepRangeMultiplier,
+                        baseWidth, tower.Damage,
+                        (i - middle) * config.scatterSweepSpacingDegrees,
+                        0f, true, false, i));
+                }
+            }
+            else
+            {
+                beam.Rays.Add(CreatePiercingLaserRay(start,
+                    currentAimDirection,
+                    tower.AttackRange * config.sweepRangeMultiplier,
+                    baseWidth, tower.Damage, 0f, 0f, true, false, 0));
+                if (tower.UsesPiercingLaserRapidSweep)
+                {
+                    int followups = Mathf.Max(1, config.rapidSweepFollowupCount);
+                    for (int i = 0; i < followups; i++)
+                    {
+                        beam.Rays.Add(CreatePiercingLaserRay(start,
+                            currentAimDirection,
+                            tower.AttackRange * config.rapidSweepRangeMultiplier,
+                            baseWidth, tower.PiercingLaserRapidSweepDamage,
+                            0f, (i + 1) * config.rapidSweepInterval,
+                            false, false, i + 1));
+                    }
+                    beam.CooldownOverride = config.rapidSweepCooldownOverride;
+                }
+            }
+            for (int i = 0; i < beam.Rays.Count; i++)
+            {
+                PiercingLaserRayVisual ray = beam.Rays[i];
+                beam.FireDuration = Mathf.Max(beam.FireDuration,
+                    ray.LaunchDelay + ray.MaximumLength / beam.SweepSpeed);
+            }
+        }
+        else if (tower.UsesPiercingLaserContinuous)
+        {
+            beam.Mode = PiercingLaserAttackMode.Continuous;
+            beam.HitInterval = config.continuousTickInterval;
+            beam.ChargeDuration = tower.UsesPiercingLaserLargeContinuous
+                ? config.largeContinuousChargeDuration
+                : config.continuousChargeDuration;
+            beam.FireDuration = tower.UsesPiercingLaserLargeContinuous
+                ? config.largeContinuousDuration
+                : config.continuousDuration;
+            beam.ContinuousEndSizeMultiplier = config.continuousEndSizeMultiplier;
+            beam.ContinuousEndDamageMultiplier = config.continuousEndDamageMultiplier;
+            beam.KeepsContinuousSizeAndDamage =
+                tower.UsesPiercingLaserLargeContinuous;
+            beam.CooldownOverride = tower.UsesPiercingLaserLargeContinuous
+                ? config.largeContinuousCooldownOverride
+                : -1f;
+            float width = PiercingLaserBeamRadius *
+                (tower.UsesPiercingLaserLargeContinuous
+                    ? config.largeContinuousWidthMultiplier
+                    : 1f);
+            float length = tower.AttackRange * config.continuousRangeMultiplier;
+            beam.Rays.Add(CreatePiercingLaserRay(start, currentAimDirection,
+                length, width, tower.Damage, 0f, 0f, true, false, 0));
+            if (tower.UsesPiercingLaserCrossContinuous)
+            {
+                beam.UsesCrossBeam = true;
+                beam.Rays.Add(CreatePiercingLaserRay(start, currentAimDirection,
+                    length * config.crossBeamLengthMultiplier, width,
+                    tower.Damage, 90f, 0f, false, true, 1));
+            }
+        }
+        else
+        {
+            beam.Mode = PiercingLaserAttackMode.Legacy;
+            beam.ChargeDuration = PiercingLaserChargeDuration;
+            beam.FireDuration = PiercingLaserFireDuration;
+            beam.Rays.Add(CreatePiercingLaserRay(start, currentAimDirection,
+                tower.AttackRange * 2f, PiercingLaserBeamRadius,
+                tower.Damage, 0f, 0f, true, false, 0));
+        }
+
+        if (beam.Mode != PiercingLaserAttackMode.Legacy)
+        {
+            for (int i = 0; i < beam.Rays.Count; i++)
+                beam.Rays[i].NextDamageSample = beam.HitInterval;
+        }
+
         beam.ChargeVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
             "Piercing Laser Charge", out beam.ChargeRenderer);
-
-        ConfigurePiercingLaserStyle(beam.Properties,
-            new Color(1.65f, 1.58f, 2.05f, 1f),
-            new Color(0.95f, 0.035f, 2.2f, 1f),
-            new Color(0.07f, 0.34f, 1.8f, 1f), 0.045f, 0.44f, 0.26f, 1.75f);
-        ConfigurePiercingLaserStyle(beam.GlowProperties,
-            new Color(0.32f, 0.035f, 0.82f, 1f),
-            new Color(0.17f, 0.018f, 1.3f, 1f),
-            new Color(0.025f, 0.24f, 1.85f, 1f), 0.02f, 0.22f, 0.72f, 0.65f);
         ConfigurePiercingLaserStyle(beam.ChargeProperties,
             new Color(2.2f, 2.0f, 2.55f, 1f),
             new Color(1.25f, 0.045f, 2.45f, 1f),
             new Color(0.055f, 0.42f, 2.1f, 1f), 0.10f, 0.52f, 0.40f, 2.0f);
-
-        // The cylinder begins almost fully opaque so it joins cleanly to the separate
-        // hemispherical root cap. Other users keep the material's original soft fade.
-        beam.Properties.SetFloat(LaserStartFadeId, 0.006f);
-        beam.GlowProperties.SetFloat(LaserStartFadeId, 0.008f);
-
-        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(false);
-        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(false);
-        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(false);
-        UpdatePiercingLaserChargeVisual(ref beam, 0f);
+        UpdatePiercingLaserChargeVisual(beam, 0f);
         _towerBeamVisuals.Add(beam);
         tower.PlayPiercingChargeSound();
+    }
+
+    private PiercingLaserRayVisual CreatePiercingLaserRay(Vector3 start,
+        Vector3 direction, float maximumLength, float maximumWidth, float damage,
+        float angleOffsetDegrees, float launchDelay, bool showDuringCharge,
+        bool isCrossBeam, int ordinal)
+    {
+        PiercingLaserRayVisual ray = new PiercingLaserRayVisual
+        {
+            Start = start,
+            Direction = direction,
+            MaximumLength = Mathf.Max(0.01f, maximumLength),
+            MaximumWidth = Mathf.Max(0.01f, maximumWidth),
+            Damage = Mathf.Max(0f, damage),
+            AngleOffsetDegrees = angleOffsetDegrees,
+            LaunchDelay = Mathf.Max(0f, launchDelay),
+            ShowDuringCharge = showDuringCharge,
+            IsCrossBeam = isCrossBeam,
+            Properties = new MaterialPropertyBlock(),
+            GlowProperties = new MaterialPropertyBlock()
+        };
+        string suffix = ordinal > 0 ? $" {ordinal + 1}" : string.Empty;
+        ray.Visual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
+            "Piercing Laser Core" + suffix, out ray.Renderer);
+        ray.GlowVisual = CreatePiercingLaserPrimitive(PrimitiveType.Cylinder,
+            "Piercing Laser Outer Glow" + suffix, out ray.GlowRenderer);
+        ray.RootCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
+            "Piercing Laser Hemispherical Root" + suffix,
+            out ray.RootCapRenderer);
+        ray.RootGlowCapVisual = CreatePiercingLaserPrimitive(PrimitiveType.Sphere,
+            "Piercing Laser Hemispherical Root Glow" + suffix,
+            out ray.RootGlowCapRenderer);
+        ConfigurePiercingLaserStyle(ray.Properties,
+            new Color(1.65f, 1.58f, 2.05f, 1f),
+            new Color(0.95f, 0.035f, 2.2f, 1f),
+            new Color(0.07f, 0.34f, 1.8f, 1f), 0.045f, 0.44f, 0.26f, 1.75f);
+        ConfigurePiercingLaserStyle(ray.GlowProperties,
+            new Color(0.32f, 0.035f, 0.82f, 1f),
+            new Color(0.17f, 0.018f, 1.3f, 1f),
+            new Color(0.025f, 0.24f, 1.85f, 1f), 0.02f, 0.22f, 0.72f, 0.65f);
+        ray.Properties.SetFloat(LaserStartFadeId, 0.006f);
+        ray.GlowProperties.SetFloat(LaserStartFadeId, 0.008f);
+        SetPiercingLaserRayActive(ray, false);
+        return ray;
     }
 
     private GameObject CreatePiercingLaserPrimitive(PrimitiveType primitiveType, string objectName,
@@ -6111,57 +6276,52 @@ public partial class RougeGameManager
         for (int i = _towerBeamVisuals.Count - 1; i >= 0; i--)
         {
             TowerBeamVisual beam = _towerBeamVisuals[i];
-            if (beam.SourceTower == null || beam.Visual == null)
+            if (beam == null || beam.SourceTower == null || beam.Rays.Count == 0)
             {
                 DestroyTowerBeamVisual(beam);
                 _towerBeamVisuals.RemoveAt(i);
                 continue;
             }
 
-            beam.Start = GetTowerMuzzlePosition(beam.SourceTower);
+            beam.Start = GetPiercingLaserStartPosition(beam.SourceTower);
             float safeDt = Mathf.Max(0f, dt);
             bool wasChargeComplete = beam.ChargeComplete;
             if (!beam.ChargeComplete)
             {
-                // Charge time is expressed in base seconds. Attack speed advances only
-                // this clock, so all three 0.5 second charge pulses react to buffs/debuffs.
                 beam.ChargeElapsed += safeDt *
                     Mathf.Max(0.01f, beam.SourceTower.AttackSpeedMultiplier);
-                beam.ChargeComplete = beam.ChargeElapsed >= PiercingLaserChargeDuration;
-                beam.ChargeElapsed = Mathf.Min(beam.ChargeElapsed, PiercingLaserChargeDuration);
-                UpdatePiercingLaserTracking(ref beam, safeDt);
-                UpdatePiercingLaserChargeVisual(ref beam,
-                    Mathf.Clamp01(beam.ChargeElapsed / PiercingLaserChargeDuration));
+                beam.ChargeComplete = beam.ChargeElapsed >= beam.ChargeDuration;
+                beam.ChargeElapsed = Mathf.Min(beam.ChargeElapsed,
+                    beam.ChargeDuration);
+                UpdatePiercingLaserTracking(beam, safeDt);
+                UpdatePiercingLaserChargeVisual(beam,
+                    Mathf.Clamp01(beam.ChargeElapsed / beam.ChargeDuration));
             }
 
             if (beam.ChargeComplete)
             {
-                // Firing deliberately uses unscaled combat time. Attack speed must not
-                // change the 0.25 second impact peak or the 0.75 second beam lifetime.
                 if (wasChargeComplete) beam.FireElapsed += safeDt;
-                UpdatePiercingLaserFireVisual(ref beam, beam.FireElapsed);
+                UpdatePiercingLaserFireVisual(beam, beam.FireElapsed);
             }
 
-            if (beam.ChargeComplete && beam.FireElapsed >= PiercingLaserFireDuration)
+            if (beam.ChargeComplete && beam.FireElapsed >= beam.FireDuration)
             {
                 RougeDefenseTower sourceTower = beam.SourceTower;
                 DestroyTowerBeamVisual(beam);
                 _towerBeamVisuals.RemoveAt(i);
-                if (sourceTower != null && !CompleteEchoAttackStep(sourceTower))
+                if (sourceTower != null &&
+                    !CompleteEchoAttackStep(sourceTower, beam.CooldownOverride))
                 {
-                    // attackTimer is expressed in unscaled attack-interval units and is reduced
-                    // by AttackSpeedMultiplier in UpdateDefenseTowers.
-                    sourceTower.attackTimer = sourceTower.AttackInterval;
+                    sourceTower.attackTimer = beam.CooldownOverride > 0f
+                        ? beam.CooldownOverride
+                        : sourceTower.AttackInterval;
                     sourceTower.targetIndex = -1;
                 }
-                continue;
             }
-
-            _towerBeamVisuals[i] = beam;
         }
     }
 
-    private void UpdatePiercingLaserTracking(ref TowerBeamVisual beam, float dt)
+    private void UpdatePiercingLaserTracking(TowerBeamVisual beam, float dt)
     {
         if (beam.SourceTower == null) return;
 
@@ -6204,13 +6364,38 @@ public partial class RougeGameManager
             }
         }
 
+        UpdatePiercingLaserRayDirections(beam);
         AimTowerAt(beam.SourceTower, beam.Start + beam.Direction * 10f);
     }
 
-    private void UpdatePiercingLaserChargeVisual(ref TowerBeamVisual beam, float progress)
+    private void UpdatePiercingLaserRayDirections(TowerBeamVisual beam)
     {
-        // Three distinct scale pulses: each occupies 0.5 base seconds and grows then
-        // contracts once. Later stages retain more energy so the buildup still escalates.
+        for (int i = 0; i < beam.Rays.Count; i++)
+        {
+            PiercingLaserRayVisual ray = beam.Rays[i];
+            ray.Direction = RotatePiercingLaserDirection(beam.Direction,
+                ray.AngleOffsetDegrees);
+            ray.Start = beam.Start;
+            if (!ray.IsCrossBeam) continue;
+            PiercingLaserRayVisual main = beam.Rays[0];
+            ray.Start = beam.Start + beam.Direction * (main.MaximumLength * 0.5f) -
+                        ray.Direction * (ray.MaximumLength * 0.5f);
+        }
+    }
+
+    private static Vector3 RotatePiercingLaserDirection(Vector3 direction,
+        float degrees)
+    {
+        Vector3 rotated = Quaternion.Euler(0f, degrees, 0f) * direction;
+        rotated.y = 0f;
+        return rotated.sqrMagnitude > 0.0001f
+            ? rotated.normalized
+            : Vector3.forward;
+    }
+
+    private void UpdatePiercingLaserChargeVisual(TowerBeamVisual beam,
+        float progress)
+    {
         float stagePosition = Mathf.Min(progress * PiercingLaserChargeStageCount,
             PiercingLaserChargeStageCount - 0.0001f);
         int stageIndex = Mathf.Clamp(Mathf.FloorToInt(stagePosition), 0,
@@ -6220,17 +6405,36 @@ public partial class RougeGameManager
         float stagePulse = rawPulse * rawPulse * (3f - 2f * rawPulse);
         float buildup = (stageIndex + stageProgress) / PiercingLaserChargeStageCount;
         float stageStrength = (stageIndex + 1f) / PiercingLaserChargeStageCount;
+        float chargeWidth = PiercingLaserBeamRadius;
+        for (int i = 0; i < beam.Rays.Count; i++)
+        {
+            PiercingLaserRayVisual ray = beam.Rays[i];
+            chargeWidth = Mathf.Max(chargeWidth, ray.MaximumWidth);
+            if (!ray.ShowDuringCharge)
+            {
+                SetPiercingLaserRayActive(ray, false);
+                continue;
+            }
+            float guideWidth = ray.MaximumWidth *
+                PiercingLaserMaxVisualWidthMultiplier *
+                Mathf.Lerp(0.016f, 0.045f, buildup) *
+                Mathf.Lerp(0.78f, 1.28f, stagePulse);
+            SetPiercingLaserTransform(ray.Visual, ray.Start, ray.Direction,
+                ray.MaximumLength, guideWidth, 0.62f);
+            if (ray.Visual != null) ray.Visual.SetActive(true);
+            if (ray.GlowVisual != null) ray.GlowVisual.SetActive(false);
+            if (ray.RootCapVisual != null) ray.RootCapVisual.SetActive(false);
+            if (ray.RootGlowCapVisual != null)
+                ray.RootGlowCapVisual.SetActive(false);
+            SetPiercingLaserRuntimeProperties(ray.Renderer, ray.Properties,
+                Mathf.Lerp(0.14f, 0.46f, buildup) *
+                Mathf.Lerp(0.82f, 1.2f, stagePulse), progress,
+                stagePulse * 0.12f);
+        }
 
-        float guideWidth = beam.MaxWidth * Mathf.Lerp(0.016f, 0.045f, buildup) *
-            Mathf.Lerp(0.78f, 1.28f, stagePulse);
-        SetPiercingLaserTransform(beam.Visual, beam.Start, beam.Direction,
-            beam.Length, guideWidth, 0.62f);
-        if (beam.Visual != null) beam.Visual.SetActive(true);
-        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(false);
-        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(false);
-        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(false);
-
-        float chargeDiameter = beam.MaxWidth * Mathf.Lerp(0.055f, 0.19f, stageStrength) *
+        float chargeDiameter = chargeWidth *
+            PiercingLaserMaxVisualWidthMultiplier *
+            Mathf.Lerp(0.055f, 0.19f, stageStrength) *
             Mathf.Lerp(0.72f, 1.65f, stagePulse);
         if (beam.ChargeVisual != null)
         {
@@ -6239,15 +6443,13 @@ public partial class RougeGameManager
             beam.ChargeVisual.transform.localScale = Vector3.one * chargeDiameter;
         }
 
-        SetPiercingLaserRuntimeProperties(beam.Renderer, beam.Properties,
-            Mathf.Lerp(0.14f, 0.46f, buildup) * Mathf.Lerp(0.82f, 1.2f, stagePulse),
-            progress, stagePulse * 0.12f);
         SetPiercingLaserRuntimeProperties(beam.ChargeRenderer, beam.ChargeProperties,
             Mathf.Lerp(0.34f, 1.3f, buildup) * Mathf.Lerp(0.76f, 1.28f, stagePulse),
             progress, stagePulse * Mathf.Lerp(0.22f, 0.58f, stageStrength));
     }
 
-    private void UpdatePiercingLaserFireVisual(ref TowerBeamVisual beam, float fireTime)
+    private void UpdatePiercingLaserFireVisual(TowerBeamVisual beam,
+        float fireTime)
     {
         if (!beam.FiringAnimationPlayed)
         {
@@ -6256,10 +6458,25 @@ public partial class RougeGameManager
         }
 
         if (beam.ChargeVisual != null) beam.ChargeVisual.SetActive(false);
-        if (beam.Visual != null) beam.Visual.SetActive(true);
-        if (beam.GlowVisual != null) beam.GlowVisual.SetActive(true);
-        if (beam.RootCapVisual != null) beam.RootCapVisual.SetActive(true);
-        if (beam.RootGlowCapVisual != null) beam.RootGlowCapVisual.SetActive(true);
+        switch (beam.Mode)
+        {
+            case PiercingLaserAttackMode.Sweep:
+                UpdatePiercingLaserSweep(beam, fireTime);
+                break;
+            case PiercingLaserAttackMode.Continuous:
+                UpdatePiercingLaserContinuous(beam, fireTime);
+                break;
+            default:
+                UpdateLegacyPiercingLaserFire(beam, fireTime);
+                break;
+        }
+    }
+
+    private void UpdateLegacyPiercingLaserFire(TowerBeamVisual beam,
+        float fireTime)
+    {
+        PiercingLaserRayVisual ray = beam.Rays[0];
+        SetPiercingLaserRayActive(ray, true);
 
         float normalized = Mathf.Clamp01(fireTime / PiercingLaserFireDuration);
         float envelope;
@@ -6274,27 +6491,29 @@ public partial class RougeGameManager
                 Mathf.Max(0.01f, PiercingLaserFireDuration - PiercingLaserDamageTime));
             envelope = 1f - Mathf.SmoothStep(0f, 1f, fade);
         }
-        float visibleLength = beam.Length * Mathf.SmoothStep(0.03f, 1f,
+        float visibleLength = ray.MaximumLength * Mathf.SmoothStep(0.03f, 1f,
             Mathf.Clamp01(fireTime / 0.08f));
-        float width = beam.MaxWidth * Mathf.Lerp(0.065f, 1f, envelope);
-        SetPiercingLaserTransform(beam.Visual, beam.Start, beam.Direction,
+        float width = ray.MaximumWidth * PiercingLaserMaxVisualWidthMultiplier *
+            Mathf.Lerp(0.065f, 1f, envelope);
+        SetPiercingLaserTransform(ray.Visual, ray.Start, ray.Direction,
             visibleLength, width, 0.58f);
-        SetPiercingLaserTransform(beam.GlowVisual, beam.Start, beam.Direction,
+        SetPiercingLaserTransform(ray.GlowVisual, ray.Start, ray.Direction,
             visibleLength, width * 1.58f, 0.84f);
-        SetPiercingLaserRootCapTransform(beam.RootCapVisual, beam.Start,
-            beam.Direction, width * 0.92f, 0.58f);
-        SetPiercingLaserRootCapTransform(beam.RootGlowCapVisual, beam.Start,
-            beam.Direction, width * 1.58f * 0.92f, 0.84f);
+        SetPiercingLaserRootCapTransform(ray.RootCapVisual, ray.Start,
+            ray.Direction, width * 0.92f, 0.58f);
+        SetPiercingLaserRootCapTransform(ray.RootGlowCapVisual, ray.Start,
+            ray.Direction, width * 1.58f * 0.92f, 0.84f);
 
         float impactFlash = Mathf.Pow(1f - Mathf.Clamp01(
             Mathf.Abs(fireTime - PiercingLaserDamageTime) / 0.1f), 2f);
-        SetPiercingLaserRuntimeProperties(beam.Renderer, beam.Properties,
+        SetPiercingLaserRuntimeProperties(ray.Renderer, ray.Properties,
             Mathf.Lerp(0.42f, 1.35f, envelope), normalized, impactFlash);
-        SetPiercingLaserRuntimeProperties(beam.GlowRenderer, beam.GlowProperties,
+        SetPiercingLaserRuntimeProperties(ray.GlowRenderer, ray.GlowProperties,
             Mathf.Lerp(0.18f, 0.66f, envelope), normalized, impactFlash * 0.62f);
-        SetPiercingLaserRuntimeProperties(beam.RootCapRenderer, beam.Properties,
+        SetPiercingLaserRuntimeProperties(ray.RootCapRenderer, ray.Properties,
             Mathf.Lerp(0.42f, 1.35f, envelope), normalized, impactFlash, true);
-        SetPiercingLaserRuntimeProperties(beam.RootGlowCapRenderer, beam.GlowProperties,
+        SetPiercingLaserRuntimeProperties(ray.RootGlowCapRenderer,
+            ray.GlowProperties,
             Mathf.Lerp(0.18f, 0.66f, envelope), normalized, impactFlash * 0.62f, true);
 
         if (!beam.DamageApplied && fireTime >= PiercingLaserDamageTime)
@@ -6302,17 +6521,200 @@ public partial class RougeGameManager
             beam.DamageApplied = TryAddTowerDirectDamageArea(new RougeSkillArea
             {
                 Type = 15,
-                Position = new float2(beam.Start.x, beam.Start.z),
-                Direction = new float2(beam.Direction.x, beam.Direction.z),
-                Length = beam.Length,
-                Radius = PiercingLaserBeamRadius,
-                Damage = beam.Damage,
+                Position = new float2(ray.Start.x, ray.Start.z),
+                Direction = new float2(ray.Direction.x, ray.Direction.z),
+                Length = ray.MaximumLength,
+                Radius = ray.MaximumWidth,
+                Damage = ray.Damage,
                 SourceTowerTypePlusOne = (int)RougeTowerType.PiercingLaser + 1,
                 SourceTowerTileEffect = beam.TileEffect,
                 SourceTowerKillGoldBonus = beam.KillGoldBonus,
                 SourceTowerWealthCellIndexPlusOne = beam.WealthCellIndexPlusOne
             }, TowerFrostAreaSlowMultiplier);
         }
+    }
+
+    private void UpdatePiercingLaserSweep(TowerBeamVisual beam, float fireTime)
+    {
+        for (int i = 0; i < beam.Rays.Count; i++)
+        {
+            PiercingLaserRayVisual ray = beam.Rays[i];
+            float localTime = fireTime - ray.LaunchDelay;
+            if (localTime < 0f)
+            {
+                SetPiercingLaserRayActive(ray, false);
+                continue;
+            }
+
+            float traveled = Mathf.Min(ray.MaximumLength,
+                localTime * beam.SweepSpeed);
+            bool complete = traveled >= ray.MaximumLength - 0.001f;
+            SetPiercingLaserRayActive(ray, !complete);
+            if (!complete)
+            {
+                float visualWidth = ray.MaximumWidth *
+                    PiercingLaserMaxVisualWidthMultiplier;
+                SetPiercingLaserRayVisual(ray, ray.Start, ray.Direction,
+                    Mathf.Max(0.01f, traveled), visualWidth, 1f,
+                    Mathf.Clamp01(traveled / ray.MaximumLength));
+            }
+
+            float damageTime = Mathf.Min(localTime,
+                ray.MaximumLength / beam.SweepSpeed);
+            while (ray.NextDamageSample <= damageTime + 0.0001f)
+            {
+                float nextDistance = Mathf.Min(ray.MaximumLength,
+                    ray.NextDamageSample * beam.SweepSpeed);
+                QueuePiercingLaserRectangle(beam, ray,
+                    ray.DamagedDistance, nextDistance, ray.Damage);
+                ray.DamagedDistance = nextDistance;
+                ray.NextDamageSample += beam.HitInterval;
+            }
+            if (complete && ray.DamagedDistance < ray.MaximumLength)
+            {
+                QueuePiercingLaserRectangle(beam, ray,
+                    ray.DamagedDistance, ray.MaximumLength, ray.Damage);
+                ray.DamagedDistance = ray.MaximumLength;
+            }
+            ray.Completed = complete;
+        }
+    }
+
+    private void UpdatePiercingLaserContinuous(TowerBeamVisual beam,
+        float fireTime)
+    {
+        float progress = Mathf.Clamp01(fireTime / beam.FireDuration);
+        float sizeMultiplier = beam.KeepsContinuousSizeAndDamage
+            ? 1f
+            : Mathf.Lerp(1f, beam.ContinuousEndSizeMultiplier, progress);
+        UpdatePiercingLaserContinuousGeometry(beam, sizeMultiplier);
+        for (int i = 0; i < beam.Rays.Count; i++)
+        {
+            PiercingLaserRayVisual ray = beam.Rays[i];
+            SetPiercingLaserRayActive(ray, true);
+            float visualWidth = ray.MaximumWidth *
+                PiercingLaserMaxVisualWidthMultiplier * sizeMultiplier;
+            SetPiercingLaserRayVisual(ray, ray.Start, ray.Direction,
+                ray.MaximumLength * sizeMultiplier, visualWidth, 1f, progress);
+
+            while (ray.NextDamageSample <= fireTime + 0.0001f &&
+                   ray.NextDamageSample <= beam.FireDuration + 0.0001f)
+            {
+                float sampleProgress = Mathf.Clamp01(
+                    ray.NextDamageSample / beam.FireDuration);
+                float sampleSize = beam.KeepsContinuousSizeAndDamage
+                    ? 1f
+                    : Mathf.Lerp(1f, beam.ContinuousEndSizeMultiplier,
+                        sampleProgress);
+                float sampleDamageMultiplier =
+                    beam.KeepsContinuousSizeAndDamage
+                        ? 1f
+                        : Mathf.Lerp(1f,
+                            beam.ContinuousEndDamageMultiplier,
+                            sampleProgress);
+                QueuePiercingLaserContinuousRectangle(beam, ray,
+                    sampleSize, ray.Damage * sampleDamageMultiplier);
+                ray.NextDamageSample += beam.HitInterval;
+            }
+        }
+    }
+
+    private static void UpdatePiercingLaserContinuousGeometry(
+        TowerBeamVisual beam, float sizeMultiplier)
+    {
+        PiercingLaserRayVisual main = beam.Rays[0];
+        main.Start = beam.Start;
+        main.Direction = beam.Direction;
+        if (!beam.UsesCrossBeam || beam.Rays.Count < 2) return;
+        PiercingLaserRayVisual cross = beam.Rays[1];
+        cross.Direction = RotatePiercingLaserDirection(beam.Direction, 90f);
+        float mainLength = main.MaximumLength * sizeMultiplier;
+        float crossLength = cross.MaximumLength * sizeMultiplier;
+        Vector3 center = beam.Start + beam.Direction * (mainLength * 0.5f);
+        cross.Start = center - cross.Direction * (crossLength * 0.5f);
+    }
+
+    private void QueuePiercingLaserContinuousRectangle(TowerBeamVisual beam,
+        PiercingLaserRayVisual ray, float sizeMultiplier, float damage)
+    {
+        PiercingLaserRayVisual main = beam.Rays[0];
+        Vector3 start = beam.Start;
+        Vector3 direction = beam.Direction;
+        float length = main.MaximumLength * sizeMultiplier;
+        if (ray.IsCrossBeam)
+        {
+            direction = RotatePiercingLaserDirection(beam.Direction, 90f);
+            length = ray.MaximumLength * sizeMultiplier;
+            Vector3 center = beam.Start + beam.Direction *
+                (main.MaximumLength * sizeMultiplier * 0.5f);
+            start = center - direction * (length * 0.5f);
+        }
+        QueuePiercingLaserRectangle(beam, start, direction, length,
+            ray.MaximumWidth * sizeMultiplier, damage);
+    }
+
+    private void QueuePiercingLaserRectangle(TowerBeamVisual beam,
+        PiercingLaserRayVisual ray, float fromDistance, float toDistance,
+        float damage)
+    {
+        float length = Mathf.Max(0f, toDistance - fromDistance);
+        if (length <= 0f) return;
+        Vector3 start = ray.Start + ray.Direction * fromDistance;
+        QueuePiercingLaserRectangle(beam, start, ray.Direction, length,
+            ray.MaximumWidth, damage);
+    }
+
+    private void QueuePiercingLaserRectangle(TowerBeamVisual beam,
+        Vector3 start, Vector3 direction, float length, float halfWidth,
+        float damage)
+    {
+        if (damage <= 0f || length <= 0f) return;
+        TryAddTowerDirectDamageArea(new RougeSkillArea
+        {
+            Type = 23,
+            Position = new float2(start.x, start.z),
+            Direction = new float2(direction.x, direction.z),
+            Length = length,
+            Radius = Mathf.Max(0.01f, halfWidth),
+            Damage = damage,
+            SourceTowerTypePlusOne = (int)RougeTowerType.PiercingLaser + 1,
+            SourceTowerTileEffect = beam.TileEffect,
+            SourceTowerKillGoldBonus = beam.KillGoldBonus,
+            SourceTowerWealthCellIndexPlusOne = beam.WealthCellIndexPlusOne
+        }, TowerFrostAreaSlowMultiplier);
+    }
+
+    private static void SetPiercingLaserRayVisual(PiercingLaserRayVisual ray,
+        Vector3 start, Vector3 direction, float length, float width,
+        float alpha, float phase)
+    {
+        SetPiercingLaserTransform(ray.Visual, start, direction, length,
+            width, 0.58f);
+        SetPiercingLaserTransform(ray.GlowVisual, start, direction, length,
+            width * 1.58f, 0.84f);
+        SetPiercingLaserRootCapTransform(ray.RootCapVisual, start, direction,
+            width * 0.92f, 0.58f);
+        SetPiercingLaserRootCapTransform(ray.RootGlowCapVisual, start,
+            direction, width * 1.58f * 0.92f, 0.84f);
+        SetPiercingLaserRuntimeProperties(ray.Renderer, ray.Properties,
+            alpha, phase, 0.18f);
+        SetPiercingLaserRuntimeProperties(ray.GlowRenderer,
+            ray.GlowProperties, alpha * 0.5f, phase, 0.1f);
+        SetPiercingLaserRuntimeProperties(ray.RootCapRenderer,
+            ray.Properties, alpha, phase, 0.18f, true);
+        SetPiercingLaserRuntimeProperties(ray.RootGlowCapRenderer,
+            ray.GlowProperties, alpha * 0.5f, phase, 0.1f, true);
+    }
+
+    private static void SetPiercingLaserRayActive(
+        PiercingLaserRayVisual ray, bool active)
+    {
+        if (ray == null) return;
+        if (ray.Visual != null) ray.Visual.SetActive(active);
+        if (ray.GlowVisual != null) ray.GlowVisual.SetActive(active);
+        if (ray.RootCapVisual != null) ray.RootCapVisual.SetActive(active);
+        if (ray.RootGlowCapVisual != null)
+            ray.RootGlowCapVisual.SetActive(active);
     }
 
     private static void SetPiercingLaserRuntimeProperties(MeshRenderer renderer,
@@ -6386,10 +6788,16 @@ public partial class RougeGameManager
 
     private static void DestroyTowerBeamVisual(TowerBeamVisual beam)
     {
-        if (beam.Visual != null) Destroy(beam.Visual);
-        if (beam.GlowVisual != null) Destroy(beam.GlowVisual);
-        if (beam.RootCapVisual != null) Destroy(beam.RootCapVisual);
-        if (beam.RootGlowCapVisual != null) Destroy(beam.RootGlowCapVisual);
+        if (beam == null) return;
+        for (int i = 0; i < beam.Rays.Count; i++)
+        {
+            PiercingLaserRayVisual ray = beam.Rays[i];
+            if (ray == null) continue;
+            if (ray.Visual != null) Destroy(ray.Visual);
+            if (ray.GlowVisual != null) Destroy(ray.GlowVisual);
+            if (ray.RootCapVisual != null) Destroy(ray.RootCapVisual);
+            if (ray.RootGlowCapVisual != null) Destroy(ray.RootGlowCapVisual);
+        }
         if (beam.ChargeVisual != null) Destroy(beam.ChargeVisual);
     }
 
@@ -6824,8 +7232,13 @@ public partial class RougeGameManager
         _selectedTowerPortrait.enabled = portrait != null;
 
         float attacksPerSecond = 1f / Mathf.Max(0.01f, tower.EffectiveAttackInterval);
-        float estimatedDps = tower.Damage * attacksPerSecond *
-            Mathf.Max(1, tower.AttackTargetCount) * Mathf.Max(1, tower.AttackProjectileCount);
+        float estimatedDps = tower.TowerType == RougeTowerType.PiercingLaser &&
+                             tower.PiercingLaserBranch !=
+                             RougePiercingLaserBranch.None
+            ? EstimateAutoplayInstalledCombatPower(tower)
+            : tower.Damage * attacksPerSecond *
+              Mathf.Max(1, tower.AttackTargetCount) *
+              Mathf.Max(1, tower.AttackProjectileCount);
         string contextLabel = hasPreview
             ? "<color=#FFE075><size=14><b>建造预览</b></size></color>  "
             : string.Empty;
@@ -6907,6 +7320,12 @@ public partial class RougeGameManager
         if (tower.UsesPersistentCannonShell) return "<color=#C77DFF>◆ B 路线 · 持续炮弹</color>";
         if (tower.UsesLaserArmorBreak) return "<color=#FFD45C>◆ A 路线 · 破甲</color>";
         if (tower.UsesLaserRefraction) return "<color=#C77DFF>◆ B 路线 · 折射</color>";
+        if (tower.UsesPiercingLaserScatterSweep) return "<color=#FFD45C>◆ A1 · 散射扫掠</color>";
+        if (tower.UsesPiercingLaserRapidSweep) return "<color=#FFD45C>◆ A2 · 连发扫掠</color>";
+        if (tower.UsesPiercingLaserSweep) return "<color=#FFD45C>◆ A 路线 · 扫掠激光</color>";
+        if (tower.UsesPiercingLaserLargeContinuous) return "<color=#C77DFF>◆ B1 · 巨型持续激光</color>";
+        if (tower.UsesPiercingLaserCrossContinuous) return "<color=#C77DFF>◆ B2 · 十字激光</color>";
+        if (tower.UsesPiercingLaserContinuous) return "<color=#C77DFF>◆ B 路线 · 持续激光</color>";
         return string.Empty;
     }
 
@@ -7036,9 +7455,8 @@ public partial class RougeGameManager
         string qualityHint =
             $"[F5] 光影 {RougeVisualQualityManager.ActiveTierLabel} · " +
             $"[F6] {TowerDefenseAutoplayCharacterName}托管";
-        string speedHint = _towerDefenseDoubleSpeed
-            ? "[F10] 速度 ×2"
-            : "[F10] 速度 ×1";
+        string speedHint =
+            $"[F10] 速度 ×{Mathf.RoundToInt(GetTowerDefensePlayTimeScale())}";
 
         if (IsTiltShiftObservationActive || _cameraViewMode == CameraViewMode.TiltShift)
         {
@@ -7777,6 +8195,34 @@ public partial class RougeGameManager
             return $"DPS：{dpsPerBarrage:0.##} × {barrageCount}\n" +
                    $"范围：{tower.AttackRange:0.#}";
         }
+        if (tower.TowerType == RougeTowerType.PiercingLaser &&
+            tower.PiercingLaserBranch != RougePiercingLaserBranch.None)
+        {
+            RougePiercingLaserSpecializationConfig piercing =
+                TowerDefenseVisuals.GetPiercingLaserSpecializationConfig();
+            if (tower.UsesPiercingLaserScatterSweep)
+                return $"每束伤害：{tower.Damage:0.##}\n" +
+                       $"激光数：{tower.AttackProjectileCount}\n" +
+                       $"扫掠距离：{tower.AttackRange * piercing.scatterSweepRangeMultiplier:0.#}\n" +
+                       $"蓄力：{piercing.scatterSweepChargeDuration:0.##} 秒";
+            if (tower.UsesPiercingLaserRapidSweep)
+                return $"首发伤害：{tower.Damage:0.##}\n" +
+                       $"后续伤害：{tower.PiercingLaserRapidSweepDamage:0.##} × {piercing.rapidSweepFollowupCount}\n" +
+                       $"首发/后续距离：{tower.AttackRange * piercing.sweepRangeMultiplier:0.#} / {tower.AttackRange * piercing.rapidSweepRangeMultiplier:0.#}\n" +
+                       $"连发间隔：{piercing.rapidSweepInterval:0.##} 秒";
+            if (tower.UsesPiercingLaserSweep)
+                return $"扫掠伤害：{tower.Damage:0.##}\n" +
+                       $"扫掠距离：{tower.AttackRange * piercing.sweepRangeMultiplier:0.#}\n" +
+                       $"扫掠速度：{piercing.sweepSpeed:0.##}/秒\n" +
+                       $"蓄力：{piercing.sweepChargeDuration:0.##} 秒";
+            float duration = tower.UsesPiercingLaserLargeContinuous
+                ? piercing.largeContinuousDuration
+                : piercing.continuousDuration;
+            return $"每跳伤害：{tower.Damage:0.##}\n" +
+                   $"持续时间：{duration:0.##} 秒\n" +
+                   $"判定间隔：{piercing.continuousTickInterval:0.##} 秒\n" +
+                   $"激光距离：{tower.AttackRange * piercing.continuousRangeMultiplier:0.#}";
+        }
         return $"伤害：{tower.Damage:0.##}\n" +
                $"范围：{tower.AttackRange:0.#}\n" +
                $"攻击间隔：{tower.EffectiveAttackInterval:0.00} 秒";
@@ -7940,7 +8386,23 @@ public partial class RougeGameManager
                 return "持续连接多个敌人；集中模式会把火力集中到首领。";
             }
             case RougeTowerType.PiercingLaser:
+            {
+                RougePiercingLaserSpecializationConfig config =
+                    TowerDefenseVisuals.GetPiercingLaserSpecializationConfig();
+                if (tower.UsesPiercingLaserScatterSweep)
+                    return $"蓄力 {config.scatterSweepChargeDuration:0.##} 秒后，向前方散射 {tower.AttackProjectileCount} 道扫掠激光，相邻方向相差 {config.scatterSweepSpacingDegrees:0.#}°；距离为攻击范围的 {config.scatterSweepRangeMultiplier:0.##} 倍，每束使用独立覆盖伤害。";
+                if (tower.UsesPiercingLaserRapidSweep)
+                    return $"首次扫掠后，每隔 {config.rapidSweepInterval:0.##} 秒无蓄力追加一次扫掠，共 {config.rapidSweepFollowupCount} 次；追加扫掠距离为攻击范围的 {config.rapidSweepRangeMultiplier:0.##} 倍，使用独立覆盖伤害，全部结束后进入 {config.rapidSweepCooldownOverride:0.##} 秒覆盖冷却。";
+                if (tower.UsesPiercingLaserSweep)
+                    return $"蓄力 {config.sweepChargeDuration:0.##} 秒后，激光从塔脚向终点扫掠；距离为攻击范围的 {config.sweepRangeMultiplier:0.##} 倍，速度 {config.sweepSpeed:0.##}/秒，每 {config.sweepHitInterval:0.##} 秒按新走过的矩形区域判定一次。";
+                if (tower.UsesPiercingLaserLargeContinuous)
+                    return $"蓄力 {config.largeContinuousChargeDuration:0.##} 秒后持续照射 {config.largeContinuousDuration:0.##} 秒；宽度为持续激光的 {config.largeContinuousWidthMultiplier:0.##} 倍，伤害和尺寸不衰减，每 {config.continuousTickInterval:0.##} 秒判定一次，结束后进入 {config.largeContinuousCooldownOverride:0.##} 秒覆盖冷却。";
+                if (tower.UsesPiercingLaserCrossContinuous)
+                    return $"蓄力后持续照射 {config.continuousDuration:0.##} 秒；主激光中心生成一条垂直相交、长度为主激光 {config.crossBeamLengthMultiplier * 100f:0.#}% 的副激光。两道激光独立判定，尺寸与每跳伤害逐渐降低至一半。";
+                if (tower.UsesPiercingLaserContinuous)
+                    return $"蓄力 {config.continuousChargeDuration:0.##} 秒后持续照射 {config.continuousDuration:0.##} 秒，每 {config.continuousTickInterval:0.##} 秒判定一次；期间激光长度、宽度和每跳伤害逐渐降低至一半。";
                 return "发射直线激光，伤害路径上的所有敌人。";
+            }
             case RougeTowerType.OrbitSphere:
                 return "水晶沿范围边缘移动，并持续攻击附近敌人。";
             case RougeTowerType.RocketBarrage:
@@ -7986,6 +8448,20 @@ public partial class RougeGameManager
             return choiceIndex == 0
                 ? $"B1 连续折射\n{price}"
                 : $"B2 折射攻击\n{price}";
+        }
+        if (tower.TowerType == RougeTowerType.PiercingLaser)
+        {
+            if (tower.NeedsPiercingLaserBranchChoice)
+                return choiceIndex == 0
+                    ? $"A 扫掠激光\n{price}"
+                    : $"B 持续激光\n{price}";
+            if (tower.PiercingLaserBranch == RougePiercingLaserBranch.Sweep)
+                return choiceIndex == 0
+                    ? $"A1 散射扫掠\n{price}"
+                    : $"A2 连发扫掠\n{price}";
+            return choiceIndex == 0
+                ? $"B1 巨型持续\n{price}"
+                : $"B2 十字激光\n{price}";
         }
         if (tower.TowerType == RougeTowerType.MachineGun)
         {

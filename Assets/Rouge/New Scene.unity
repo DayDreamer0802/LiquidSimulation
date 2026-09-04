@@ -596,6 +596,9 @@ MonoBehaviour:
   startupRevealDuration: 1.65
   startupEdgeFlashDuration: 0.42
   startupMainTowerRevealDuration: 0.72
+  startupEmptyZoneHoldDuration: 0.32
+  startupAnchorHoldDuration: 0.24
+  startupReadyHoldDuration: 0.18
   startupCrystalColor: {r: 0.06, g: 1.15, b: 1.8, a: 1}
 --- !u!4 &613537617
 Transform:
@@ -2537,6 +2540,8 @@ MonoBehaviour:
   towerDefenseEnabled: 1
   towerDefenseStartingGold: 2000
   mainTower: {fileID: 0}
+  mainTowerBalance:
+    maxHealth: 500
   towerBalance:
     sellRefundMultiplier: 0.25
     iceTowerSpecialization:
@@ -2625,6 +2630,20 @@ MonoBehaviour:
       conflagrationDamageMultiplier: 5
     towers:
     - towerType: 0
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.2
       footprintSize: 1
       footprintWidth: 1
@@ -2686,6 +2705,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 1
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2
       footprintSize: 1
       footprintWidth: 1
@@ -2747,6 +2780,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 2
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.7
       footprintSize: 1
       footprintWidth: 1
@@ -2808,6 +2855,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 3
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.4
       footprintSize: 1
       footprintWidth: 1
@@ -2869,6 +2930,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 4
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.3
       footprintSize: 1
       footprintWidth: 1
@@ -2930,6 +3005,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 5
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.8
       footprintSize: 1
       footprintWidth: 1
@@ -2991,6 +3080,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 6
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.5
       footprintSize: 1
       footprintWidth: 1
@@ -3052,6 +3155,20 @@ MonoBehaviour:
         projectileFlightDuration: 1.05
         brownianStrength: 3
     - towerType: 7
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.8
       footprintSize: 1
       footprintWidth: 1
@@ -3113,6 +3230,20 @@ MonoBehaviour:
         projectileFlightDuration: 0.95
         brownianStrength: 3.4
     - towerType: 8
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 2.8
       footprintSize: 1
       footprintWidth: 1
@@ -3174,6 +3305,20 @@ MonoBehaviour:
         projectileFlightDuration: 0
         brownianStrength: 0
     - towerType: 9
+      aiRoleProfile:
+        control: 0
+        directDamage: 0.5
+        singleTarget: 0.5
+        areaDamage: 0
+        armorBreaking: 0
+      aiBuffAffinity:
+        damage: 1
+        attackSpeed: 1
+        range: 1
+        control: 1
+        armorPierce: 1
+        economy: 1
+      aiSpecializations: []
       placementRadius: 3.1
       footprintSize: 1
       footprintWidth: 1

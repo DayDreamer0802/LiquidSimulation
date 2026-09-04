@@ -60,6 +60,33 @@ public sealed class RougeTowerAiRoleProfile
 }
 
 [Serializable]
+public sealed class RougeTowerAiBuffAffinityConfig
+{
+    [Tooltip("该塔从伤害增益（地块/强化）中获得的边际收益权重。")]
+    [Range(0.05f, 2f)] public float damage = 1f;
+    [Tooltip("该塔从攻速增益中获得的边际收益权重；本就攻速快的塔收益递减。")]
+    [Range(0.05f, 2f)] public float attackSpeed = 1f;
+    [Tooltip("该塔从范围增益中获得的边际收益权重；决定范围格的边际覆盖折算。")]
+    [Range(0.05f, 2f)] public float range = 1f;
+    [Tooltip("该塔利用控制类增益（霜寒格/爆炸格）的收益权重。")]
+    [Range(0.05f, 2f)] public float control = 1f;
+    [Tooltip("该塔对护甲压力的威胁评分增益权重。")]
+    [Range(0.05f, 2f)] public float armorPierce = 1f;
+    [Tooltip("该塔利用经济类增益（赏金格/财富格）的收益权重。")]
+    [Range(0.05f, 2f)] public float economy = 1f;
+
+    public void EnsureDefaults()
+    {
+        damage = Mathf.Clamp(damage, 0.05f, 2f);
+        attackSpeed = Mathf.Clamp(attackSpeed, 0.05f, 2f);
+        range = Mathf.Clamp(range, 0.05f, 2f);
+        control = Mathf.Clamp(control, 0.05f, 2f);
+        armorPierce = Mathf.Clamp(armorPierce, 0.05f, 2f);
+        economy = Mathf.Clamp(economy, 0.05f, 2f);
+    }
+}
+
+[Serializable]
 public sealed class RougeTowerAiSpecializationProfile
 {
     [Range(1, TowerDefenseVisuals.MaxTowerLevel - 1)] public int fromLevel = 1;
@@ -84,6 +111,8 @@ public sealed class RougeTowerTypeConfig
     public RougeTowerType towerType;
     [Tooltip("Normalized 0-1 capability vector used by commander AI. It describes mechanics, not a preferred character.")]
     public RougeTowerAiRoleProfile aiRoleProfile;
+    [Tooltip("Per-stat marginal benefit weights used by commander AI when judging buff tiles and range gain.")]
+    public RougeTowerAiBuffAffinityConfig aiBuffAffinity = new RougeTowerAiBuffAffinityConfig();
     [Tooltip("Resulting capability vectors for branch/augment choices, keyed by current level, branch (0/1/2), and choice (0/1).")]
     public List<RougeTowerAiSpecializationProfile> aiSpecializations =
         new List<RougeTowerAiSpecializationProfile>();
@@ -365,6 +394,92 @@ public sealed class RougeLaserTowerSpecializationConfig
 }
 
 [Serializable]
+public sealed class RougePiercingLaserSpecializationConfig
+{
+    [Header("A - 推进扫掠")]
+    [Min(0.01f)] public float sweepChargeDuration = 1f;
+    [Min(0.01f)] public float sweepRangeMultiplier = 3f;
+    [Min(0.01f)] public float sweepSpeed = 20f;
+    [Min(0.01f)] public float sweepHitInterval = 0.1f;
+    [Min(0f), Tooltip("推进扫掠每条激光的独立伤害覆盖值，不读取等级表伤害。")]
+    public float sweepDamageOverride = 750f;
+
+    [Header("A1 - 散射扫掠")]
+    [Min(1)] public int scatterSweepBeamCount = 3;
+    [Range(0f, 90f)] public float scatterSweepSpacingDegrees = 15f;
+    [Min(0.01f)] public float scatterSweepChargeDuration = 1.5f;
+    [Min(0.01f)] public float scatterSweepRangeMultiplier = 2.5f;
+    [Min(0f), Tooltip("散射扫掠每条激光的独立伤害覆盖值。")]
+    public float scatterSweepDamageOverride = 562.5f;
+
+    [Header("A2 - 连续扫掠")]
+    [Min(1)] public int rapidSweepFollowupCount = 5;
+    [Min(0.01f)] public float rapidSweepInterval = 0.5f;
+    [Min(0.01f)] public float rapidSweepRangeMultiplier = 1.5f;
+    [Min(0f), Tooltip("连续扫掠后续每条激光的独立伤害覆盖值。")]
+    public float rapidSweepDamageOverride = 375f;
+    [Min(0.01f)] public float rapidSweepCooldownOverride = 5f;
+
+    [Header("B - 持续激光")]
+    [Min(0.01f)] public float continuousChargeDuration = 1.5f;
+    [Min(0.01f)] public float continuousRangeMultiplier = 2f;
+    [Min(0.01f)] public float continuousDuration = 5f;
+    [Min(0.01f)] public float continuousTickInterval = 0.1f;
+    [Min(0f), Tooltip("持续激光每 0.1 秒一跳的独立伤害覆盖值。")]
+    public float continuousDamageOverride = 1500f;
+    [Range(0.01f, 1f)] public float continuousEndSizeMultiplier = 0.5f;
+    [Range(0.01f, 1f)] public float continuousEndDamageMultiplier = 0.5f;
+
+    [Header("B1 - 超载持续激光")]
+    [Min(0.01f)] public float largeContinuousChargeDuration = 2.5f;
+    [Min(0.01f)] public float largeContinuousDuration = 7f;
+    [Min(0.01f)] public float largeContinuousWidthMultiplier = 2f;
+    [Min(0f), Tooltip("超载持续激光每跳的独立伤害覆盖值。")]
+    public float largeContinuousDamageOverride = 2250f;
+    [Min(0.01f)] public float largeContinuousCooldownOverride = 5f;
+
+    [Header("B2 - 十字激光")]
+    [Min(0.01f), Tooltip("横向激光总长度相对主激光长度的倍率。")]
+    public float crossBeamLengthMultiplier = 0.5f;
+
+    public void EnsureDefaults()
+    {
+        sweepChargeDuration = Mathf.Max(0.01f, sweepChargeDuration);
+        sweepRangeMultiplier = Mathf.Max(0.01f, sweepRangeMultiplier);
+        sweepSpeed = Mathf.Max(0.01f, sweepSpeed);
+        sweepHitInterval = Mathf.Max(0.01f, sweepHitInterval);
+        sweepDamageOverride = Mathf.Max(0f, sweepDamageOverride);
+        scatterSweepBeamCount = Mathf.Max(1, scatterSweepBeamCount);
+        scatterSweepSpacingDegrees = Mathf.Clamp(scatterSweepSpacingDegrees, 0f, 90f);
+        scatterSweepChargeDuration = Mathf.Max(0.01f, scatterSweepChargeDuration);
+        scatterSweepRangeMultiplier = Mathf.Max(0.01f, scatterSweepRangeMultiplier);
+        scatterSweepDamageOverride = Mathf.Max(0f, scatterSweepDamageOverride);
+        rapidSweepFollowupCount = Mathf.Max(1, rapidSweepFollowupCount);
+        rapidSweepInterval = Mathf.Max(0.01f, rapidSweepInterval);
+        rapidSweepRangeMultiplier = Mathf.Max(0.01f, rapidSweepRangeMultiplier);
+        rapidSweepDamageOverride = Mathf.Max(0f, rapidSweepDamageOverride);
+        rapidSweepCooldownOverride = Mathf.Max(0.01f, rapidSweepCooldownOverride);
+        continuousChargeDuration = Mathf.Max(0.01f, continuousChargeDuration);
+        continuousRangeMultiplier = Mathf.Max(0.01f, continuousRangeMultiplier);
+        continuousDuration = Mathf.Max(0.01f, continuousDuration);
+        continuousTickInterval = Mathf.Max(0.01f, continuousTickInterval);
+        continuousDamageOverride = Mathf.Max(0f, continuousDamageOverride);
+        continuousEndSizeMultiplier = Mathf.Clamp(continuousEndSizeMultiplier, 0.01f, 1f);
+        continuousEndDamageMultiplier = Mathf.Clamp(continuousEndDamageMultiplier, 0.01f, 1f);
+        largeContinuousChargeDuration = Mathf.Max(0.01f,
+            largeContinuousChargeDuration);
+        largeContinuousDuration = Mathf.Max(0.01f, largeContinuousDuration);
+        largeContinuousWidthMultiplier = Mathf.Max(0.01f,
+            largeContinuousWidthMultiplier);
+        largeContinuousDamageOverride = Mathf.Max(0f,
+            largeContinuousDamageOverride);
+        largeContinuousCooldownOverride = Mathf.Max(0.01f,
+            largeContinuousCooldownOverride);
+        crossBeamLengthMultiplier = Mathf.Max(0.01f, crossBeamLengthMultiplier);
+    }
+}
+
+[Serializable]
 public sealed class RougeFlameTowerSpecializationConfig
 {
     [Header("A - 喷火器")]
@@ -433,6 +548,8 @@ public sealed class RougeTowerBalanceConfig
         new RougeCannonSpecializationConfig();
     public RougeLaserTowerSpecializationConfig laserTowerSpecialization =
         new RougeLaserTowerSpecializationConfig();
+    public RougePiercingLaserSpecializationConfig piercingLaserSpecialization =
+        new RougePiercingLaserSpecializationConfig();
     public RougeFlameTowerSpecializationConfig flameTowerSpecialization =
         new RougeFlameTowerSpecializationConfig();
     public List<RougeTowerTypeConfig> towers = new List<RougeTowerTypeConfig>();
@@ -447,6 +564,9 @@ public sealed class RougeTowerBalanceConfig
         cannonSpecialization.EnsureDefaults();
         laserTowerSpecialization ??= new RougeLaserTowerSpecializationConfig();
         laserTowerSpecialization.EnsureDefaults();
+        piercingLaserSpecialization ??=
+            new RougePiercingLaserSpecializationConfig();
+        piercingLaserSpecialization.EnsureDefaults();
         flameTowerSpecialization ??= new RougeFlameTowerSpecializationConfig();
         flameTowerSpecialization.EnsureDefaults();
         foreach (RougeTowerType type in Enum.GetValues(typeof(RougeTowerType)))
@@ -481,6 +601,8 @@ public sealed class RougeTowerBalanceConfig
             config.purchaseCost = Mathf.Max(0, config.levels[0].goldCost);
             config.aiRoleProfile ??= InferAiRoleProfile(config);
             config.aiRoleProfile.EnsureDefaults();
+            config.aiBuffAffinity ??= new RougeTowerAiBuffAffinityConfig();
+            config.aiBuffAffinity.EnsureDefaults();
             config.aiSpecializations ??=
                 new List<RougeTowerAiSpecializationProfile>();
             for (int specializationIndex = config.aiSpecializations.Count - 1;
@@ -1016,7 +1138,7 @@ public sealed class RougeMainTowerBalanceConfig
 [Serializable]
 public sealed class RougeTowerDefenseBalanceJsonData
 {
-    public int version = 16;
+    public int version = 17;
     public RougeMainTowerBalanceConfig mainTowerBalance =
         new RougeMainTowerBalanceConfig();
     public RougeTowerBalanceConfig towerBalance = new RougeTowerBalanceConfig();
@@ -1133,6 +1255,9 @@ public sealed class RougeTowerDefenseBalanceJsonData
                 new RougeFlameTowerSpecializationConfig();
         if (loadedVersion < 15)
             mainTowerBalance.maxHealth = 500f;
+        if (loadedVersion < 17)
+            towerBalance.piercingLaserSpecialization =
+                new RougePiercingLaserSpecializationConfig();
         for (int i = bossBalances.Count - 1; i >= 0; i--)
         {
             if (bossBalances[i] == null)
@@ -1155,7 +1280,7 @@ public sealed class RougeTowerDefenseBalanceJsonData
         bossBalance.EnsureDefaults();
         tacticalSkillBalance.EnsureDefaults();
         mainTowerBalance.EnsureDefaults();
-        version = Mathf.Max(version, 16);
+        version = Mathf.Max(version, 17);
     }
 }
 
@@ -1202,7 +1327,7 @@ public sealed class RougeTowerDefenseBalanceProfile : ScriptableObject
         EnsureDefaults();
         return new RougeTowerDefenseBalanceJsonData
         {
-            version = 16,
+            version = 17,
             mainTowerBalance = mainTowerBalance,
             towerBalance = towerBalance,
             enemyBalance = enemyBalance,
